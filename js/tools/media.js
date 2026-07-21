@@ -170,21 +170,49 @@ function encodeSVG(canvas) {
 
 tool({
   id: 'image-convert', cat: CAT, name: '이미지 포맷 변환기',
-  desc: '이미지를 PNG, JPEG, WebP, GIF, BMP, SVG로 변환하고 크기를 조정합니다.',
-  keywords: 'image convert png jpeg webp gif bmp svg resize',
+  desc: '이미지 포맷·품질·크기를 조정하고 여러 결과를 ZIP으로 내려받습니다.',
+  keywords: 'image convert png jpeg webp gif bmp svg resize compress quality metadata',
   render(root) {
     const out = h('div');
     const file = h('input', { type: 'file', accept: 'image/*', multiple: true });
-    const fmt = h('select', null, [['image/png', 'PNG'], ['image/jpeg', 'JPEG'], ['image/webp', 'WebP'], ['image/gif', 'GIF'], ['image/bmp', 'BMP'], ['image/svg+xml', 'SVG']].map(([v, l]) => h('option', { value: v }, l)));
+    const fmt = h('select', null, [['original', '원본 포맷 유지'], ['image/png', 'PNG'], ['image/jpeg', 'JPEG'], ['image/webp', 'WebP'], ['image/gif', 'GIF'], ['image/bmp', 'BMP'], ['image/svg+xml', 'SVG']]
+      .map(([v, l]) => h('option', { value: v, selected: v === 'image/png' }, l)));
     const quality = h('input', { type: 'range', min: 10, max: 100, value: 90, style: { width: '120px' } });
+    const qualityValue = h('span', { class: 'mono' }, '90');
+    const resizeMode = h('select', null,
+      h('option', { value: 'percent' }, '비율(%)'), h('option', { value: 'max' }, '최대 폭·높이'));
     const scale = h('input', { type: 'number', value: 100, style: { width: '70px' } });
+    const maxWidth = h('input', { type: 'number', min: 1, value: 1920, style: { width: '80px' } });
+    const maxHeight = h('input', { type: 'number', min: 1, value: 1080, style: { width: '80px' } });
+    const noUpscale = h('input', { type: 'checkbox' });
+    noUpscale.checked = true;
+    const percentOpt = h('span', { class: 'opt-item' }, h('label', null, '크기(%)'), scale);
+    const maxOpts = h('span', { class: 'opt-item', style: { display: 'none' } },
+      h('label', null, '최대 폭'), maxWidth, h('label', null, '높이'), maxHeight);
     const info = h('span', { style: { color: 'var(--muted)' } });
-    let items = []; // [{ name, img, url }]
+    let items = []; // [{ name, type, size, img, url }]
     let outUrls = [];
     let seq = 0;
 
-    async function convertOne(img, type, s, q) {
-      const w = Math.round(img.naturalWidth * s), hgt = Math.round(img.naturalHeight * s);
+    function dimensions(img) {
+      let s;
+      if (resizeMode.value === 'max') {
+        const mw = +maxWidth.value, mh = +maxHeight.value;
+        if (mw <= 0 || mh <= 0) throw new Error('최대 폭과 높이는 1 이상이어야 합니다.');
+        s = Math.min(mw / img.naturalWidth, mh / img.naturalHeight);
+      } else {
+        if (+scale.value <= 0) throw new Error('크기 비율은 1 이상이어야 합니다.');
+        s = +scale.value / 100;
+      }
+      if (noUpscale.checked) s = Math.min(1, s);
+      return {
+        w: Math.max(1, Math.round(img.naturalWidth * s)),
+        hgt: Math.max(1, Math.round(img.naturalHeight * s)),
+      };
+    }
+
+    async function convertOne(img, type, q) {
+      const { w, hgt } = dimensions(img);
       const canvas = h('canvas', { width: w, height: hgt });
       const ctx = canvas.getContext('2d');
       // 투명도가 없는 포맷은 흰 배경으로 합성
@@ -202,10 +230,7 @@ tool({
     async function convert() {
       if (!items.length) return;
       const my = ++seq;
-      const type = fmt.value;
-      const s = Math.max(1, +scale.value) / 100;
       const q = +quality.value / 100;
-      const ext = type === 'image/svg+xml' ? 'svg' : type.split('/')[1];
       const progress = h('p', { class: 'note' }, '변환 중...');
       outUrls.forEach((u) => URL.revokeObjectURL(u));
       outUrls = [];
@@ -217,15 +242,23 @@ tool({
         if (items.length > 1) progress.textContent = `변환 중... (${i + 1}/${items.length})`;
         const item = items[i];
         try {
-          const { blob, w, hgt } = await convertOne(item.img, type, s, q);
+          let type = fmt.value === 'original' ? item.type : fmt.value;
+          if (type === 'image/jpg') type = 'image/jpeg';
+          if (!['image/png', 'image/jpeg', 'image/webp', 'image/gif', 'image/bmp', 'image/svg+xml'].includes(type))
+            throw new Error('이 파일의 원본 포맷은 출력할 수 없습니다. 다른 출력 포맷을 선택하세요.');
+          const { blob, w, hgt } = await convertOne(item.img, type, q);
           if (my !== seq) return;
+          const ext = type === 'image/svg+xml' ? 'svg' : type === 'image/jpeg' ? 'jpg' : type.split('/')[1];
           const outName = items.length === 1 ? 'converted.' + ext : item.name.replace(/\.[^.]+$/, '') + '.' + ext;
           const uri = URL.createObjectURL(blob);
           outUrls.push(uri);
           results.push({ name: outName, data: blob });
+          const change = item.size ? (1 - blob.size / item.size) * 100 : null;
+          const sizeText = `${(item.size / 1024).toFixed(1)} KB → ${(blob.size / 1024).toFixed(1)} KB` +
+            (change == null ? '' : ` (${change >= 0 ? change.toFixed(1) + '% 감소' : (-change).toFixed(1) + '% 증가'})`);
           frag.append(h('div', { style: { marginBottom: '14px' } },
             h('img', { src: uri, class: 'img-preview', style: { maxHeight: items.length > 1 ? '160px' : '260px' } }),
-            h('p', null, `${items.length > 1 ? item.name + ' → ' + outName + ' — ' : ''}${w} × ${hgt}, ${(blob.size / 1024).toFixed(1)} KB `,
+            h('p', null, `${items.length > 1 ? item.name + ' → ' + outName + ' — ' : ''}${w} × ${hgt}, ${sizeText} `,
               h('button', { class: 'btn small', type: 'button', onclick: () => download(outName, blob) }, '다운로드'))));
         } catch (e) {
           if (my !== seq) return;
@@ -254,7 +287,7 @@ tool({
         const img = new Image();
         const url = URL.createObjectURL(f);
         const ok = await new Promise((res) => { img.onload = () => res(true); img.onerror = () => res(false); img.src = url; });
-        if (ok) items.push({ name: f.name, img, url });
+        if (ok) items.push({ name: f.name, type: f.type, size: f.size, img, url });
         else { URL.revokeObjectURL(url); failed.push(f.name); }
       }
       info.textContent = (items.length === 1
@@ -263,15 +296,23 @@ tool({
         (failed.length ? ` — 로드 실패: ${failed.join(', ')}` : '');
       convert();
     });
-    [fmt, quality, scale].forEach((el) => el.addEventListener('input', convert));
+    resizeMode.addEventListener('change', () => {
+      percentOpt.style.display = resizeMode.value === 'percent' ? '' : 'none';
+      maxOpts.style.display = resizeMode.value === 'max' ? '' : 'none';
+      convert();
+    });
+    quality.addEventListener('input', () => { qualityValue.textContent = quality.value; convert(); });
+    [fmt, scale, maxWidth, maxHeight, noUpscale].forEach((el) => el.addEventListener('input', convert));
     root.append(
       h('div', { class: 'io' },
         h('label', { class: 'io-label' }, '이미지 선택 (여러 장 가능)'), file, info,
         h('div', { class: 'opt-row', style: { marginTop: '10px' } },
           h('span', { class: 'opt-item' }, h('label', null, '출력 포맷'), fmt),
-          h('span', { class: 'opt-item' }, h('label', null, '품질(JPEG/WebP)'), quality),
-          h('span', { class: 'opt-item' }, h('label', null, '크기(%)'), scale)),
-        h('p', { class: 'note' }, 'GIF는 256색으로 감색됩니다. SVG 출력은 PNG를 내장한 SVG 파일입니다(벡터화 아님). 여러 장 선택 시 전체를 ZIP으로 받을 수 있습니다.'),
+          h('span', { class: 'opt-item' }, h('label', null, '품질(JPEG/WebP)'), quality, qualityValue),
+          h('span', { class: 'opt-item' }, h('label', null, '크기 방식'), resizeMode),
+          percentOpt, maxOpts,
+          h('span', { class: 'opt-item' }, h('label', null, '확대하지 않기'), noUpscale)),
+        h('p', { class: 'note' }, '결과는 캔버스로 다시 인코딩되어 EXIF·GPS 등 원본 메타데이터가 제거됩니다. 화질을 유지한 채 메타데이터만 삭제하려면 EXIF 뷰어 / 메타데이터 제거 도구를 사용하세요. GIF는 첫 프레임만 처리되며 SVG 출력은 PNG를 내장한 파일입니다.'),
         out));
   },
 });

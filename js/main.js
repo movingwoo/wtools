@@ -1,5 +1,5 @@
 // main.js — 라우터 / 사이드바 / 홈 화면
-import { tools, categories, h } from './core.js';
+import { tools, categories, h, stageToolInput } from './core.js';
 import './tools/encoding.js';
 import './tools/dataformat.js';
 import './tools/devfmt.js';
@@ -17,6 +17,91 @@ const nav = document.getElementById('nav');
 const content = document.getElementById('content');
 const search = document.getElementById('search');
 const sidebar = document.getElementById('sidebar');
+const sidebarTop = document.getElementById('sidebar-top');
+const detectResult = document.getElementById('detect-result');
+const MAX_DETECT_LENGTH = 64 * 1024;
+let pastedDetectionPending = false;
+
+function decodeB64UrlJson(part) {
+  const normalized = part.replace(/-/g, '+').replace(/_/g, '/');
+  const bin = atob(normalized + '='.repeat((4 - normalized.length % 4) % 4));
+  const bytes = Uint8Array.from(bin, (c) => c.charCodeAt(0));
+  return JSON.parse(new TextDecoder().decode(bytes));
+}
+
+function detectValue(raw) {
+  const value = raw.trim();
+  if (value.length < 8 || value.length > MAX_DETECT_LENGTH) return null;
+
+  const jwt = value.split('.');
+  if (jwt.length === 3 && jwt.every((part) => /^[A-Za-z0-9_-]+$/.test(part))) {
+    try {
+      const header = decodeB64UrlJson(jwt[0]);
+      decodeB64UrlJson(jwt[1]);
+      if (header && typeof header === 'object')
+        return { label: 'JWT', tools: [{ id: 'jwt', label: 'JWT 디코더로 열기' }] };
+    } catch { /* 다른 형식 검사를 계속한다. */ }
+  }
+
+  if (/^[\[{]/.test(value)) {
+    try {
+      const parsed = JSON.parse(value);
+      if (parsed && typeof parsed === 'object')
+        return { label: 'JSON', tools: [{ id: 'json-format', label: 'JSON 포맷 도구로 열기' }] };
+    } catch { /* 다른 형식 검사를 계속한다. */ }
+  }
+
+  try {
+    const url = new URL(value);
+    if (['http:', 'https:'].includes(url.protocol))
+      return { label: 'URL', tools: [
+        { id: 'url-parser', label: 'URL 파서로 열기' },
+        { id: 'url-encode', label: 'URL 인코더로 열기' },
+      ] };
+  } catch { /* 다른 형식 검사를 계속한다. */ }
+
+  if (/^(?:[0-9a-f]{8}|[0-9a-f]{16}|[0-9a-f]{32}|[0-9a-f]{40}|[0-9a-f]{56}|[0-9a-f]{64}|[0-9a-f]{96}|[0-9a-f]{128})$/i.test(value)
+      || /^\$(?:2[abxy]?|argon2|1|5|6|pbkdf2)\$/.test(value) || /^\{SSHA\}/.test(value))
+    return { label: '해시', tools: [{ id: 'hash-analyze', label: '해시 분석기로 열기' }] };
+
+  const compact = value.replace(/\s/g, '');
+  if (compact.length >= 12 && compact.length % 4 !== 1 && /^[A-Za-z0-9+/_-]+={0,2}$/.test(compact)) {
+    try {
+      atob(compact.replace(/-/g, '+').replace(/_/g, '/') + '='.repeat((4 - compact.length % 4) % 4));
+      return { label: 'Base64', tools: [{ id: 'base64', label: 'Base64 디코더로 열기', actionId: 'dec' }] };
+    } catch { /* 감지하지 않는다. */ }
+  }
+  return null;
+}
+
+function showDetection(raw) {
+  const detected = detectValue(raw);
+  detectResult.innerHTML = '';
+  detectResult.classList.toggle('hidden', !detected);
+  if (!detected) return;
+  const close = h('button', {
+    class: 'detect-close', type: 'button', 'aria-label': '입력값과 추천 지우기', title: '입력값과 추천 지우기',
+  }, '×');
+  close.addEventListener('click', () => {
+    search.value = '';
+    detectResult.innerHTML = '';
+    detectResult.classList.add('hidden');
+    applyFilter();
+    search.focus();
+  });
+  detectResult.append(
+    close,
+    h('div', { class: 'detect-label' }, '입력값 감지: ', h('strong', null, detected.label)),
+    h('div', { class: 'detect-actions' }, detected.tools.map((item) => {
+      const link = h('a', { href: '#/tool/' + item.id }, item.label);
+      link.addEventListener('click', () => {
+        stageToolInput(item.id, raw.trim(), { actionId: item.actionId, options: item.options });
+        if (location.hash === link.hash) queueMicrotask(route);
+      });
+      return link;
+    })),
+  );
+}
 
 function byCat() {
   const m = new Map(categories.map((c) => [c, []]));
@@ -57,8 +142,20 @@ function applyFilter() {
     }
     sec.classList.toggle('hidden', !visible);
   }
+  updateSidebarTop();
 }
-search.addEventListener('input', applyFilter);
+search.addEventListener('input', (e) => {
+  applyFilter();
+  if (pastedDetectionPending) pastedDetectionPending = false;
+  else {
+    detectResult.innerHTML = '';
+    detectResult.classList.add('hidden');
+  }
+});
+search.addEventListener('paste', (e) => {
+  pastedDetectionPending = true;
+  showDetection(e.clipboardData?.getData('text') || '');
+});
 document.addEventListener('keydown', (e) => {
   if (e.key === '/' && document.activeElement.tagName !== 'INPUT' && document.activeElement.tagName !== 'TEXTAREA') {
     e.preventDefault();
@@ -69,6 +166,18 @@ document.addEventListener('keydown', (e) => {
 
 document.getElementById('menu-btn').addEventListener('click', () => sidebar.classList.toggle('open'));
 nav.addEventListener('click', (e) => { if (e.target.tagName === 'A') sidebar.classList.remove('open'); });
+function updateSidebarTop() {
+  const visible = sidebar.scrollTop > 240;
+  sidebarTop.classList.toggle('visible', visible);
+  sidebarTop.setAttribute('aria-hidden', String(!visible));
+  sidebarTop.tabIndex = visible ? 0 : -1;
+}
+sidebar.addEventListener('scroll', updateSidebarTop, { passive: true });
+sidebarTop.addEventListener('click', () => {
+  const behavior = matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth';
+  sidebar.scrollTo({ top: 0, behavior });
+});
+updateSidebarTop();
 
 /* ---------- 라우팅 ---------- */
 function renderHome() {

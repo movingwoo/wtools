@@ -18,6 +18,19 @@ export const categories = [
 export const tools = [];
 export function tool(def) { tools.push(def); }
 
+let pendingToolInput = null;
+export function stageToolInput(toolId, value, setup = {}) {
+  pendingToolInput = { toolId, value, ...setup };
+}
+
+function takeToolInput() {
+  const id = location.hash.match(/^#\/tool\/([\w-]+)/)?.[1];
+  if (!pendingToolInput || pendingToolInput.toolId !== id) return null;
+  const pending = pendingToolInput;
+  pendingToolInput = null;
+  return pending;
+}
+
 /* ---------- DOM 헬퍼 ---------- */
 export function h(tag, attrs, ...kids) {
   const el = document.createElement(tag);
@@ -162,6 +175,10 @@ export const LIB = {
   lzma: 'https://cdn.jsdelivr.net/npm/lzma@2.3.2/src/lzma_worker.min.js',
   md4: 'https://cdn.jsdelivr.net/npm/js-md4@0.3.2/build/md4.min.js',
   jsqr: 'https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js',
+  jsonpath: 'https://unpkg.com/jsonpath-plus@10.3.0/dist/index-browser-umd.min.cjs',
+  jmespath: 'https://cdn.jsdelivr.net/npm/jmespath@0.16.0/jmespath.min.js',
+  ajv: 'https://cdn.jsdelivr.net/npm/ajv@6.12.6/dist/ajv.bundle.js',
+  bcrypt: 'https://cdn.jsdelivr.net/npm/bcryptjs@2.4.3/dist/bcrypt.min.js',
 };
 
 /* ---------- 공통 도구 UI 빌더 ----------
@@ -177,6 +194,7 @@ export function makeIO(root, cfg) {
   const wrap = h('div', { class: 'io' });
   const inputDefs = cfg.inputs === null ? [] : (cfg.inputs || [{ id: 'input', label: '입력' }]);
   const inputEls = {};
+  const staged = inputDefs.length ? takeToolInput() : null;
 
   for (const def of inputDefs) {
     const ta = h('textarea', {
@@ -184,6 +202,7 @@ export function makeIO(root, cfg) {
       placeholder: def.placeholder || '', spellcheck: 'false',
     });
     if (def.value != null) ta.value = def.value;
+    if (staged && def === inputDefs[0]) ta.value = staged.value;
     inputEls[def.id] = ta;
     wrap.append(h('label', { class: 'io-label' }, def.label || '입력'), ta);
     ta.addEventListener('input', () => { if (cfg.autorun !== false) run(); });
@@ -210,12 +229,17 @@ export function makeIO(root, cfg) {
       el.addEventListener(o.type === 'text' || o.type === 'password' || o.type === 'number' ? 'input' : 'change',
         () => { if (cfg.autorun !== false) run(); });
       optEls[o.id] = el;
+      if (staged?.options?.[o.id] != null) {
+        if (el.type === 'checkbox') el.checked = !!staged.options[o.id];
+        else el.value = staged.options[o.id];
+      }
       row.append(h('span', { class: 'opt-item' }, o.label ? h('label', null, o.label) : null, el));
     }
     wrap.append(row);
   }
 
   let lastAction = cfg.actions?.[0]?.id ?? null;
+  if (staged?.actionId && cfg.actions?.some((a) => a.id === staged.actionId)) lastAction = staged.actionId;
   if (cfg.actions?.length) {
     const row = h('div', { class: 'btn-row' });
     for (const a of cfg.actions) {
@@ -272,6 +296,6 @@ export function makeIO(root, cfg) {
     }
   }
 
-  if (cfg.runOnLoad) run();
+  if (cfg.runOnLoad || staged) run();
   return { run, inputEls, optEls, out, setOut, getOpts };
 }

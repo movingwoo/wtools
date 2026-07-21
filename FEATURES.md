@@ -2,6 +2,10 @@
 
 ---
 
+## 공통 기능
+
+- 검색창에 붙여넣은 JWT, JSON, URL, Base64, 해시 형식 자동 감지 및 관련 도구 추천
+
 ## 1. 인코딩 / 디코딩
 
 - Base64 인코딩/디코딩 (커스텀 알파벳 지원)
@@ -17,7 +21,9 @@
 
 ## 2. 데이터 포맷 변환
 
-- JSON ↔ YAML ↔ XML ↔ CSV ↔ TOML 상호 변환
+- JSON ↔ YAML ↔ XML ↔ CSV ↔ TOML ↔ ENV(.env) 상호 변환
+- JSONPath / JMESPath 테스터
+- JSON Schema 검증 및 샘플 생성
 - 리스트 변환기 (구분자 변경, 정렬, 중복 제거 등)
 - To/From 테이블 (구분자 기반 표 변환)
 - 색상 변환기 (RGB / HSL / HEX / CMYK)
@@ -32,14 +38,17 @@
 - 구문 강조(Syntax Highlighter)
 - JSON Diff (구조 비교)
 - 텍스트 Diff (라인 비교)
-- 정규식(Regex) 테스터
+- 정규식(Regex) 테스터 + 검색·패턴 삽입형 JavaScript 치트시트
 - Crontab 표현식 생성/설명기
 - Markdown → HTML 변환기
+- Markdown 목차 생성기 (헤딩 분석, GitHub 스타일 앵커, 번호 매기기)
 - HTML 태그 렌더링 / 제거(Strip)
 - Docker run ↔ docker-compose 변환기
+- SQL INSERT ↔ JSON/CSV 변환기
 - chmod 계산기
 - Git 치트시트
 - Hex 뷰어 (파일 덤프 / 매직 넘버 형식 판별)
+- cURL ↔ fetch 변환기
 
 ## 4. 문자열 / 텍스트 유틸리티
 
@@ -73,6 +82,8 @@
 - PGP 암호화/복호화, 서명/검증, 키 생성
 - PDF 전자서명 검증
 - 토큰(랜덤 시크릿) 생성기
+- 비밀번호 해시 생성/검증 (PBKDF2, bcrypt)
+- TOTP / HOTP 생성·검증 및 otpauth QR 코드
 
 ## 7. 공개키 / 인증서
 
@@ -95,6 +106,7 @@
 - 이메일/URL/도메인/IP 주소 추출 (텍스트에서)
 - HTTP 상태 코드 참조표
 - MIME 타입 참조표
+- CSP(Content-Security-Policy) 헤더 생성기 및 위험 지시어 검사
 - 키코드(Keycode) 정보 뷰어
 - 기기 정보(User Agent/화면 등) 뷰어
 
@@ -113,7 +125,7 @@
 - WiFi QR 코드 생성기
 - QR 코드 리더 (이미지/클립보드 해독)
 - Base64 ↔ 이미지 변환
-- 이미지 포맷 변환기 (PNG/JPEG/WebP/GIF/BMP/SVG, 여러 장 일괄 변환 + 전체 ZIP 다운로드)
+- 이미지 포맷 변환기 (PNG/JPEG/WebP/GIF/BMP/SVG, 품질·비율·최대 크기 조절, 메타데이터 제거, 여러 장 일괄 변환 + 전체 ZIP 다운로드)
 - 배경 투명화 (단색 배경 제거 → 투명 PNG)
 - EXIF 뷰어 / 메타데이터 제거 (JPEG/PNG, 무손실, 여러 장 일괄 처리 + 제거본 전체 ZIP 다운로드)
 - 파비콘 생성기 (favicon.ico + 다중 크기 PNG)
@@ -126,7 +138,7 @@
 - 수식 계산기(Math Evaluator)
 - 퍼센트 계산기
 - 랜덤 숫자 생성기
-- UUID / ULID / NanoID 생성기
+- UUID / ULID / NanoID 생성·분석기 (버전·variant·timestamp·형식·엔트로피)
 - 랜덤 포트 생성기
 
 ## 12. 압축 / 아카이브
@@ -138,4 +150,3 @@
 - LZ4 압축/해제
 - Zip 압축/해제
 - Tar 아카이브/해제
-

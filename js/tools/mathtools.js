@@ -273,39 +273,134 @@ function ulid() {
   return time + [...r].map((x) => CROCKFORD32[x & 31]).join('');
 }
 const NANO_ALPHABET = 'useandom-26T198340PX75pxJACKVERYMINDBUSHWOLF_GQZbfghjklqvwyzrict';
-function nanoid(size) {
-  const r = crypto.getRandomValues(new Uint8Array(size));
-  return [...r].map((x) => NANO_ALPHABET[x & 63]).join('');
+function nanoid(size, alphabet = NANO_ALPHABET) {
+  const chars = Array.from(alphabet);
+  if (chars.length < 2 || chars.length > 255 || new Set(chars).size !== chars.length)
+    throw new Error('NanoID 알파벳은 중복 없는 문자 2~255개로 구성해야 합니다.');
+  const limit = Math.floor(256 / chars.length) * chars.length;
+  let out = '';
+  while (Array.from(out).length < size) {
+    const bytes = crypto.getRandomValues(new Uint8Array(Math.max(16, size * 2)));
+    for (const byte of bytes) {
+      if (byte < limit) out += chars[byte % chars.length];
+      if (Array.from(out).length === size) break;
+    }
+  }
+  return out;
+}
+
+function dateRows(milliseconds) {
+  if (!Number.isFinite(milliseconds) || Math.abs(milliseconds) > 8640000000000000) return [['생성 시각', '표현 가능한 날짜 범위를 벗어남']];
+  const date = new Date(milliseconds);
+  return [['생성 시각 (UTC)', date.toISOString()], ['생성 시각 (로컬)', date.toLocaleString('ko-KR')], ['Unix 밀리초', String(Math.trunc(milliseconds))]];
+}
+
+function analyzeUuid(value) {
+  let normalized = value.trim().replace(/^urn:uuid:/i, '').replace(/^\{(.*)\}$/, '$1').toLowerCase();
+  if (/^[0-9a-f]{32}$/.test(normalized)) normalized = normalized.replace(/^(.{8})(.{4})(.{4})(.{4})(.{12})$/, '$1-$2-$3-$4-$5');
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(normalized))
+    throw new Error('올바른 UUID 형식이 아닙니다. 32자리 16진수 또는 하이픈이 포함된 표준 형식을 입력하세요.');
+  const hex = normalized.replace(/-/g, '');
+  const version = parseInt(hex[12], 16);
+  const variantBits = parseInt(hex[16], 16);
+  const variant = variantBits < 8 ? 'NCS 호환 (0xxx)' : variantBits < 12 ? 'RFC 4122/9562 (10xx)' : variantBits < 14 ? 'Microsoft 호환 (110x)' : '예약됨 (111x)';
+  const isNil = /^0{32}$/.test(hex);
+  const isMax = /^f{32}$/.test(hex);
+  const rows = [['형식', '유효'], ['정규화', normalized]];
+  if (isNil || isMax) {
+    rows.push(['특수 값', isNil ? 'Nil UUID (모든 비트 0)' : 'Max UUID (모든 비트 1)']);
+    return rows;
+  }
+  rows.push(['버전', version >= 1 && version <= 8 ? `v${version}` : `알 수 없음 (${version})`], ['Variant', variant]);
+  if (version === 1 || version === 6) {
+    const timestampHex = version === 1
+      ? hex.slice(13, 16) + hex.slice(8, 12) + hex.slice(0, 8)
+      : hex.slice(0, 12) + hex.slice(13, 16);
+    const unix100ns = BigInt('0x' + timestampHex) - 0x01b21dd213814000n;
+    rows.push(...dateRows(Number(unix100ns / 10000n)));
+    if (version === 1) rows.push(['Node 필드', hex.slice(20).match(/../g).join(':')], ['Clock sequence', String(parseInt(hex.slice(16, 20), 16) & 0x3fff)]);
+  } else if (version === 7) {
+    rows.push(...dateRows(Number(BigInt('0x' + hex.slice(0, 12)))));
+  } else {
+    rows.push(['Timestamp', `UUID v${version}에는 표준 timestamp가 없습니다.`]);
+  }
+  if (variantBits < 8 || variantBits >= 12) rows.push(['주의', '현재 표준 RFC variant가 아니므로 버전 해석이 유효하지 않을 수 있습니다.']);
+  return rows;
+}
+
+function analyzeUlid(value) {
+  const normalized = value.trim().toUpperCase();
+  if (!/^[0-7][0-9A-HJKMNP-TV-Z]{25}$/.test(normalized))
+    throw new Error('올바른 ULID가 아닙니다. I, L, O, U를 제외한 Crockford Base32 26자리이며 첫 문자는 0~7이어야 합니다.');
+  let milliseconds = 0n;
+  for (const char of normalized.slice(0, 10)) milliseconds = milliseconds * 32n + BigInt(CROCKFORD32.indexOf(char));
+  return [
+    ['형식', '유효'], ['정규화', normalized],
+    ...dateRows(Number(milliseconds)),
+    ['시간 부분', normalized.slice(0, 10)], ['랜덤 부분', normalized.slice(10)],
+    ['정렬 특성', '문자열 사전순으로 생성 시각 정렬 가능'],
+  ];
+}
+
+function analyzeNanoId(value, alphabet) {
+  const id = value.trim();
+  if (!id) throw new Error('검사할 NanoID를 입력하세요.');
+  const chars = Array.from(alphabet);
+  if (chars.length < 2 || chars.length > 255 || new Set(chars).size !== chars.length)
+    throw new Error('NanoID 알파벳은 중복 없는 문자 2~255개로 구성해야 합니다.');
+  const invalid = [...new Set(Array.from(id).filter((char) => !chars.includes(char)))];
+  const length = Array.from(id).length;
+  const entropy = length * Math.log2(chars.length);
+  const collision50 = Math.sqrt(2 * Math.log(2)) * 2 ** (entropy / 2);
+  return [
+    ['형식', invalid.length ? '지정한 알파벳에 없는 문자 포함' : '지정한 알파벳 기준 유효'],
+    ['길이', String(length)], ['알파벳 크기', String(chars.length)],
+    ['추정 엔트로피', `${entropy.toFixed(2)} bit`],
+    ['충돌 확률 약 50% 도달', `${collision50.toExponential(3)}개 생성 시점 (균등 생성 가정)`],
+    ['허용되지 않은 문자', invalid.join(' ') || '없음'],
+    ['메타데이터', '버전과 timestamp가 내장되지 않아 추출할 수 없음'],
+  ];
 }
 
 tool({
-  id: 'uuid-generate', cat: CAT, name: 'UUID / ULID / NanoID 생성기',
-  desc: 'UUID v4/v7, ULID, NanoID 등 고유 식별자를 생성합니다.',
-  keywords: 'uuid guid ulid nanoid unique id generate random v4 v7',
+  id: 'uuid-generate', cat: CAT, name: 'UUID / ULID / NanoID 생성·분석기',
+  desc: '고유 식별자를 생성하거나 UUID·ULID의 메타데이터와 NanoID의 형식을 분석합니다.',
+  keywords: 'uuid guid ulid nanoid unique id generate analyze validate timestamp variant entropy random v1 v4 v6 v7',
   render(root) {
     const io = makeIO(root, {
-      inputs: null,
+      inputs: [{ id: 'input', label: '분석할 식별자', rows: 2, placeholder: 'UUID, ULID 또는 NanoID를 입력하세요.' }],
       options: [
         { id: 'type', label: '종류', type: 'select', values: [['v4', 'UUID v4 (랜덤)'], ['v7', 'UUID v7 (시간 정렬)'], ['ulid', 'ULID'], ['nano', 'NanoID'], ['nil', 'NIL UUID']] },
+        { id: 'analyzeAs', label: '분석 형식', type: 'select', values: [['auto', '자동 판별'], ['uuid', 'UUID'], ['ulid', 'ULID'], ['nano', 'NanoID']] },
         { id: 'count', label: '개수', type: 'number', value: 5, size: 80 },
         { id: 'len', label: 'NanoID 길이', type: 'number', value: 21, size: 80 },
+        { id: 'alphabet', label: 'NanoID 알파벳', type: 'text', value: NANO_ALPHABET, size: 300 },
         { id: 'upper', label: '대문자', type: 'checkbox' },
         { id: 'nodash', label: '하이픈 제거', type: 'checkbox' },
       ],
-      actions: [{ id: 'gen', label: '생성' }],
-      outputRows: 10,
-      note: 'UUID v7과 ULID는 앞부분이 생성 시각이라 DB 인덱스 친화적으로 정렬됩니다.',
-      process(_, o) {
+      actions: [{ id: 'gen', label: '생성' }, { id: 'analyze', label: '분석' }],
+      outputHTML: true, autorun: false,
+      note: '자동 분석은 형식으로 UUID·ULID를 판별하고, 그 외 값은 지정한 NanoID 알파벳으로 검사합니다. UUID v1의 Node 필드가 실제 MAC 주소라고 단정할 수는 없습니다.',
+      process(text, o, action) {
+        if (action === 'analyze') {
+          const value = text.trim();
+          if (!value) throw new Error('분석할 식별자를 입력하세요.');
+          const uuidLike = /^(?:urn:uuid:)?(?:\{[0-9a-f-]{36}\}|[0-9a-f-]{36}|[0-9a-f]{32})$/i.test(value);
+          const ulidLike = /^[0-7][0-9A-HJKMNP-TV-Z]{25}$/i.test(value);
+          const kind = o.analyzeAs === 'auto' ? (uuidLike ? 'uuid' : ulidLike ? 'ulid' : 'nano') : o.analyzeAs;
+          const rows = kind === 'uuid' ? analyzeUuid(value) : kind === 'ulid' ? analyzeUlid(value) : analyzeNanoId(value, o.alphabet);
+          return kvTable(rows);
+        }
         const n = Math.min(1000, Math.max(1, Math.floor(+o.count) || 1));
         const gen = {
           v4: uuidV4, v7: uuidV7, ulid,
-          nano: () => nanoid(Math.min(128, Math.max(2, Math.floor(+o.len) || 21))),
+          nano: () => nanoid(Math.min(128, Math.max(2, Math.floor(+o.len) || 21)), o.alphabet),
           nil: () => '00000000-0000-0000-0000-000000000000',
         }[o.type];
         let out = Array.from({ length: n }, gen);
         if (o.nodash) out = out.map((s) => s.replace(/-/g, ''));
-        if (o.upper) out = out.map((s) => s.toUpperCase());
-        return out.join('\n');
+        if (o.upper && o.type !== 'nano') out = out.map((s) => s.toUpperCase());
+        return h('pre', { style: { margin: 0, whiteSpace: 'pre-wrap' } }, out.join('\n'));
       },
     });
     io.run();

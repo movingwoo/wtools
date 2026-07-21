@@ -293,6 +293,140 @@ tool({
   },
 });
 
+/* ---------- CSP 헤더 ---------- */
+const CSP_DIRECTIVES = [
+  ['default-src', '기본 출처', "'self'", true],
+  ['script-src', '스크립트', "'self'", true],
+  ['style-src', '스타일', "'self'", true],
+  ['img-src', '이미지', "'self' data:", true],
+  ['font-src', '폰트', "'self'", true],
+  ['connect-src', '연결(fetch, WebSocket)', "'self'", true],
+  ['media-src', '오디오·비디오', "'self'", false],
+  ['worker-src', 'Worker', "'self'", false],
+  ['frame-src', '포함할 프레임', "'none'", false],
+  ['object-src', '플러그인 객체', "'none'", true],
+  ['base-uri', 'base URL', "'self'", true],
+  ['form-action', '폼 전송 대상', "'self'", true],
+  ['frame-ancestors', '이 페이지를 포함할 상위', "'none'", true],
+  ['manifest-src', '웹 앱 매니페스트', "'self'", false],
+  ['upgrade-insecure-requests', 'HTTP 리소스를 HTTPS로 승격', '', true],
+];
+
+tool({
+  id: 'csp-header', cat: CAT, name: 'CSP 헤더 생성기',
+  desc: '체크박스로 Content-Security-Policy를 구성하고 위험하거나 빠진 지시어를 확인합니다.',
+  keywords: 'csp content security policy header 보안 헤더 unsafe-inline unsafe-eval',
+  render(root) {
+    const rows = new Map();
+    const policyOut = h('textarea', { class: 'mono out', rows: 7, readonly: true, spellcheck: 'false', 'aria-label': '생성된 CSP 헤더' });
+    const warnings = h('div', { 'aria-live': 'polite' });
+    const headerName = h('select', { 'aria-label': '헤더 종류' },
+      h('option', { value: 'Content-Security-Policy' }, 'Content-Security-Policy'),
+      h('option', { value: 'Content-Security-Policy-Report-Only' }, 'Content-Security-Policy-Report-Only'));
+
+    function setPolicy(values) {
+      for (const [name, , initial, enabled] of CSP_DIRECTIVES) {
+        const row = rows.get(name);
+        const selected = values == null ? enabled : Object.hasOwn(values, name);
+        row.checkbox.checked = selected;
+        row.input.value = selected && values != null ? values[name] : initial;
+        row.input.disabled = !row.checkbox.checked || name === 'upgrade-insecure-requests';
+      }
+      update();
+    }
+
+    function analyze(active) {
+      const issues = [];
+      const has = (name, token) => (active.get(name) || '').split(/\s+/).includes(token);
+      const entries = [...active.entries()];
+      if (!active.has('default-src')) issues.push(['높음', 'default-src가 없어 명시하지 않은 리소스 유형에 제한이 적용되지 않습니다.']);
+      if (!active.has('object-src') || !has('object-src', "'none'")) issues.push(['높음', "object-src 'none'을 권장합니다. 플러그인 콘텐츠가 실행될 수 있습니다."]);
+      if (!active.has('base-uri')) issues.push(['중간', "base-uri를 지정해 <base> 태그를 이용한 URL 변조를 제한하세요."]);
+      if (!active.has('frame-ancestors')) issues.push(['중간', 'frame-ancestors를 지정해 클릭재킹을 방지하세요.']);
+      for (const [name, value] of entries) {
+        const tokens = value.split(/\s+/).filter(Boolean);
+        if (!tokens.length && name !== 'upgrade-insecure-requests') issues.push(['높음', `${name}에 허용 소스가 없어 브라우저가 이 지시어를 무시할 수 있습니다.`]);
+        if (tokens.includes("'none'") && tokens.length > 1) issues.push(['중간', `${name}의 'none'은 다른 소스와 함께 쓰면 효력이 없습니다.`]);
+        if (tokens.includes("'unsafe-eval'")) issues.push(['높음', `${name}의 'unsafe-eval'은 문자열을 코드로 실행할 수 있게 합니다.`]);
+        if (tokens.includes("'unsafe-inline'")) issues.push(['높음', `${name}의 'unsafe-inline'은 인라인 코드 실행을 허용합니다. nonce 또는 hash 사용을 권장합니다.`]);
+        if (tokens.includes('*')) issues.push(['높음', `${name}의 와일드카드(*)는 모든 네트워크 출처를 허용합니다.`]);
+        if (tokens.some((token) => token === 'http:' || /^http:\/\//i.test(token))) issues.push(['중간', `${name}이 암호화되지 않은 HTTP 출처를 허용합니다.`]);
+        if ((name === 'script-src' || name === 'object-src') && tokens.includes('data:')) issues.push(['높음', `${name}의 data: 허용은 코드 실행 경로가 될 수 있습니다.`]);
+      }
+      return issues;
+    }
+
+    function update() {
+      const active = new Map();
+      for (const [name] of CSP_DIRECTIVES) {
+        const row = rows.get(name);
+        if (!row.checkbox.checked) continue;
+        const value = row.input.value.trim().replace(/\s+/g, ' ');
+        active.set(name, value);
+      }
+      const invalid = [...active.entries()].find(([, value]) => /[;\r\n]/.test(value));
+      const policy = invalid ? '' : [...active].map(([name, value]) => name + (value ? ' ' + value : '')).join('; ');
+      policyOut.value = invalid
+        ? `⚠ ${invalid[0]} 값에는 세미콜론이나 줄바꿈을 사용할 수 없습니다.`
+        : `${headerName.value}: ${policy}`;
+      policyOut.style.color = invalid ? 'var(--danger)' : '';
+      warnings.innerHTML = '';
+      if (invalid) {
+        warnings.append(h('p', { class: 'error' }, '잘못된 값을 수정해야 헤더를 생성할 수 있습니다.'));
+        return;
+      }
+      const issues = analyze(active);
+      if (!issues.length) {
+        warnings.append(h('div', { class: 'note', style: { color: 'var(--ok)' } }, '✓ 알려진 고위험 설정이 발견되지 않았습니다. 실제 서비스에서 필요한 출처만 허용했는지 추가로 확인하세요.'));
+        return;
+      }
+      warnings.append(h('div', { class: 'note', style: { borderLeft: '4px solid var(--danger)' } },
+        h('strong', { style: { color: 'var(--danger)' } }, `보안 경고 ${issues.length}개`),
+        h('ul', { style: { margin: '6px 0 0', paddingLeft: '20px' } },
+          issues.map(([level, message]) => h('li', null, `[${level}] ${message}`)))));
+    }
+
+    const table = h('table', { class: 'grid', style: { marginBottom: '12px' } },
+      h('thead', null, h('tr', null, h('th', null, '사용'), h('th', null, '지시어'), h('th', null, '허용 소스'))),
+      h('tbody', null, CSP_DIRECTIVES.map(([name, label, value, enabled]) => {
+        const checkbox = h('input', { type: 'checkbox', 'aria-label': `${name} 사용` });
+        checkbox.checked = enabled;
+        const input = h('input', { type: 'text', value, class: 'mono', 'aria-label': `${name} 허용 소스`, placeholder: "예: 'self' https://example.com" });
+        if (name === 'upgrade-insecure-requests') input.disabled = true;
+        checkbox.addEventListener('change', () => { input.disabled = !checkbox.checked || name === 'upgrade-insecure-requests'; update(); });
+        input.addEventListener('input', update);
+        rows.set(name, { checkbox, input });
+        return h('tr', null,
+          h('td', { style: { textAlign: 'center' } }, checkbox),
+          h('td', null, h('code', null, name), h('div', { style: { color: 'var(--muted)', fontSize: '12px' } }, label)),
+          h('td', null, name === 'upgrade-insecure-requests' ? h('span', { class: 'note' }, '값 없음') : input));
+      })));
+
+    const securePreset = Object.fromEntries(CSP_DIRECTIVES.filter(([, , , enabled]) => enabled).map(([name, , value]) => [name, value]));
+    const compatiblePreset = {
+      'default-src': "'self'", 'script-src': "'self' 'unsafe-inline'", 'style-src': "'self' 'unsafe-inline'",
+      'img-src': "'self' data: https:", 'font-src': "'self' data: https:", 'connect-src': "'self' https: wss:",
+      'object-src': "'none'", 'base-uri': "'self'", 'form-action': "'self'", 'frame-ancestors': "'self'",
+      'upgrade-insecure-requests': '',
+    };
+    const button = (label, onclick, primary = false) => h('button', { type: 'button', class: 'btn' + (primary ? ' primary' : ''), onclick }, label);
+    root.append(
+      h('div', { class: 'note', style: { marginBottom: '12px' } }, "소스는 공백으로 구분합니다. 'self', 'none', https://example.com, 'nonce-…' 또는 'sha256-…' 형식을 사용할 수 있습니다."),
+      h('div', { class: 'btn-row', style: { marginBottom: '12px' } },
+        button('권장 기본값', () => setPolicy(securePreset), true),
+        button('호환성 우선', () => setPolicy(compatiblePreset)),
+        button('모두 해제', () => setPolicy({}))),
+      h('div', { style: { overflowX: 'auto' } }, table),
+      h('div', { class: 'opt-row', style: { marginBottom: '10px' } }, h('span', { class: 'opt-item' }, h('label', null, '헤더 종류'), headerName)),
+      h('div', { class: 'out-head' }, h('label', { class: 'io-label' }, '생성된 헤더'), copyBtn(() => policyOut.value)),
+      policyOut,
+      h('h3', { style: { fontSize: '16px', marginBottom: '8px' } }, '보안 검사'),
+      warnings);
+    headerName.addEventListener('change', update);
+    update();
+  },
+});
+
 /* ---------- 참조표 ---------- */
 const HTTP_CODES = {
   '1xx 정보': [[100, 'Continue'], [101, 'Switching Protocols'], [103, 'Early Hints']],

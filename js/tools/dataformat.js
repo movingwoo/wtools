@@ -1,7 +1,89 @@
 // 데이터 포맷 변환
-import { tool, makeIO, h, kvTable } from '../core.js';
+import { tool, makeIO, h, kvTable, loadScript, LIB } from '../core.js';
 
 const CAT = '데이터 포맷 변환';
+
+tool({
+  id: 'json-query', cat: CAT, name: 'JSONPath / JMESPath 테스터',
+  desc: 'JSONPath 또는 JMESPath 표현식으로 JSON 데이터의 원하는 값을 조회합니다.',
+  keywords: 'jsonpath jmespath json query path filter 조회 경로',
+  render(root) {
+    makeIO(root, {
+      inputs: [
+        { id: 'json', label: 'JSON 데이터', rows: 10, value: '{\n  "users": [\n    {"name": "김민수", "age": 31},\n    {"name": "이서연", "age": 27}\n  ]\n}' },
+        { id: 'query', label: '질의 표현식', rows: 2, value: '$.users[*].name' },
+      ],
+      options: [{ id: 'engine', label: '문법', type: 'select', values: [['jsonpath', 'JSONPath'], ['jmespath', 'JMESPath']] }],
+      outputRows: 10,
+      async process(v, o) {
+        if (!v.json.trim() || !v.query.trim()) return '';
+        const data = JSON.parse(v.json);
+        let result;
+        if (o.engine === 'jsonpath') {
+          await loadScript(LIB.jsonpath);
+          result = JSONPath.JSONPath({ path: v.query.trim(), json: data });
+        } else {
+          await loadScript(LIB.jmespath);
+          result = jmespath.search(data, v.query.trim());
+        }
+        return JSON.stringify(result, null, 2);
+      },
+      note: 'JMESPath를 선택하면 예: users[*].name 형식으로 입력하세요.',
+    });
+  },
+});
+
+function schemaExample(schema, seen = new Set()) {
+  if (!schema || typeof schema !== 'object') return null;
+  if ('example' in schema) return schema.example;
+  if ('default' in schema) return schema.default;
+  if ('const' in schema) return schema.const;
+  if (schema.enum?.length) return schema.enum[0];
+  if (seen.has(schema)) return null;
+  seen.add(schema);
+  const type = Array.isArray(schema.type) ? schema.type.find((x) => x !== 'null') : schema.type;
+  let value;
+  if (type === 'object' || schema.properties) {
+    value = {};
+    for (const [key, child] of Object.entries(schema.properties || {})) value[key] = schemaExample(child, seen);
+  } else if (type === 'array') value = [schemaExample(schema.items || {}, seen)];
+  else if (type === 'string') value = schema.format === 'date-time' ? new Date().toISOString()
+    : schema.format === 'date' ? new Date().toISOString().slice(0, 10) : '';
+  else if (type === 'integer' || type === 'number') value = schema.minimum ?? 0;
+  else if (type === 'boolean') value = false;
+  else value = null;
+  seen.delete(schema);
+  return value;
+}
+
+tool({
+  id: 'json-schema', cat: CAT, name: 'JSON Schema 검증 / 샘플 생성',
+  desc: 'JSON Schema로 데이터를 검증하고 스키마 기반 예제 JSON을 생성합니다.',
+  keywords: 'json schema validate ajv draft sample mock 검증 샘플',
+  render(root) {
+    makeIO(root, {
+      inputs: [
+        { id: 'json', label: '검증할 JSON', rows: 8, value: '{"name":"홍길동","age":20}' },
+        { id: 'schema', label: 'JSON Schema (Draft-07)', rows: 12, value: '{\n  "$schema": "http://json-schema.org/draft-07/schema#",\n  "type": "object",\n  "required": ["name", "age"],\n  "properties": {\n    "name": {"type": "string", "example": "홍길동"},\n    "age": {"type": "integer", "minimum": 0}\n  }\n}' },
+      ],
+      actions: [{ id: 'validate', label: '검증' }, { id: 'sample', label: '샘플 생성' }],
+      autorun: false, outputRows: 12,
+      async process(v, o, action) {
+        if (!v.schema.trim()) throw new Error('JSON Schema를 입력하세요.');
+        const schema = JSON.parse(v.schema);
+        if (action === 'sample') return JSON.stringify(schemaExample(schema), null, 2);
+        if (!v.json.trim()) throw new Error('검증할 JSON을 입력하세요.');
+        await loadScript(LIB.ajv);
+        const ajv = new Ajv({ allErrors: true, jsonPointers: true, schemaId: 'auto' });
+        const validate = ajv.compile(schema);
+        const valid = validate(JSON.parse(v.json));
+        if (valid) return '✔ JSON 데이터가 스키마에 맞습니다.';
+        return validate.errors.map((e, i) => `${i + 1}. ${e.dataPath || '/'}: ${e.message}`).join('\n');
+      },
+      note: '검증은 JSON Schema Draft-07을 지원합니다. 샘플은 properties, items, example, default, enum 등 기본 키워드를 사용합니다.',
+    });
+  },
+});
 
 /* ---------- CSV ---------- */
 export function parseCSV(text, delim = ',') {
@@ -70,6 +152,67 @@ export function parseXML(text) {
   return { [doc.documentElement.tagName]: xmlToObj(doc.documentElement) };
 }
 
+/* ---------- ENV ---------- */
+function parseEnvValue(raw, lineNo, errors) {
+  const value = raw.trim();
+  if (!value) return '';
+  const quote = value[0];
+  if (quote === "'" || quote === '"') {
+    let end = -1, escaped = false;
+    for (let i = 1; i < value.length; i++) {
+      if (quote === '"' && value[i] === '\\' && !escaped) { escaped = true; continue; }
+      if (value[i] === quote && !escaped) { end = i; break; }
+      escaped = false;
+    }
+    if (end < 0) { errors.push(`${lineNo}행: 닫히지 않은 따옴표입니다.`); return ''; }
+    const tail = value.slice(end + 1).trim();
+    if (tail && !tail.startsWith('#')) errors.push(`${lineNo}행: 따옴표 뒤에 올바르지 않은 문자가 있습니다.`);
+    const inner = value.slice(1, end);
+    if (quote === "'") return inner;
+    return inner.replace(/\\(n|r|t|"|\\)/g, (_, c) => ({ n: '\n', r: '\r', t: '\t', '"': '"', '\\': '\\' }[c]));
+  }
+  return value.replace(/\s+#.*$/, '').trimEnd();
+}
+
+export function parseEnv(text) {
+  const result = {}, seen = new Map(), errors = [];
+  text.split(/\r?\n/).forEach((line, index) => {
+    const lineNo = index + 1;
+    let src = line.trim();
+    if (!src || src.startsWith('#')) return;
+    if (/^export\s+/.test(src)) src = src.replace(/^export\s+/, '');
+    const eq = src.indexOf('=');
+    if (eq < 0) { errors.push(`${lineNo}행: KEY=value 형식에서 등호(=)가 없습니다.`); return; }
+    const key = src.slice(0, eq).trim();
+    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) {
+      errors.push(`${lineNo}행: 올바르지 않은 변수명 "${key}"입니다.`);
+      return;
+    }
+    if (seen.has(key)) errors.push(`${lineNo}행: "${key}" 키가 중복되었습니다. (처음 선언: ${seen.get(key)}행)`);
+    else seen.set(key, lineNo);
+    result[key] = parseEnvValue(src.slice(eq + 1), lineNo, errors);
+  });
+  if (errors.length) throw new Error('ENV 구문 오류:\n' + errors.join('\n'));
+  return result;
+}
+
+function toEnv(data) {
+  if (!data || typeof data !== 'object' || Array.isArray(data))
+    throw new Error('ENV로 변환하려면 최상위 데이터가 객체여야 합니다.');
+  const quote = (value) => {
+    if (value == null) return '';
+    if (typeof value === 'object') throw new Error('ENV는 중첩 객체나 배열을 표현할 수 없습니다. 평면 객체를 입력하세요.');
+    const str = String(value);
+    if (!str) return '';
+    if (/^[A-Za-z0-9_./:@%+-]+$/.test(str)) return str;
+    return '"' + str.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\n/g, '\\n').replace(/\r/g, '\\r').replace(/\t/g, '\\t') + '"';
+  };
+  return Object.entries(data).map(([key, value]) => {
+    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) throw new Error(`ENV 변수명으로 사용할 수 없는 키입니다: "${key}"`);
+    return `${key}=${quote(value)}`;
+  }).join('\n');
+}
+
 /* ---------- 표 형태(2차원 배열) ↔ 객체 배열 ---------- */
 function rowsToObjects(rows) {
   const [head, ...body] = rows;
@@ -89,11 +232,11 @@ async function toml() {
 }
 
 tool({
-  id: 'data-convert', cat: CAT, name: 'JSON ↔ YAML ↔ XML ↔ CSV ↔ TOML',
-  desc: '데이터를 5가지 포맷 간에 상호 변환합니다.',
-  keywords: 'convert json yaml xml csv toml',
+  id: 'data-convert', cat: CAT, name: 'JSON ↔ YAML ↔ XML ↔ CSV ↔ TOML ↔ ENV',
+  desc: '데이터를 JSON, YAML, XML, CSV, TOML, ENV 포맷 간에 상호 변환합니다.',
+  keywords: 'convert json yaml xml csv toml env dotenv environment',
   render(root) {
-    const FMT = [['json', 'JSON'], ['yaml', 'YAML'], ['xml', 'XML'], ['csv', 'CSV'], ['toml', 'TOML']];
+    const FMT = [['json', 'JSON'], ['yaml', 'YAML'], ['xml', 'XML'], ['csv', 'CSV'], ['toml', 'TOML'], ['env', 'ENV (.env)']];
     makeIO(root, {
       inputs: [{ id: 'input', label: '입력', rows: 12, value: '{\n  "name": "WTools",\n  "version": 1,\n  "tags": ["web", "tools"]\n}' }],
       options: [
@@ -110,6 +253,7 @@ tool({
           case 'xml': data = parseXML(text); break;
           case 'csv': data = rowsToObjects(parseCSV(text)); break;
           case 'toml': data = (await toml()).parse(text); break;
+          case 'env': data = parseEnv(text); break;
         }
         switch (o.to) {
           case 'json': return JSON.stringify(data, null, 2);
@@ -135,8 +279,10 @@ tool({
               throw new Error('TOML의 최상위는 객체(테이블)여야 합니다.');
             return (await toml()).stringify(data);
           }
+          case 'env': return toEnv(data);
         }
       },
+      note: 'ENV 값은 숫자나 true/false처럼 보여도 문자열로 유지됩니다. 중복 키와 잘못된 구문은 줄 번호와 함께 표시합니다.',
     });
   },
 });

@@ -125,6 +125,135 @@ tool({
   },
 });
 
+async function pbkdf2(password, salt, iterations, hash, length) {
+  const key = await crypto.subtle.importKey('raw', strToBytes(password), 'PBKDF2', false, ['deriveBits']);
+  const bits = await crypto.subtle.deriveBits({ name: 'PBKDF2', salt, iterations, hash }, key, length * 8);
+  return new Uint8Array(bits);
+}
+
+tool({
+  id: 'password-hash', cat: CAT, name: '비밀번호 해시 생성 / 검증',
+  desc: 'PBKDF2 또는 bcrypt로 비밀번호 해시를 생성하고 검증합니다.',
+  keywords: 'password hash pbkdf2 bcrypt salt verify 비밀번호 해시 검증',
+  render(root) {
+    makeIO(root, {
+      inputs: [
+        { id: 'password', label: '비밀번호', rows: 2, value: 'correct horse battery staple' },
+        { id: 'encoded', label: '검증할 해시 (검증 시)', rows: 3, placeholder: '$pbkdf2-sha256$310000$... 또는 $2b$...' },
+      ],
+      options: [
+        { id: 'alg', label: '알고리즘', type: 'select', values: [['pbkdf2', 'PBKDF2-SHA-256'], ['bcrypt', 'bcrypt']] },
+        { id: 'iterations', label: 'PBKDF2 반복 횟수', type: 'number', value: 310000, size: 100 },
+        { id: 'bcryptCost', label: 'bcrypt Cost', type: 'number', value: 12, size: 70 },
+      ],
+      actions: [{ id: 'generate', label: '해시 생성' }, { id: 'verify', label: '검증' }],
+      autorun: false, outputRows: 5,
+      async process(v, o, action) {
+        if (!v.password) throw new Error('비밀번호를 입력하세요.');
+        if (o.alg === 'bcrypt') {
+          await loadScript(LIB.bcrypt);
+          const bcrypt = dcodeIO.bcrypt;
+          if (action === 'verify') {
+            if (!/^\$2[aby]\$/.test(v.encoded.trim())) throw new Error('올바른 bcrypt 해시를 입력하세요.');
+            return bcrypt.compareSync(v.password, v.encoded.trim()) ? '✔ 비밀번호가 일치합니다.' : '✘ 비밀번호가 일치하지 않습니다.';
+          }
+          const cost = Math.trunc(+o.bcryptCost);
+          if (cost < 4 || cost > 15) throw new Error('bcrypt Cost는 4~15로 입력하세요.');
+          return bcrypt.hashSync(v.password, bcrypt.genSaltSync(cost));
+        }
+        if (action === 'verify') {
+          const m = v.encoded.trim().match(/^\$pbkdf2-sha256\$(\d+)\$([A-Za-z0-9_-]+)\$([A-Za-z0-9_-]+)$/);
+          if (!m) throw new Error('올바른 PBKDF2 해시를 입력하세요.');
+          const salt = b64ToBytes(m[2]);
+          const actual = await pbkdf2(v.password, salt, +m[1], 'SHA-256', b64ToBytes(m[3]).length);
+          const expected = b64ToBytes(m[3]);
+          let diff = actual.length ^ expected.length;
+          for (let i = 0; i < Math.min(actual.length, expected.length); i++) diff |= actual[i] ^ expected[i];
+          return diff === 0 ? '✔ 비밀번호가 일치합니다.' : '✘ 비밀번호가 일치하지 않습니다.';
+        }
+        const iterations = Math.trunc(+o.iterations);
+        if (iterations < 10000 || iterations > 5000000) throw new Error('PBKDF2 반복 횟수는 10,000~5,000,000으로 입력하세요.');
+        const salt = crypto.getRandomValues(new Uint8Array(16));
+        const hash = await pbkdf2(v.password, salt, iterations, 'SHA-256', 32);
+        const b64url = (b) => bytesToB64(b).replace(/=+$/g, '').replace(/\+/g, '-').replace(/\//g, '_');
+        return `$pbkdf2-sha256$${iterations}$${b64url(salt)}$${b64url(hash)}`;
+      },
+      note: '비밀번호와 해시는 브라우저 밖으로 전송되지 않습니다. bcrypt 선택 시 반복/Cost 값을 10~12 정도로 사용하세요.',
+    });
+  },
+});
+
+const B32 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+function base32Decode(text) {
+  const clean = text.toUpperCase().replace(/[\s=-]/g, '');
+  if (!clean || /[^A-Z2-7]/.test(clean)) throw new Error('올바른 Base32 시크릿을 입력하세요.');
+  let bits = '';
+  for (const c of clean) bits += B32.indexOf(c).toString(2).padStart(5, '0');
+  return Uint8Array.from(bits.match(/.{8}/g) || [], (x) => parseInt(x, 2));
+}
+function hotp(secret, counter, digits, algorithm) {
+  const msg = new Uint8Array(8);
+  let n = BigInt(counter);
+  for (let i = 7; i >= 0; i--) { msg[i] = Number(n & 255n); n >>= 8n; }
+  const words = CryptoJS.lib.WordArray.create(secret);
+  const data = CryptoJS.lib.WordArray.create(msg);
+  const mac = CryptoJS['Hmac' + algorithm](data, words).toString();
+  const bytes = hexToBytes(mac), offset = bytes[bytes.length - 1] & 15;
+  const bin = ((bytes[offset] & 127) << 24) | (bytes[offset + 1] << 16) | (bytes[offset + 2] << 8) | bytes[offset + 3];
+  return String(bin % (10 ** digits)).padStart(digits, '0');
+}
+
+tool({
+  id: 'otp', cat: CAT, name: 'TOTP / HOTP 생성·검증',
+  desc: 'Base32 시크릿으로 일회용 인증 코드를 만들고 otpauth QR 코드를 생성합니다.',
+  keywords: 'totp hotp otp authenticator 2fa mfa qr one time password',
+  render(root) {
+    makeIO(root, {
+      inputs: [
+        { id: 'secret', label: 'Base32 시크릿', rows: 2, value: 'JBSWY3DPEHPK3PXP' },
+        { id: 'code', label: '검증할 코드 (검증 시)', rows: 1, placeholder: '123456' },
+      ],
+      options: [
+        { id: 'type', label: '방식', type: 'select', values: [['totp', 'TOTP (시간 기반)'], ['hotp', 'HOTP (카운터 기반)']] },
+        { id: 'algorithm', label: '알고리즘', type: 'select', values: ['SHA1', 'SHA256', 'SHA512'] },
+        { id: 'digits', label: '자릿수', type: 'select', values: [['6', '6자리'], ['8', '8자리']] },
+        { id: 'period', label: '주기/카운터', type: 'number', value: 30, size: 90 },
+        { id: 'account', label: '계정', type: 'text', value: 'user@example.com', size: 160 },
+        { id: 'issuer', label: '발급자', type: 'text', value: 'W-Tools', size: 120 },
+      ],
+      actions: [{ id: 'generate', label: '코드 생성' }, { id: 'verify', label: '코드 검증' }, { id: 'uri', label: 'URI / QR 생성' }],
+      autorun: false, outputHTML: true,
+      async process(v, o, action) {
+        const secret = base32Decode(v.secret);
+        const digits = +o.digits;
+        const amount = Math.trunc(+o.period);
+        if (amount < 0 || (o.type === 'totp' && amount === 0)) throw new Error('TOTP 주기는 1 이상, HOTP 카운터는 0 이상이어야 합니다.');
+        const counter = o.type === 'totp' ? Math.floor(Date.now() / 1000 / (amount || 30)) : amount;
+        if (action === 'verify') {
+          if (!/^\d+$/.test(v.code.trim())) throw new Error('검증할 숫자 코드를 입력하세요.');
+          const window = o.type === 'totp' ? [-1, 0, 1] : [0];
+          const ok = window.some((d) => hotp(secret, counter + d, digits, o.algorithm) === v.code.trim());
+          return h('p', { style: { color: ok ? 'var(--ok)' : 'var(--danger)', fontWeight: '700' } }, ok ? '✔ 코드가 유효합니다.' : '✘ 코드가 올바르지 않습니다.');
+        }
+        const params = new URLSearchParams({ secret: v.secret.replace(/[\s=-]/g, '').toUpperCase(), issuer: o.issuer, algorithm: o.algorithm, digits: String(digits) });
+        params.set(o.type === 'totp' ? 'period' : 'counter', String(amount || (o.type === 'totp' ? 30 : 0)));
+        const label = encodeURIComponent(`${o.issuer}:${o.account}`);
+        const uri = `otpauth://${o.type}/${label}?${params}`;
+        if (action === 'uri') {
+          await loadScript(LIB.qrcode);
+          const qr = qrcode(0, 'M'); qr.addData(uri); qr.make();
+          const img = h('div'); img.innerHTML = qr.createImgTag(5, 8);
+          return h('div', null, h('pre', { style: { whiteSpace: 'pre-wrap', wordBreak: 'break-all' } }, uri), img);
+        }
+        const code = hotp(secret, counter, digits, o.algorithm);
+        return h('div', null, h('div', { style: { fontSize: '2rem', fontWeight: '700', letterSpacing: '.15em' } }, code),
+          h('div', { class: 'note' }, o.type === 'totp' ? `${amount || 30}초 주기 · 현재 남은 시간 ${amount - (Math.floor(Date.now() / 1000) % amount)}초` : `카운터 ${amount}`));
+      },
+      note: '시크릿은 외부로 전송되지 않습니다. TOTP 검증은 시계 오차를 고려해 앞뒤 한 주기를 허용합니다.',
+    });
+  },
+});
+
 /* ---------- RSA / PGP (jsrsasign / openpgp) ---------- */
 tool({
   id: 'rsa-keygen', cat: CAT, name: 'RSA 키페어 생성',

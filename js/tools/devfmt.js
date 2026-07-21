@@ -1,8 +1,90 @@
 // 코드 포맷팅 / 개발 유틸리티
 import { tool, makeIO, h, kvTable, loadScript, loadCss, LIB, decodeInput, FMT_IN } from '../core.js';
-import { parseXML } from './dataformat.js';
+import { parseXML, parseCSV, toCSV } from './dataformat.js';
 
 const CAT = '코드 포맷팅 / 개발 유틸리티';
+
+function shellTokens(text) {
+  const out = [];
+  let token = '', quote = '', escaped = false;
+  for (const c of text.trim()) {
+    if (escaped) { token += c; escaped = false; continue; }
+    if (c === '\\' && quote !== "'") { escaped = true; continue; }
+    if (quote) { if (c === quote) quote = ''; else token += c; continue; }
+    if (c === "'" || c === '"') quote = c;
+    else if (/\s/.test(c)) { if (token) { out.push(token); token = ''; } }
+    else token += c;
+  }
+  if (quote) throw new Error('닫히지 않은 따옴표가 있습니다.');
+  if (escaped) token += '\\';
+  if (token) out.push(token);
+  return out;
+}
+
+function curlToFetch(text) {
+  const args = shellTokens(text.replace(/\\\r?\n/g, ' '));
+  if (args.shift() !== 'curl') throw new Error('curl 명령으로 시작해야 합니다.');
+  let url = '', method = '', body = '', user = '';
+  const headers = {};
+  for (let i = 0; i < args.length; i++) {
+    const a = args[i];
+    if (['-X', '--request'].includes(a)) method = args[++i] || '';
+    else if (['-H', '--header'].includes(a)) {
+      const line = args[++i] || '', p = line.indexOf(':');
+      if (p < 1) throw new Error('헤더는 "이름: 값" 형식이어야 합니다.');
+      headers[line.slice(0, p).trim()] = line.slice(p + 1).trim();
+    } else if (['-d', '--data', '--data-raw', '--data-binary'].includes(a)) body = args[++i] ?? '';
+    else if (['-u', '--user'].includes(a)) user = args[++i] || '';
+    else if (a === '-I' || a === '--head') method = 'HEAD';
+    else if (a === '-L' || a === '--location' || a === '-s' || a === '--silent') continue;
+    else if (!a.startsWith('-')) url = a;
+    else throw new Error(`아직 지원하지 않는 cURL 옵션입니다: ${a}`);
+  }
+  if (!url) throw new Error('요청 URL을 찾을 수 없습니다.');
+  if (user) headers.Authorization = 'Basic ' + btoa(unescape(encodeURIComponent(user)));
+  if (!method) method = body ? 'POST' : 'GET';
+  const options = { method };
+  if (Object.keys(headers).length) options.headers = headers;
+  if (body) options.body = body;
+  return `const response = await fetch(${JSON.stringify(url)}, ${JSON.stringify(options, null, 2)});\n` +
+    'if (!response.ok) throw new Error(`HTTP ${response.status}`);\n' +
+    'const data = await response.json();';
+}
+
+function fetchToCurl(text) {
+  const m = text.match(/fetch\s*\(\s*(["'`])([^"'`]+)\1\s*(?:,\s*({[\s\S]*}))?\s*\)/);
+  if (!m) throw new Error('fetch(URL, 옵션) 호출을 찾을 수 없습니다. 문자열 URL과 JSON 형태의 옵션을 사용하세요.');
+  let opts = {};
+  if (m[3]) {
+    let raw = m[3].replace(/([{,]\s*)([A-Za-z_$][\w$]*)\s*:/g, '$1"$2":').replace(/'/g, '"');
+    try { opts = JSON.parse(raw); } catch { throw new Error('fetch 옵션은 문자열 키/값으로 된 JSON 형태만 변환할 수 있습니다.'); }
+  }
+  const q = (s) => "'" + String(s).replace(/'/g, "'\\''") + "'";
+  const parts = ['curl'];
+  if (opts.method && opts.method.toUpperCase() !== 'GET') parts.push('-X', opts.method.toUpperCase());
+  for (const [k, v] of Object.entries(opts.headers || {})) parts.push('-H', q(`${k}: ${v}`));
+  if (opts.body != null) parts.push('--data-raw', q(opts.body));
+  parts.push(q(m[2]));
+  return parts.join(' ');
+}
+
+tool({
+  id: 'curl-fetch', cat: CAT, name: 'cURL ↔ fetch 변환기',
+  desc: 'cURL 명령과 브라우저 JavaScript fetch 코드를 서로 변환합니다.',
+  keywords: 'curl fetch api http request convert 변환 요청',
+  render(root) {
+    makeIO(root, {
+      inputs: [{ id: 'input', label: 'cURL 또는 fetch 코드', rows: 10, value: "curl -X POST 'https://api.example.com/users' -H 'Content-Type: application/json' --data-raw '{\"name\":\"홍길동\"}'" }],
+      actions: [{ id: 'toFetch', label: 'cURL → fetch' }, { id: 'toCurl', label: 'fetch → cURL' }],
+      autorun: false, outputRows: 12,
+      process(text, o, action) {
+        if (!text.trim()) return '';
+        return action === 'toCurl' ? fetchToCurl(text) : curlToFetch(text);
+      },
+      note: '안전하게 코드를 생성만 하며 실제 네트워크 요청은 보내지 않습니다. 기본 옵션, 헤더, 본문, Basic 인증을 지원합니다.',
+    });
+  },
+});
 
 /* ---------- JSON ---------- */
 function jsonTree(value, key) {
@@ -221,12 +303,56 @@ tool({
   },
 });
 
+const REGEX_CHEATS = [
+  ['문자 클래스', '.', '줄바꿈을 제외한 임의 문자', 'a.c'],
+  ['문자 클래스', '\\d', '숫자 한 글자', '\\d+'],
+  ['문자 클래스', '\\D', '숫자가 아닌 문자', '\\D+'],
+  ['문자 클래스', '\\w', '영문자·숫자·밑줄', '\\w+'],
+  ['문자 클래스', '\\W', '단어 문자가 아닌 문자', '\\W+'],
+  ['문자 클래스', '\\s', '공백 문자', '\\s+'],
+  ['문자 클래스', '\\S', '공백이 아닌 문자', '\\S+'],
+  ['문자 클래스', '[abc]', '목록 중 한 문자', '[abc]'],
+  ['문자 클래스', '[^abc]', '목록에 없는 한 문자', '[^abc]'],
+  ['문자 클래스', '[a-z]', '범위 안의 한 문자', '[A-Za-z]'],
+  ['문자 클래스', '\\p{…}', '유니코드 속성에 해당하는 문자 (u 플래그 필요)', '\\p{Letter}+'],
+  ['수량자', '*', '0회 이상 반복', 'a*'],
+  ['수량자', '+', '1회 이상 반복', 'a+'],
+  ['수량자', '?', '0회 또는 1회', 'a?'],
+  ['수량자', '{n}', '정확히 n회', '\\d{4}'],
+  ['수량자', '{n,}', 'n회 이상', '\\d{2,}'],
+  ['수량자', '{n,m}', 'n회 이상 m회 이하', '\\d{2,4}'],
+  ['수량자', '*?', '최소 범위로 반복하는 게으른 수량자', '.*?'],
+  ['앵커', '^', '문자열 또는 줄의 시작', '^제목'],
+  ['앵커', '$', '문자열 또는 줄의 끝', '끝$'],
+  ['앵커', '\\b', '단어 경계', '\\bword\\b'],
+  ['앵커', '\\B', '단어 경계가 아닌 위치', '\\Bword'],
+  ['그룹', '(…)', '캡처 그룹', '(abc)'],
+  ['그룹', '(?:…)', '캡처하지 않는 그룹', '(?:abc)'],
+  ['그룹', '(?<name>…)', '이름 있는 캡처 그룹', '(?<word>\\w+)'],
+  ['그룹', '\\1', '첫 번째 캡처 그룹 역참조', '(\\w+)\\s+\\1'],
+  ['그룹', '\\k<name>', '이름 있는 그룹 역참조', '(?<word>\\w+)\\s+\\k<word>'],
+  ['탐색', '(?=…)', '뒤에 패턴이 오는 위치 (긍정 전방 탐색)', '\\d+(?=원)'],
+  ['탐색', '(?!…)', '뒤에 패턴이 오지 않는 위치 (부정 전방 탐색)', 'foo(?!bar)'],
+  ['탐색', '(?<=…)', '앞에 패턴이 있는 위치 (긍정 후방 탐색)', '(?<=₩)\\d+'],
+  ['탐색', '(?<!…)', '앞에 패턴이 없는 위치 (부정 후방 탐색)', '(?<!-)\\d+'],
+  ['기타', 'a|b', '왼쪽 또는 오른쪽 패턴', '고양이|강아지'],
+  ['기타', '\\.', '특수 문자를 문자 그대로 찾기', '\\.' ],
+  ['플래그', 'g', '첫 매치가 아닌 모든 매치 검색', 'g', 'flag'],
+  ['플래그', 'i', '영문 대소문자 무시', 'i', 'flag'],
+  ['플래그', 'm', '^와 $를 각 줄의 시작과 끝에도 적용', 'm', 'flag'],
+  ['플래그', 's', '점(.)이 줄바꿈에도 매치', 's', 'flag'],
+  ['플래그', 'u', '유니코드 코드 포인트 단위로 처리', 'u', 'flag'],
+  ['플래그', 'y', 'lastIndex 위치에서만 고정 검색', 'y', 'flag'],
+  ['플래그', 'd', '매치와 그룹의 시작·끝 인덱스 기록', 'd', 'flag'],
+  ['플래그', 'v', '유니코드 집합 표기 확장 (최신 브라우저)', 'v', 'flag'],
+];
+
 tool({
-  id: 'regex-tester', cat: CAT, name: '정규식 테스터',
-  desc: '정규식을 실시간으로 테스트하고 매치 결과, 캡처 그룹, 치환 결과를 확인합니다.',
-  keywords: 'regex regexp pattern match replace',
+  id: 'regex-tester', cat: CAT, name: '정규식 테스터 + 치트시트',
+  desc: '정규식을 실시간으로 테스트하고 검색 가능한 JavaScript 정규식 치트시트를 제공합니다.',
+  keywords: 'regex regexp pattern match replace cheat sheet reference 문법 치트시트 정규표현식',
   render(root) {
-    makeIO(root, {
+    const io = makeIO(root, {
       inputs: [{ id: 'text', label: '테스트 문자열', rows: 6, value: '연락처: kim@example.com, lee@test.co.kr\n전화: 010-1234-5678' }],
       options: [
         { id: 'pattern', label: '패턴', type: 'text', size: 300, value: '[\\w.]+@[\\w.]+' },
@@ -276,6 +402,47 @@ tool({
         return box;
       },
     });
+
+    const search = h('input', { type: 'text', placeholder: '문법 또는 설명 검색', 'aria-label': '정규식 치트시트 검색', style: { width: '100%', margin: '10px 0' } });
+    const result = h('div', { 'aria-live': 'polite' });
+    function insert(item) {
+      if (item[4] === 'flag') {
+        const flags = io.optEls.flags;
+        if (!flags.value.includes(item[1])) flags.value += item[1];
+        flags.dispatchEvent(new Event('input'));
+        return;
+      }
+      const pattern = io.optEls.pattern;
+      const start = pattern.selectionStart ?? pattern.value.length;
+      const end = pattern.selectionEnd ?? start;
+      pattern.setRangeText(item[3], start, end, 'end');
+      pattern.focus();
+      pattern.dispatchEvent(new Event('input'));
+    }
+    function drawCheats() {
+      const query = search.value.trim().toLocaleLowerCase();
+      const items = REGEX_CHEATS.filter((item) => !query || item.slice(0, 4).join(' ').toLocaleLowerCase().includes(query));
+      result.innerHTML = '';
+      if (!items.length) {
+        result.append(h('p', { class: 'note' }, '검색 결과가 없습니다.'));
+        return;
+      }
+      const table = h('table', { class: 'grid' },
+        h('thead', null, h('tr', null, ['분류', '문법', '설명', '삽입 예시'].map((label) => h('th', null, label)))),
+        h('tbody', null, items.map((item) => h('tr', null,
+          h('td', null, item[0]),
+          h('td', null, h('button', { type: 'button', class: 'copy-mini', title: item[4] === 'flag' ? '플래그에 추가' : '패턴에 삽입', onclick: () => insert(item) }, item[1])),
+          h('td', null, item[2]),
+          h('td', { class: 'mono' }, item[3])))));
+      result.append(h('div', { style: { overflowX: 'auto' } }, table));
+    }
+    const cheats = h('details', { style: { marginTop: '16px' } },
+      h('summary', { style: { cursor: 'pointer', fontWeight: '700' } }, `정규식 치트시트 (${REGEX_CHEATS.length}개)`),
+      h('div', { class: 'note', style: { marginTop: '10px' } }, 'JavaScript 정규식 기준입니다. 문법 버튼은 패턴에 예시를 삽입하고, 플래그 버튼은 플래그 입력에 추가합니다. 후방 탐색은 ES2018+, v 플래그는 최신 브라우저 지원이 필요합니다.'),
+      search, result);
+    search.addEventListener('input', drawCheats);
+    root.append(cheats);
+    drawCheats();
   },
 });
 
@@ -349,6 +516,97 @@ tool({
   },
 });
 
+function markdownHeadingText(raw) {
+  return raw
+    .replace(/\s+#+\s*$/, '')
+    .replace(/!\[([^\]]*)\]\([^)]*\)/g, '$1')
+    .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')
+    .replace(/<[^>]+>/g, '')
+    .replace(/[`*_~]/g, '')
+    .replace(/\\([\\`*{}\[\]()#+\-.!_>])/g, '$1')
+    .trim();
+}
+
+function githubHeadingSlug(text, seen) {
+  const base = text.toLocaleLowerCase()
+    .replace(/[^\p{L}\p{N}\p{M}\s_-]/gu, '')
+    .trim()
+    .replace(/\s/g, '-');
+  const count = seen.get(base) || 0;
+  seen.set(base, count + 1);
+  return base + (count ? '-' + count : '');
+}
+
+function markdownHeadings(text) {
+  const headings = [];
+  const lines = text.replace(/\r\n?/g, '\n').split('\n');
+  let fence = null;
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const fenceMatch = line.match(/^ {0,3}(`{3,}|~{3,})/);
+    if (fenceMatch) {
+      const marker = fenceMatch[1];
+      if (!fence) fence = { char: marker[0], length: marker.length };
+      else if (marker[0] === fence.char && marker.length >= fence.length) fence = null;
+      continue;
+    }
+    if (fence) continue;
+    const atx = line.match(/^ {0,3}(#{1,6})(?:\s+|$)(.*)$/);
+    if (atx) {
+      const title = markdownHeadingText(atx[2]);
+      if (title) headings.push({ level: atx[1].length, title, line: i + 1 });
+      continue;
+    }
+    if (i + 1 < lines.length && line.trim() && /^ {0,3}(=+|-+)\s*$/.test(lines[i + 1])) {
+      const title = markdownHeadingText(line);
+      if (title) headings.push({ level: lines[i + 1].trim()[0] === '=' ? 1 : 2, title, line: i + 1 });
+      i++;
+    }
+  }
+  const seen = new Map();
+  return headings.map((heading) => ({ ...heading, anchor: githubHeadingSlug(heading.title, seen) }));
+}
+
+tool({
+  id: 'markdown-toc', cat: CAT, name: 'Markdown 목차 생성기',
+  desc: 'Markdown 헤딩을 분석해 GitHub 스타일 앵커가 적용된 목차를 생성합니다.',
+  keywords: 'markdown md toc table of contents heading anchor slug 목차 헤딩 앵커 번호',
+  render(root) {
+    makeIO(root, {
+      inputs: [{
+        id: 'input', label: 'Markdown', rows: 14,
+        value: '# 프로젝트 안내\n\n## 설치\n\n### 요구 사항\n\n## 사용법\n\n### 기본 사용법\n\n### 기본 사용법',
+      }],
+      options: [
+        { id: 'includeH1', label: 'H1 포함', type: 'checkbox' },
+        { id: 'maxLevel', label: '최대 깊이', type: 'select', values: [['2', 'H2'], ['3', 'H3'], ['4', 'H4'], ['5', 'H5'], ['6', 'H6']], value: '3' },
+        { id: 'numbered', label: '번호 매기기', type: 'checkbox' },
+      ],
+      outputRows: 12, runOnLoad: true,
+      process(text, o) {
+        if (!text.trim()) return '';
+        const all = markdownHeadings(text);
+        if (!all.length) throw new Error('Markdown 헤딩을 찾을 수 없습니다. # 헤딩 또는 밑줄 형식 헤딩을 사용하세요.');
+        const minLevel = o.includeH1 ? 1 : 2;
+        const maxLevel = Number(o.maxLevel);
+        const selected = all.filter((heading) => heading.level >= minLevel && heading.level <= maxLevel);
+        if (!selected.length) throw new Error(`H${minLevel}~H${maxLevel} 범위의 헤딩을 찾을 수 없습니다.`);
+        const counters = Array(6).fill(0);
+        const result = selected.map((heading) => {
+          const depth = Math.max(0, heading.level - minLevel);
+          counters[depth]++;
+          counters.fill(0, depth + 1);
+          for (let i = 0; i < depth; i++) if (!counters[i]) counters[i] = 1;
+          const number = o.numbered ? counters.slice(0, depth + 1).join('.') + '. ' : '';
+          return `${'  '.repeat(depth)}- [${number}${heading.title}](#${heading.anchor})`;
+        });
+        return result.join('\n');
+      },
+      note: '코드 블록 안의 # 문자는 제외하며, 같은 제목은 두 번째부터 앵커에 -1, -2가 붙습니다. 앵커는 GitHub 방식에 맞춰 소문자와 하이픈으로 생성합니다.',
+    });
+  },
+});
+
 tool({
   id: 'html-strip', cat: CAT, name: 'HTML 렌더링 / 태그 제거',
   desc: 'HTML을 안전한 샌드박스에서 렌더링해 보거나, 태그를 제거해 순수 텍스트만 추출합니다.',
@@ -368,6 +626,149 @@ tool({
         doc.querySelectorAll('script,style').forEach((n) => n.remove());
         return h('pre', { style: { margin: 0, whiteSpace: 'pre-wrap' } }, doc.body.textContent.replace(/\n{3,}/g, '\n\n').trim());
       },
+    });
+  },
+});
+
+/* ---------- SQL INSERT ↔ JSON/CSV ---------- */
+function sqlIdentifier(text) {
+  const part = '(?:[A-Za-z_][A-Za-z0-9_$]*|`[^`]+`|"[^"]+"|\\[[^\\]]+\\])';
+  if (!new RegExp(`^${part}(?:\\.${part})*$`).test(text.trim())) throw new Error(`올바르지 않은 테이블명입니다: ${text}`);
+  return text.trim();
+}
+function unquoteSqlIdentifier(text) {
+  return text.trim().replace(/^([`"\[])(.*)[`"\]]$/, '$2');
+}
+function parseSqlLiteral(token) {
+  const value = token.trim();
+  if (/^null$/i.test(value)) return null;
+  if (/^true$/i.test(value)) return true;
+  if (/^false$/i.test(value)) return false;
+  if (/^[+-]?(?:\d+\.?\d*|\.\d+)(?:e[+-]?\d+)?$/i.test(value)) {
+    if (/^[+-]?\d+$/.test(value) && !Number.isSafeInteger(Number(value))) return value;
+    return Number(value);
+  }
+  if (value.startsWith("'") && value.endsWith("'"))
+    return value.slice(1, -1).replace(/''/g, "'").replace(/\\'/g, "'").replace(/\\\\/g, '\\');
+  throw new Error(`지원하지 않는 SQL 값입니다: ${value || '(빈 값)'}`);
+}
+function parseValueTuples(text) {
+  const rows = [];
+  let i = 0;
+  const skip = () => { while (/\s/.test(text[i] || '')) i++; };
+  while (i < text.length) {
+    skip();
+    if (text[i] === ';') { i++; skip(); break; }
+    if (text[i] !== '(') throw new Error('VALUES 뒤에는 괄호로 묶인 값 목록이 필요합니다.');
+    i++;
+    const row = [];
+    let token = '', quoted = false, closed = false;
+    while (i < text.length) {
+      const c = text[i];
+      if (quoted) {
+        token += c;
+        if (c === "'" && text[i + 1] === "'") { token += text[++i]; }
+        else if (c === '\\' && i + 1 < text.length) token += text[++i];
+        else if (c === "'") quoted = false;
+      } else if (c === "'") { quoted = true; token += c; }
+      else if (c === ',') { row.push(parseSqlLiteral(token)); token = ''; }
+      else if (c === ')') { row.push(parseSqlLiteral(token)); token = ''; closed = true; i++; break; }
+      else token += c;
+      i++;
+    }
+    if (quoted) throw new Error('닫히지 않은 SQL 문자열이 있습니다.');
+    if (!closed) throw new Error('닫히지 않은 VALUES 괄호가 있습니다.');
+    rows.push(row);
+    skip();
+    if (text[i] === ',') { i++; continue; }
+    if (text[i] === ';') { i++; skip(); break; }
+    if (i < text.length) throw new Error('VALUES 뒤의 ON CONFLICT, RETURNING, 서브쿼리 등은 지원하지 않습니다.');
+  }
+  if (text.slice(i).trim()) throw new Error('한 번에 하나의 INSERT 문만 변환할 수 있습니다.');
+  if (!rows.length) throw new Error('VALUES 행을 찾을 수 없습니다.');
+  return rows;
+}
+function parseSqlInsert(text) {
+  const m = text.trim().match(/^INSERT\s+INTO\s+(.+?)\s*\(([^()]*)\)\s*VALUES\s*/i);
+  if (!m) throw new Error('INSERT INTO 테이블 (컬럼...) VALUES (...) 형식만 지원합니다.');
+  const table = sqlIdentifier(m[1]);
+  const rawColumns = m[2].split(',').map((x) => x.trim());
+  if (rawColumns.some((x) => !/^(?:[A-Za-z_][A-Za-z0-9_$]*|`[^`]+`|"[^"]+"|\[[^\]]+\])$/.test(x)))
+    throw new Error('컬럼 목록에 올바르지 않은 식별자가 있습니다.');
+  const columns = rawColumns.map(unquoteSqlIdentifier);
+  if (!columns.length || columns.some((x) => !x)) throw new Error('컬럼 목록이 비어 있습니다.');
+  if (new Set(columns).size !== columns.length) throw new Error('중복된 컬럼명이 있습니다.');
+  const rows = parseValueTuples(text.trim().slice(m[0].length));
+  rows.forEach((row, i) => {
+    if (row.length !== columns.length) throw new Error(`${i + 1}번째 행의 값 개수(${row.length})가 컬럼 개수(${columns.length})와 다릅니다.`);
+  });
+  return { table, columns, records: rows.map((row) => Object.fromEntries(columns.map((key, i) => [key, row[i]]))) };
+}
+function recordsFromJson(text) {
+  const data = JSON.parse(text);
+  const records = Array.isArray(data) ? data : [data];
+  if (!records.length || records.some((x) => !x || typeof x !== 'object' || Array.isArray(x)))
+    throw new Error('JSON은 객체 또는 객체 배열이어야 합니다.');
+  return records;
+}
+function recordsFromCsv(text) {
+  const [columns, ...rows] = parseCSV(text);
+  if (!columns?.length || !rows.length) throw new Error('헤더와 데이터 행이 있는 CSV를 입력하세요.');
+  if (new Set(columns).size !== columns.length) throw new Error('CSV 헤더에 중복된 컬럼명이 있습니다.');
+  return rows.map((row) => Object.fromEntries(columns.map((key, i) => [key, row[i] ?? ''])));
+}
+function recordsToSql(records, table, dialect) {
+  if (!/^[A-Za-z_][A-Za-z0-9_$]*(?:\.[A-Za-z_][A-Za-z0-9_$]*)*$/.test(table))
+    throw new Error('출력 테이블명은 users 또는 public.users 같은 형식으로 입력하세요.');
+  const columns = [...new Set(records.flatMap(Object.keys))];
+  if (!columns.length) throw new Error('변환할 컬럼이 없습니다.');
+  const qid = (name) => {
+    if (!name) throw new Error('빈 컬럼명은 사용할 수 없습니다.');
+    if (dialect === 'mysql') return '`' + name.replace(/`/g, '``') + '`';
+    return '"' + name.replace(/"/g, '""') + '"';
+  };
+  const literal = (value) => {
+    if (value == null) return 'NULL';
+    if (typeof value === 'number') {
+      if (!Number.isFinite(value)) throw new Error('NaN과 Infinity는 SQL 값으로 변환할 수 없습니다.');
+      return String(value);
+    }
+    if (typeof value === 'boolean') return value ? 'TRUE' : 'FALSE';
+    if (typeof value === 'object') value = JSON.stringify(value);
+    return "'" + String(value).replace(/'/g, "''") + "'";
+  };
+  const tableSql = table.split('.').map(qid).join('.');
+  const values = records.map((record) => '  (' + columns.map((key) => literal(record[key])).join(', ') + ')').join(',\n');
+  return `INSERT INTO ${tableSql} (${columns.map(qid).join(', ')}) VALUES\n${values};`;
+}
+
+tool({
+  id: 'sql-insert-convert', cat: CAT, name: 'SQL INSERT ↔ JSON/CSV 변환기',
+  desc: '다중 행 SQL INSERT의 VALUES 데이터를 JSON·CSV와 상호 변환합니다.',
+  keywords: 'sql insert json csv values convert mysql postgresql sqlite 변환',
+  render(root) {
+    makeIO(root, {
+      inputs: [{ id: 'input', label: 'SQL INSERT, JSON 또는 CSV', rows: 12, value: "INSERT INTO users (id, name, active) VALUES\n  (1, '홍길동', TRUE),\n  (2, '김서연', FALSE);" }],
+      options: [
+        { id: 'table', label: '출력 테이블명', type: 'text', value: 'users', size: 140 },
+        { id: 'dialect', label: 'SQL 방언', type: 'select', values: [['postgres', 'PostgreSQL'], ['mysql', 'MySQL'], ['sqlite', 'SQLite']] },
+      ],
+      actions: [
+        { id: 'sqlJson', label: 'SQL → JSON' }, { id: 'sqlCsv', label: 'SQL → CSV' },
+        { id: 'jsonSql', label: 'JSON → SQL' }, { id: 'csvSql', label: 'CSV → SQL' },
+      ],
+      autorun: false, outputRows: 14,
+      process(text, o, action) {
+        if (!text.trim()) return '';
+        if (action === 'sqlJson') return JSON.stringify(parseSqlInsert(text).records, null, 2);
+        if (action === 'sqlCsv') {
+          const { columns, records } = parseSqlInsert(text);
+          return toCSV([columns, ...records.map((record) => columns.map((key) => record[key] ?? ''))]);
+        }
+        const records = action === 'jsonSql' ? recordsFromJson(text) : recordsFromCsv(text);
+        return recordsToSql(records, o.table.trim(), o.dialect);
+      },
+      note: 'INSERT INTO table (columns...) VALUES (...) 형식만 지원합니다. SQL 함수, 서브쿼리, ON CONFLICT, RETURNING 절은 지원하지 않습니다. CSV 값은 문자열로 변환됩니다.',
     });
   },
 });

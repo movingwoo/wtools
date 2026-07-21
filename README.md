@@ -11,15 +11,15 @@
 | 카테고리 | 예시 |
 |---|---|
 | 인코딩 / 디코딩 | Base64, URL, JWT, 모스 부호, 진법 변환 |
-| 데이터 포맷 변환 | JSON↔YAML↔XML↔CSV↔TOML, 색상, 단위 |
-| 코드 포맷팅 / 개발 유틸 | JSON/SQL/JS 포맷터, Diff, 정규식, Crontab, Docker |
+| 데이터 포맷 변환 | JSON↔YAML↔XML↔CSV↔TOML↔ENV, JSONPath/JMESPath, JSON Schema, 색상, 단위 |
+| 코드 포맷팅 / 개발 유틸 | JSON/SQL/JS 포맷터, Diff, 정규식, Crontab, Docker, cURL↔fetch, SQL INSERT 변환 |
 | 문자열 / 텍스트 | 대소문자, Slugify, 통계, 이모지, ASCII 아트 |
 | 해싱 | MD/SHA/SHA3, HMAC, 파일 체크섬 |
-| 암호화 / 복호화 | AES/DES/Blowfish, RSA, PGP, XOR |
+| 암호화 / 복호화 | AES/DES/Blowfish, RSA, PGP, XOR, 비밀번호 해시, TOTP/HOTP |
 | 공개키 / 인증서 | X.509, ASN.1, PEM↔Hex, SSH 키 |
 | 네트워크 | 서브넷, CIDR, MAC, DNS, User-Agent |
 | 날짜 / 시간 | Unix 타임스탬프, Filetime, 시간대, 스톱워치 |
-| 이미지 / 미디어 / QR | QR 생성, WiFi QR, Base64↔이미지, 포맷 변환 |
+| 이미지 / 미디어 / QR | QR 생성, WiFi QR, Base64↔이미지, 이미지 포맷·품질·크기 변환 |
 | 수학 / 논리 / 랜덤 | 통계, 비트 연산, 수식 계산, 랜덤 생성 |
 | 압축 / 아카이브 | Gzip, Zlib, LZMA, LZ4, Bzip2, Zip, Tar |
 

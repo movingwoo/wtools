@@ -234,6 +234,7 @@ tool({
   desc: 'Cloudflare DoH를 통해 도메인의 DNS 레코드를 조회합니다.',
   keywords: 'dns doh lookup a aaaa mx txt cname',
   render(root) {
+    const controller = new AbortController();
     makeIO(root, {
       inputs: [{ id: 'input', label: '도메인', rows: 1, value: 'example.com' }],
       options: [{ id: 'type', label: '레코드 타입', type: 'select', values: ['A', 'AAAA', 'MX', 'TXT', 'CNAME', 'NS', 'SOA', 'CAA', 'SRV', 'PTR'] }],
@@ -244,6 +245,7 @@ tool({
         if (!domain) return '';
         const res = await fetch(`https://cloudflare-dns.com/dns-query?name=${encodeURIComponent(domain)}&type=${o.type}`, {
           headers: { accept: 'application/dns-json' },
+          signal: controller.signal,
         });
         if (!res.ok) throw new Error('DNS 조회 실패: HTTP ' + res.status);
         const data = await res.json();
@@ -261,6 +263,7 @@ tool({
         return box;
       },
     });
+    return () => controller.abort();
   },
 });
 

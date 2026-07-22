@@ -21,6 +21,7 @@ const sidebarTop = document.getElementById('sidebar-top');
 const detectResult = document.getElementById('detect-result');
 const MAX_DETECT_LENGTH = 64 * 1024;
 let pastedDetectionPending = false;
+let cleanupCurrentTool = null;
 
 function decodeB64UrlJson(part) {
   const normalized = part.replace(/-/g, '+').replace(/_/g, '/');
@@ -280,7 +281,8 @@ function renderTool(id) {
     h('div', { class: 'tool-body' }));
   content.append(box);
   try {
-    t.render(box.querySelector('.tool-body'));
+    const cleanup = t.render(box.querySelector('.tool-body'));
+    if (typeof cleanup === 'function') cleanupCurrentTool = cleanup;
   } catch (e) {
     box.append(h('p', { class: 'error' }, '도구 로드 중 오류: ' + e.message));
   }
@@ -304,6 +306,11 @@ function syncNavActive() {
 }
 
 function route() {
+  if (cleanupCurrentTool) {
+    try { cleanupCurrentTool(); }
+    catch (e) { console.error('도구 리소스 정리 중 오류:', e); }
+    cleanupCurrentTool = null;
+  }
   const hash = location.hash || '#/';
   const m = hash.match(/^#\/tool\/([\w-]+)/);
   syncNavActive();

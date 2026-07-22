@@ -193,6 +193,7 @@ tool({
     let items = []; // [{ name, type, size, img, url }]
     let outUrls = [];
     let seq = 0;
+    let active = true;
 
     function dimensions(img) {
       let s;
@@ -287,6 +288,7 @@ tool({
         const img = new Image();
         const url = URL.createObjectURL(f);
         const ok = await new Promise((res) => { img.onload = () => res(true); img.onerror = () => res(false); img.src = url; });
+        if (!active) { URL.revokeObjectURL(url); return; }
         if (ok) items.push({ name: f.name, type: f.type, size: f.size, img, url });
         else { URL.revokeObjectURL(url); failed.push(f.name); }
       }
@@ -314,6 +316,14 @@ tool({
           h('span', { class: 'opt-item' }, h('label', null, '확대하지 않기'), noUpscale)),
         h('p', { class: 'note' }, '결과는 캔버스로 다시 인코딩되어 EXIF·GPS 등 원본 메타데이터가 제거됩니다. 화질을 유지한 채 메타데이터만 삭제하려면 EXIF 뷰어 / 메타데이터 제거 도구를 사용하세요. GIF는 첫 프레임만 처리되며 SVG 출력은 PNG를 내장한 파일입니다.'),
         out));
+    return () => {
+      active = false;
+      seq++;
+      items.forEach((it) => URL.revokeObjectURL(it.url));
+      outUrls.forEach((url) => URL.revokeObjectURL(url));
+      items = [];
+      outUrls = [];
+    };
   },
 });
 
@@ -388,15 +398,19 @@ tool({
           h('button', { class: 'btn small', type: 'button', onclick: () => canvas.toBlob((b) => download('transparent.png', b), 'image/png') }, 'PNG 다운로드')));
     }
 
-    let raf = 0;
+    let raf = 0, inputUrl = null, active = true;
     const schedule = () => { cancelAnimationFrame(raf); raf = requestAnimationFrame(apply); };
     [tol, feather].forEach((el) => el.addEventListener('input', schedule));
 
     file.addEventListener('change', () => {
       const f = file.files[0];
       if (!f) return;
+      if (inputUrl) URL.revokeObjectURL(inputUrl);
       const img = new Image();
+      const url = URL.createObjectURL(f);
+      inputUrl = url;
       img.onload = () => {
+        if (!active || inputUrl !== url) return;
         const canvas = h('canvas', { width: img.naturalWidth, height: img.naturalHeight });
         const ctx = canvas.getContext('2d');
         ctx.drawImage(img, 0, 0);
@@ -404,8 +418,14 @@ tool({
         key = autoKey();
         setKeyLabel();
         apply();
+        URL.revokeObjectURL(url);
+        inputUrl = null;
       };
-      img.src = URL.createObjectURL(f);
+      img.onerror = () => {
+        URL.revokeObjectURL(url);
+        if (inputUrl === url) inputUrl = null;
+      };
+      img.src = url;
     });
 
     root.append(
@@ -417,6 +437,12 @@ tool({
           h('span', { class: 'opt-item' }, h('label', null, '경계 부드럽게'), feather)),
         h('p', { class: 'note' }, '배경색은 모서리에서 자동 감지합니다. 결과가 이상하면 미리보기에서 배경 부분을 클릭해 색을 다시 지정하세요.'),
         out));
+    return () => {
+      active = false;
+      cancelAnimationFrame(raf);
+      if (inputUrl) URL.revokeObjectURL(inputUrl);
+      inputUrl = null;
+    };
   },
 });
 

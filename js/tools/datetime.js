@@ -198,6 +198,13 @@ tool({
     root.append(
       h('div', { class: 'opt-row' }, h('span', { class: 'opt-item' }, h('label', null, '분'), minInput), h('span', { class: 'opt-item' }, h('label', null, '초'), secInput)),
       tmDisplay, h('div', { class: 'btn-row' }, tmStartBtn, tmResetBtn));
+
+    return () => {
+      clearInterval(swTimer);
+      clearInterval(tmTimer);
+      swTimer = null;
+      tmTimer = null;
+    };
   },
 });
 

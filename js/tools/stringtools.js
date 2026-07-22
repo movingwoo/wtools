@@ -174,20 +174,21 @@ const EMOJIS = [
    스킨톤 변형은 제외한 기본형만 사용한다. 로드 실패 시 위의 큐레이션 목록으로 폴백. */
 const EMOJI_CAT = [[0, '표정'], [1, '사람'], [3, '동물/자연'], [4, '음식/음료'], [5, '여행/장소'], [6, '활동'], [7, '사물'], [8, '기호'], [9, '깃발']];
 let emojiAll = null;
-async function loadAllEmojis() {
+async function loadAllEmojis(signal) {
   if (emojiAll) return emojiAll;
   const base = 'https://cdn.jsdelivr.net/npm/emojibase-data@16.0.3';
   const [ko, en] = await Promise.all(['/ko/compact.json', '/en/compact.json'].map((p) =>
-    fetch(base + p).then((r) => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })));
+    fetch(base + p, { signal }).then((r) => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })));
   const enMap = new Map(en.map((x) => [x.hexcode, x]));
-  emojiAll = ko
+  const loaded = ko
     .filter((x) => x.group != null && x.group !== 2) // 그룹 2는 스킨톤 등 조합용 컴포넌트
     .sort((a, b) => a.group - b.group || (a.order ?? 0) - (b.order ?? 0))
     .map((x) => {
       const e = enMap.get(x.hexcode);
       return { e: x.unicode, g: x.group, t: x.label, kw: [x.label, ...(x.tags || []), e?.label, ...(e?.tags || [])].join(' ').toLowerCase() };
     });
-  return emojiAll;
+  emojiAll = loaded;
+  return loaded;
 }
 
 tool({
@@ -203,7 +204,8 @@ tool({
     const info = h('p', { class: 'note' }, '이모지 데이터 로드 중... (도구를 열 때 한 번만 내려받습니다)');
     const grid = h('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(52px, 1fr))', gap: '6px', marginTop: '12px' } });
     const sentinel = h('div', { style: { height: '1px' } });
-    let list = [], filtered = [], shown = 0, warn = '';
+    let list = [], filtered = [], shown = 0, warn = '', raf = 0, active = true;
+    const controller = new AbortController();
 
     function updateInfo() {
       const count = shown < filtered.length
@@ -232,7 +234,7 @@ tool({
       if (shown >= filtered.length || !sentinel.isConnected) return;
       if (sentinel.getBoundingClientRect().top < window.innerHeight + 300) {
         more();
-        requestAnimationFrame(fillViewport);
+        raf = requestAnimationFrame(fillViewport);
       }
     }
     function apply() {
@@ -244,19 +246,27 @@ tool({
       more();
       fillViewport();
     }
-    new IntersectionObserver((es) => { if (es[0].isIntersecting) fillViewport(); }, { rootMargin: '300px' }).observe(sentinel);
+    const observer = new IntersectionObserver((es) => { if (es[0].isIntersecting) fillViewport(); }, { rootMargin: '300px' });
+    observer.observe(sentinel);
 
     searchBox.addEventListener('input', apply);
     catSel.addEventListener('change', apply);
     root.append(h('div', { style: { display: 'flex', gap: '8px' } }, searchBox, catSel), info, grid, sentinel);
 
-    loadAllEmojis()
-      .then((all) => { list = all; apply(); })
+    loadAllEmojis(controller.signal)
+      .then((all) => { if (!active) return; list = all; apply(); })
       .catch(() => {
+        if (!active) return;
         list = EMOJIS.map(([e, kw]) => ({ e, g: -1, t: kw, kw: kw.toLowerCase() }));
         warn = '⚠ 전체 목록 로드 실패(네트워크 확인) — 기본 목록으로 표시. ';
         apply();
       });
+    return () => {
+      active = false;
+      controller.abort();
+      observer.disconnect();
+      cancelAnimationFrame(raf);
+    };
   },
 });
 

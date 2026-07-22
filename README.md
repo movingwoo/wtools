@@ -2,7 +2,7 @@
 
 브라우저에서 바로 실행되는 개발자 유틸리티 모음. 대부분의 처리는 클라이언트(브라우저)에서 이루어지며, 입력 데이터는 서버로 전송되지 않음.
 
-빌드 과정이 없는 순수 정적 사이트(HTML + Vanilla JS ES 모듈).
+빌드 과정이 없는 순수 정적 사이트(HTML + Vanilla JS ES 모듈). 서비스워커로 오프라인 지원, PWA로 설치 가능.
 
 링크: [https://wtools.movingwoo.com](https://wtools.movingwoo.com)
 
@@ -40,6 +40,8 @@ css/style.css       스타일 (라이트/다크 자동)
 js/core.js          도구 등록 프레임워크 + 공통 UI 빌더 + 유틸
 js/main.js          해시 기반 라우터 / 사이드바 / 홈 화면
 js/tools/*.js       카테고리별 도구 구현 (모듈별로 분리)
+manifest.json       PWA 매니페스트 (설치, 아이콘, 테마 색상)
+sw.js               서비스워커; network-first 캐싱으로 오프라인 지원
 ```
 
 무거운 라이브러리(jsrsasign, openpgp, pako, figlet 등)는 해당 도구를 열 때 CDN에서 **지연 로드**되어 빠른 초기 로딩. 핵심 라이브러리(crypto-js, js-yaml)만 초기에 로드.

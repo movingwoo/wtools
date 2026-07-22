@@ -237,3 +237,9 @@ function route() {
 buildNav();
 window.addEventListener('hashchange', route);
 route();
+
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('sw.js').catch(() => { /* 오프라인 지원은 선택 사항이므로 무시한다. */ });
+  });
+}

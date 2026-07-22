@@ -22,6 +22,8 @@ js/core.js          Tool registry, shared UI builders, byte helpers, and lazy lo
 js/main.js          Tool imports, hash router, sidebar, search, and generated home page
 js/tools/*.js       Category modules; each module registers multiple related tools
 assets/             Static images and icons
+manifest.json       PWA manifest (installability, icons, theme color)
+sw.js               Service worker; network-first caching for offline support
 FEATURES.md         Feature inventory grouped by category
 README.md           User-facing project documentation
 ```

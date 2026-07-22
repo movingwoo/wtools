@@ -109,12 +109,71 @@ function byCat() {
   return m;
 }
 
+/* ---------- 즐겨찾기 ---------- */
+const favorites = new Set(JSON.parse(localStorage.getItem('wtools-favorites') || '[]'));
+const saveFavorites = () => localStorage.setItem('wtools-favorites', JSON.stringify([...favorites]));
+
+function favoriteList() {
+  return [...favorites].map((id) => tools.find((t) => t.id === id)).filter(Boolean);
+}
+
+function setStar(btn, id) {
+  const active = favorites.has(id);
+  const label = active ? '즐겨찾기 해제' : '즐겨찾기 추가';
+  btn.classList.toggle('active', active);
+  btn.textContent = active ? '★' : '☆';
+  btn.setAttribute('aria-label', label);
+  btn.title = label;
+}
+
+function starBtn(id) {
+  const btn = h('button', {
+    class: 'star-btn',
+    type: 'button',
+    'data-id': id,
+    onclick: (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      toggleFavorite(id);
+    },
+  });
+  setStar(btn, id);
+  return btn;
+}
+
+function toggleFavorite(id) {
+  favorites[favorites.has(id) ? 'delete' : 'add'](id);
+  saveFavorites();
+  buildNav();
+  applyFilter();
+  syncNavActive();
+  const m = (location.hash || '#/').match(/^#\/tool\/([\w-]+)/);
+  if (m) {
+    const btn = content.querySelector('.tool-header .star-btn');
+    if (btn) setStar(btn, id);
+  } else {
+    renderHome();
+  }
+}
+
 /* ---------- 사이드바 ---------- */
 const collapsed = new Set(JSON.parse(localStorage.getItem('wtools-collapsed') || '[]'));
 const saveCollapsed = () => localStorage.setItem('wtools-collapsed', JSON.stringify([...collapsed]));
 
+function navItem(t) {
+  return h('div', { class: 'nav-item' },
+    h('a', { href: '#/tool/' + t.id, 'data-id': t.id, 'data-search': (t.name + ' ' + t.id + ' ' + (t.desc || '') + ' ' + (t.keywords || '')).toLowerCase() }, t.name),
+    starBtn(t.id));
+}
+
 function buildNav() {
   nav.innerHTML = '';
+  const favList = favoriteList();
+  if (favList.length) {
+    nav.append(h('div', { class: 'cat favorites' },
+      h('div', { class: 'cat-title' }, '⭐ 즐겨찾기'),
+      favList.map((t) => navItem(t))));
+  }
   for (const [cat, list] of byCat()) {
     if (!list.length) continue;
     const sec = h('div', { class: 'cat' + (collapsed.has(cat) ? ' collapsed' : ''), 'data-cat': cat },
@@ -125,7 +184,7 @@ function buildNav() {
           saveCollapsed();
         },
       }, cat),
-      list.map((t) => h('a', { href: '#/tool/' + t.id, 'data-id': t.id, 'data-search': (t.name + ' ' + t.id + ' ' + (t.desc || '') + ' ' + (t.keywords || '')).toLowerCase() }, t.name)));
+      list.map((t) => navItem(t)));
     nav.append(sec);
   }
 }
@@ -135,9 +194,10 @@ function applyFilter() {
   nav.classList.toggle('searching', !!q); // 검색 중에는 접힌 카테고리도 결과를 보여준다
   for (const sec of nav.querySelectorAll('.cat')) {
     let visible = 0;
-    for (const a of sec.querySelectorAll('a')) {
+    for (const item of sec.querySelectorAll('.nav-item')) {
+      const a = item.querySelector('a');
       const hit = !q || a.dataset.search.includes(q);
-      a.classList.toggle('hidden', !hit);
+      item.classList.toggle('hidden', !hit);
       if (hit) visible++;
     }
     sec.classList.toggle('hidden', !visible);
@@ -180,18 +240,29 @@ sidebarTop.addEventListener('click', () => {
 updateSidebarTop();
 
 /* ---------- 라우팅 ---------- */
+function card(t) {
+  return h('div', { class: 'card' },
+    h('a', { class: 'card-link', href: '#/tool/' + t.id },
+      h('div', { class: 't' }, t.name),
+      h('div', { class: 'd' }, t.desc || '')),
+    starBtn(t.id));
+}
+
 function renderHome() {
   const home = h('div', { class: 'home' },
     h('h1', null, 'W-Tools'),
     h('p', { class: 'sub' }, `브라우저에서 바로 실행되는 웹 도구 ${tools.length}개.`));
+  const favList = favoriteList();
+  if (favList.length) {
+    home.append(h('div', { class: 'cat-section' },
+      h('h2', null, '⭐ 즐겨찾기'),
+      h('div', { class: 'card-grid' }, favList.map((t) => card(t)))));
+  }
   for (const [cat, list] of byCat()) {
     if (!list.length) continue;
     home.append(h('div', { class: 'cat-section' },
       h('h2', null, cat),
-      h('div', { class: 'card-grid' },
-        list.map((t) => h('a', { class: 'card', href: '#/tool/' + t.id },
-          h('div', { class: 't' }, t.name),
-          h('div', { class: 'd' }, t.desc || ''))))));
+      h('div', { class: 'card-grid' }, list.map((t) => card(t)))));
   }
   content.innerHTML = '';
   content.append(home);
@@ -204,7 +275,7 @@ function renderTool(id) {
   const box = h('div', null,
     h('div', { class: 'tool-header' },
       h('div', { class: 'crumb' }, h('a', { href: '#/' }, '홈'), ' / ', t.cat),
-      h('h1', null, t.name),
+      h('div', { class: 'tool-title-row' }, h('h1', null, t.name), starBtn(t.id)),
       h('p', { class: 'desc' }, t.desc || '')),
     h('div', { class: 'tool-body' }));
   content.append(box);
@@ -216,18 +287,26 @@ function renderTool(id) {
   document.title = t.name + ' — W-Tools';
 }
 
-function route() {
+function syncNavActive() {
   const hash = location.hash || '#/';
   const m = hash.match(/^#\/tool\/([\w-]+)/);
   for (const a of nav.querySelectorAll('a'))
-    a.classList.toggle('active', m && a.dataset.id === m[1]);
-  // 현재 도구가 속한 카테고리는 자동으로 펼친다
-  const sec = nav.querySelector('a.active')?.closest('.cat');
-  if (sec?.classList.contains('collapsed')) {
-    sec.classList.remove('collapsed');
-    collapsed.delete(sec.dataset.cat);
-    saveCollapsed();
+    a.classList.toggle('active', !!m && a.dataset.id === m[1]);
+  // 현재 도구가 속한 (즐겨찾기 포함) 섹션은 자동으로 펼친다
+  for (const a of nav.querySelectorAll('a.active')) {
+    const sec = a.closest('.cat');
+    if (sec?.classList.contains('collapsed')) {
+      sec.classList.remove('collapsed');
+      collapsed.delete(sec.dataset.cat);
+      saveCollapsed();
+    }
   }
+}
+
+function route() {
+  const hash = location.hash || '#/';
+  const m = hash.match(/^#\/tool\/([\w-]+)/);
+  syncNavActive();
   if (m) renderTool(m[1]);
   else { document.title = 'W-Tools — 웹 도구 모음'; renderHome(); }
   content.scrollTop = 0;

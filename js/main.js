@@ -220,6 +220,7 @@ search.addEventListener('paste', (e) => {
 document.addEventListener('keydown', (e) => {
   if (e.key === '/' && document.activeElement.tagName !== 'INPUT' && document.activeElement.tagName !== 'TEXTAREA') {
     e.preventDefault();
+    if (matchMedia('(max-width: 800px)').matches) sidebar.classList.add('open');
     search.focus();
     search.select();
   }
@@ -269,9 +270,19 @@ function renderHome() {
   content.append(home);
 }
 
+function renderToolNotFound(id) {
+  content.innerHTML = '';
+  content.append(h('div', { class: 'home' },
+    h('h1', null, '도구를 찾을 수 없습니다'),
+    h('p', { class: 'error' }, `요청한 도구 “${id}”가 존재하지 않습니다.`),
+    h('p', { class: 'sub' }, '주소가 올바른지 확인하거나 홈에서 사용할 도구를 선택하세요.'),
+    h('a', { class: 'btn primary', href: '#/' }, '홈으로 이동')));
+  document.title = '도구를 찾을 수 없습니다 — W-Tools';
+}
+
 function renderTool(id) {
   const t = tools.find((x) => x.id === id);
-  if (!t) { renderHome(); return; }
+  if (!t) { renderToolNotFound(id); return; }
   content.innerHTML = '';
   const box = h('div', null,
     h('div', { class: 'tool-header' },

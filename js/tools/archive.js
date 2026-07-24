@@ -1,5 +1,5 @@
 // 압축 / 아카이브
-import { tool, makeIO, h, kvTable, strToBytes, bytesToStr, bytesToB64, b64ToBytes, bytesToHex, hexToBytes, decodeInput, loadScript, loadModule, LIB, download } from '../core.js';
+import { tool, makeIO, h, formLabel, kvTable, strToBytes, bytesToStr, bytesToB64, b64ToBytes, bytesToHex, hexToBytes, decodeInput, loadScript, loadModule, LIB, download } from '../core.js';
 
 const CAT = '압축 / 아카이브';
 
@@ -42,7 +42,7 @@ function pakoTool({ id, name, deflate, inflate, desc, keywords, fileExt }) {
       if (fileExt) {
         root.append(h('h3', { style: { marginTop: '26px' } }, '파일 압축/해제'));
         const fileOut = h('div');
-        const picker = h('input', { type: 'file' });
+        const picker = h('input', { type: 'file', 'aria-label': '압축하거나 해제할 파일 선택' });
         const handle = async (mode) => {
           const f = picker.files[0];
           if (!f) { fileOut.textContent = '파일을 먼저 선택하세요.'; return; }
@@ -130,7 +130,7 @@ tool({
     // 파일 업로드 해제
     root.append(h('h3', null, '파일 해제'));
     const fileOut = h('div');
-    const picker = h('input', { type: 'file', accept: '.bz2' });
+    const picker = h('input', { type: 'file', accept: '.bz2', 'aria-label': '해제할 Bzip2 파일 선택' });
     picker.addEventListener('change', async () => {
       const f = picker.files[0];
       if (!f) return;
@@ -143,7 +143,7 @@ tool({
         fileOut.append(h('p', null, `${f.name} → ${res.length.toLocaleString()} bytes `,
           h('button', { class: 'btn small', type: 'button', onclick: () => download(f.name.replace(/\.bz2$/, '') || 'output', new Blob([res])) }, '다운로드')));
         const preview = bytesToStr(res.slice(0, 2000));
-        fileOut.append(h('div', { class: 'out-head' }, h('label', { class: 'io-label' }, '미리보기 (최대 2KB)')),
+        fileOut.append(h('div', { class: 'out-head' }, h('span', { class: 'io-label' }, '미리보기 (최대 2KB)')),
           h('pre', { class: 'out-html', style: { whiteSpace: 'pre-wrap' } }, preview));
       } catch (e) {
         fileOut.innerHTML = '';
@@ -213,7 +213,7 @@ tool({
     root.append(h('h3', null, 'ZIP 만들기'));
     const files = [];
     const fileList = h('div', { style: { margin: '8px 0' } });
-    const picker = h('input', { type: 'file', multiple: true });
+    const picker = h('input', { type: 'file', multiple: true, 'aria-label': 'ZIP에 추가할 파일 선택' });
     picker.addEventListener('change', async () => {
       for (const f of picker.files) files.push({ name: f.name, data: new Uint8Array(await f.arrayBuffer()) });
       renderList();
@@ -243,7 +243,7 @@ tool({
     // ZIP 해제
     root.append(h('h3', { style: { marginTop: '26px' } }, 'ZIP 풀기'));
     const unzipOut = h('div');
-    const unzipPicker = h('input', { type: 'file', accept: '.zip' });
+    const unzipPicker = h('input', { type: 'file', accept: '.zip', 'aria-label': '해제할 ZIP 파일 선택' });
     unzipPicker.addEventListener('change', async () => {
       const f = unzipPicker.files[0];
       if (!f) return;
@@ -275,7 +275,7 @@ tool({
     root.append(h('h3', null, 'Tar 만들기'));
     const files = [];
     const fileList = h('div', { style: { margin: '8px 0' } });
-    const picker = h('input', { type: 'file', multiple: true });
+    const picker = h('input', { type: 'file', multiple: true, 'aria-label': 'Tar에 추가할 파일 선택' });
     picker.addEventListener('change', async () => {
       for (const f of picker.files) files.push({ name: f.name, data: new Uint8Array(await f.arrayBuffer()) });
       renderList();
@@ -289,7 +289,7 @@ tool({
     }
     const opts = h('div', { class: 'opt-row' });
     const gzChk = h('input', { type: 'checkbox' });
-    opts.append(h('span', { class: 'opt-item' }, gzChk, h('label', null, 'gzip 압축 (.tar.gz)')));
+    opts.append(h('span', { class: 'opt-item' }, gzChk, formLabel(gzChk, 'gzip 압축 (.tar.gz)')));
     const tarBtn = h('button', { class: 'btn primary', type: 'button' }, 'Tar 다운로드');
     tarBtn.addEventListener('click', async () => {
       if (!files.length) return;
@@ -304,7 +304,7 @@ tool({
     // TAR 해제
     root.append(h('h3', { style: { marginTop: '26px' } }, 'Tar 풀기'));
     const out = h('div');
-    const upick = h('input', { type: 'file', accept: '.tar,.gz,.tgz' });
+    const upick = h('input', { type: 'file', accept: '.tar,.gz,.tgz', 'aria-label': '해제할 Tar 파일 선택' });
     upick.addEventListener('change', async () => {
       const f = upick.files[0];
       if (!f) return;

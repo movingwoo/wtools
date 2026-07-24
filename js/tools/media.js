@@ -1,5 +1,5 @@
 // 이미지 / 미디어 / QR
-import { tool, makeIO, h, kvTable, loadScript, loadModule, LIB, download, downloadZip, copyBtn, bytesToB64 } from '../core.js';
+import { tool, makeIO, h, formLabel, kvTable, loadScript, loadModule, LIB, download, downloadZip, copyBtn, bytesToB64 } from '../core.js';
 
 const CAT = '이미지 / 미디어 / QR';
 
@@ -79,7 +79,7 @@ tool({
     // 이미지 → Base64
     root.append(h('h3', null, '이미지 → Base64'));
     const fileOut = h('div');
-    const file = h('input', { type: 'file', accept: 'image/*' });
+    const file = h('input', { type: 'file', accept: 'image/*', 'aria-label': 'Base64로 변환할 이미지 선택' });
     file.addEventListener('change', async () => {
       const f = file.files[0];
       if (!f) return;
@@ -90,7 +90,7 @@ tool({
         ta.value = uri;
         fileOut.innerHTML = '';
         fileOut.append(
-          h('div', { class: 'out-head' }, h('label', { class: 'io-label' }, `Data URI (${f.type}, ${(uri.length / 1024).toFixed(1)} KB)`), copyBtn(() => ta.value)),
+          h('div', { class: 'out-head' }, formLabel(ta, `Data URI (${f.type}, ${(uri.length / 1024).toFixed(1)} KB)`, { class: 'io-label' }), copyBtn(() => ta.value)),
           ta, h('img', { src: uri, class: 'img-preview', style: { maxHeight: '200px', marginTop: '8px' } }));
       };
       reader.readAsDataURL(f);
@@ -189,9 +189,9 @@ tool({
     const maxHeight = h('input', { type: 'number', min: 1, value: 1080, style: { width: '80px' } });
     const noUpscale = h('input', { type: 'checkbox' });
     noUpscale.checked = true;
-    const percentOpt = h('span', { class: 'opt-item' }, h('label', null, '크기(%)'), scale);
+    const percentOpt = h('span', { class: 'opt-item' }, formLabel(scale, '크기(%)'), scale);
     const maxOpts = h('span', { class: 'opt-item', style: { display: 'none' } },
-      h('label', null, '최대 폭'), maxWidth, h('label', null, '높이'), maxHeight);
+      formLabel(maxWidth, '최대 폭'), maxWidth, formLabel(maxHeight, '높이'), maxHeight);
     const info = h('span', { style: { color: 'var(--muted)' } });
     let items = []; // [{ name, type, size, img, url }]
     let outUrls = [];
@@ -347,13 +347,13 @@ tool({
     [fmt, scale, maxWidth, maxHeight, noUpscale].forEach((el) => el.addEventListener('input', convert));
     root.append(
       h('div', { class: 'io' },
-        h('label', { class: 'io-label' }, '이미지 선택 (여러 장 가능)'), file, info,
+        formLabel(file, '이미지 선택 (여러 장 가능)', { class: 'io-label' }), file, info,
         h('div', { class: 'opt-row', style: { marginTop: '10px' } },
-          h('span', { class: 'opt-item' }, h('label', null, '출력 포맷'), fmt),
-          h('span', { class: 'opt-item' }, h('label', null, '품질(JPEG/WebP)'), quality, qualityValue),
-          h('span', { class: 'opt-item' }, h('label', null, '크기 방식'), resizeMode),
+          h('span', { class: 'opt-item' }, formLabel(fmt, '출력 포맷'), fmt),
+          h('span', { class: 'opt-item' }, formLabel(quality, '품질(JPEG/WebP)'), quality, qualityValue),
+          h('span', { class: 'opt-item' }, formLabel(resizeMode, '크기 방식'), resizeMode),
           percentOpt, maxOpts,
-          h('span', { class: 'opt-item' }, h('label', null, '확대하지 않기'), noUpscale)),
+          h('span', { class: 'opt-item' }, formLabel(noUpscale, '확대하지 않기'), noUpscale)),
         h('p', { class: 'note' }, '결과는 캔버스로 다시 인코딩되어 EXIF·GPS 등 원본 메타데이터가 제거됩니다. 화질을 유지한 채 메타데이터만 삭제하려면 EXIF 뷰어 / 메타데이터 제거 도구를 사용하세요. GIF는 첫 프레임만 처리되며 SVG 출력은 PNG를 내장한 파일입니다.'),
         convertStatus, out));
     return () => {
@@ -470,11 +470,11 @@ tool({
 
     root.append(
       h('div', { class: 'io' },
-        h('label', { class: 'io-label' }, '이미지 선택 (브라우저 밖으로 전송되지 않습니다)'), file,
+        formLabel(file, '이미지 선택 (브라우저 밖으로 전송되지 않습니다)', { class: 'io-label' }), file,
         h('div', { class: 'opt-row', style: { marginTop: '10px' } },
-          h('span', { class: 'opt-item' }, h('label', null, '배경색'), swatch, keyLabel),
-          h('span', { class: 'opt-item' }, h('label', null, '허용 오차'), tol),
-          h('span', { class: 'opt-item' }, h('label', null, '경계 부드럽게'), feather)),
+          h('span', { class: 'opt-item' }, h('span', null, '배경색'), swatch, keyLabel),
+          h('span', { class: 'opt-item' }, formLabel(tol, '허용 오차'), tol),
+          h('span', { class: 'opt-item' }, formLabel(feather, '경계 부드럽게'), feather)),
         h('p', { class: 'note' }, '배경색은 모서리에서 자동 감지합니다. 결과가 이상하면 미리보기에서 배경 부분을 클릭해 색을 다시 지정하세요.'),
         out));
     return () => {
@@ -546,7 +546,7 @@ tool({
       },
     }, '클립보드 이미지 붙여넣기');
     root.append(h('div', { class: 'io' },
-      h('label', { class: 'io-label' }, 'QR 이미지 선택 (브라우저 밖으로 전송되지 않습니다)'), file,
+      formLabel(file, 'QR 이미지 선택 (브라우저 밖으로 전송되지 않습니다)', { class: 'io-label' }), file,
       h('div', { class: 'btn-row', style: { marginTop: '8px' } }, pasteBtn), out));
   },
 });
@@ -720,7 +720,7 @@ tool({
         }, `제거본 전체 ZIP 다운로드 (${cleans.length}개)`));
     });
     root.append(h('div', { class: 'io' },
-      h('label', { class: 'io-label' }, '사진 선택 (여러 장 가능, 브라우저 밖으로 전송되지 않습니다)'), file,
+      formLabel(file, '사진 선택 (여러 장 가능, 브라우저 밖으로 전송되지 않습니다)', { class: 'io-label' }), file,
       h('p', { class: 'note' }, '메타데이터 세그먼트만 삭제하고 픽셀 데이터는 건드리지 않으므로 화질이 그대로 유지됩니다.'), out));
   },
 });
@@ -795,7 +795,7 @@ tool({
             class: 'btn primary', type: 'button',
             onclick: () => download('favicon.ico', ico),
           }, 'favicon.ico 다운로드 (16+32+48)')),
-          h('div', { class: 'out-head', style: { marginTop: '12px' } }, h('label', { class: 'io-label' }, 'HTML 태그'), copyBtn(() => ta.value)),
+          h('div', { class: 'out-head', style: { marginTop: '12px' } }, formLabel(ta, 'HTML 태그', { class: 'io-label' }), copyBtn(() => ta.value)),
           ta);
       } catch (e) {
         out.innerHTML = '';
@@ -803,7 +803,7 @@ tool({
       }
     });
     root.append(h('div', { class: 'io' },
-      h('label', { class: 'io-label' }, '이미지 선택 (512px 이상 정사각형 권장)'), file, out));
+      formLabel(file, '이미지 선택 (512px 이상 정사각형 권장)', { class: 'io-label' }), file, out));
   },
 });
 
@@ -867,8 +867,8 @@ tool({
     });
     countSel.addEventListener('change', run);
     root.append(h('div', { class: 'io' },
-      h('label', { class: 'io-label' }, '이미지 선택 (브라우저 밖으로 전송되지 않습니다)'), file,
-      h('div', { class: 'opt-row', style: { marginTop: '8px' } }, h('span', { class: 'opt-item' }, h('label', null, '추출 색상 수'), countSel)),
+      formLabel(file, '이미지 선택 (브라우저 밖으로 전송되지 않습니다)', { class: 'io-label' }), file,
+      h('div', { class: 'opt-row', style: { marginTop: '8px' } }, h('span', { class: 'opt-item' }, formLabel(countSel, '추출 색상 수'), countSel)),
       out));
   },
 });

@@ -1,5 +1,5 @@
 // 날짜 / 시간
-import { tool, makeIO, h, kvTable, copyBtn } from '../core.js';
+import { tool, makeIO, h, formLabel, kvTable, copyBtn } from '../core.js';
 
 const CAT = '날짜 / 시간';
 
@@ -196,7 +196,7 @@ tool({
     });
     const tmResetBtn = h('button', { class: 'btn', type: 'button', onclick: () => { clearInterval(tmTimer); tmTimer = null; tmRemain = (+minInput.value * 60 + +secInput.value) * 1000; tmDisplay.style.color = ''; tmStartBtn.textContent = '시작'; tmRender(); } }, '리셋');
     root.append(
-      h('div', { class: 'opt-row' }, h('span', { class: 'opt-item' }, h('label', null, '분'), minInput), h('span', { class: 'opt-item' }, h('label', null, '초'), secInput)),
+      h('div', { class: 'opt-row' }, h('span', { class: 'opt-item' }, formLabel(minInput, '분'), minInput), h('span', { class: 'opt-item' }, formLabel(secInput, '초'), secInput)),
       tmDisplay, h('div', { class: 'btn-row' }, tmStartBtn, tmResetBtn));
 
     return () => {

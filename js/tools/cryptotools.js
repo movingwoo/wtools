@@ -1,5 +1,5 @@
 // 암호화 / 복호화
-import { tool, makeIO, h, kvTable, strToBytes, bytesToStr, bytesToHex, hexToBytes, bytesToB64, b64ToBytes, decodeInput, loadScript, loadModule, LIB, copyBtn } from '../core.js';
+import { tool, makeIO, h, formLabel, kvTable, strToBytes, bytesToStr, bytesToHex, hexToBytes, bytesToB64, b64ToBytes, decodeInput, loadScript, loadModule, LIB, copyBtn } from '../core.js';
 
 const CAT = '암호화 / 복호화';
 
@@ -284,10 +284,10 @@ tool({
       btn.disabled = false;
     });
     root.append(
-      h('div', { class: 'opt-row' }, h('span', { class: 'opt-item' }, h('label', null, '키 크기'), sizeSel), btn, status),
+      h('div', { class: 'opt-row' }, h('span', { class: 'opt-item' }, formLabel(sizeSel, '키 크기'), sizeSel), btn, status),
       h('div', { class: 'io', style: { marginTop: '12px' } },
-        h('div', { class: 'out-head' }, h('label', { class: 'io-label' }, '개인키 (PKCS#8 PEM)'), copyBtn(() => privTa.value)), privTa,
-        h('div', { class: 'out-head' }, h('label', { class: 'io-label' }, '공개키 (SPKI PEM)'), copyBtn(() => pubTa.value)), pubTa));
+        h('div', { class: 'out-head' }, formLabel(privTa, '개인키 (PKCS#8 PEM)', { class: 'io-label' }), copyBtn(() => privTa.value)), privTa,
+        h('div', { class: 'out-head' }, formLabel(pubTa, '공개키 (SPKI PEM)', { class: 'io-label' }), copyBtn(() => pubTa.value)), pubTa));
   },
 });
 

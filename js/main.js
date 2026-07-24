@@ -17,6 +17,7 @@ const nav = document.getElementById('nav');
 const content = document.getElementById('content');
 const search = document.getElementById('search');
 const sidebar = document.getElementById('sidebar');
+const menuBtn = document.getElementById('menu-btn');
 const sidebarTop = document.getElementById('sidebar-top');
 const detectResult = document.getElementById('detect-result');
 const externalWarning = document.getElementById('external-resource-warning');
@@ -221,14 +222,19 @@ search.addEventListener('paste', (e) => {
 document.addEventListener('keydown', (e) => {
   if (e.key === '/' && document.activeElement.tagName !== 'INPUT' && document.activeElement.tagName !== 'TEXTAREA') {
     e.preventDefault();
-    if (matchMedia('(max-width: 800px)').matches) sidebar.classList.add('open');
+    if (matchMedia('(max-width: 800px)').matches) setSidebarOpen(true);
     search.focus();
     search.select();
   }
 });
 
-document.getElementById('menu-btn').addEventListener('click', () => sidebar.classList.toggle('open'));
-nav.addEventListener('click', (e) => { if (e.target.tagName === 'A') sidebar.classList.remove('open'); });
+function setSidebarOpen(open) {
+  sidebar.classList.toggle('open', open);
+  menuBtn.setAttribute('aria-expanded', String(open));
+  menuBtn.setAttribute('aria-label', open ? '도구 메뉴 닫기' : '도구 메뉴 열기');
+}
+menuBtn.addEventListener('click', () => setSidebarOpen(!sidebar.classList.contains('open')));
+nav.addEventListener('click', (e) => { if (e.target.tagName === 'A') setSidebarOpen(false); });
 function updateSidebarTop() {
   const visible = sidebar.scrollTop > 240;
   sidebarTop.classList.toggle('visible', visible);

@@ -142,7 +142,10 @@ export function loadScript(url) {
     const s = document.createElement('script');
     s.src = url;
     s.onload = () => res();
-    s.onerror = () => { delete loaded[url]; rej(new Error('라이브러리 로드 실패 (네트워크 확인): ' + url)); };
+    s.onerror = () => {
+      delete loaded[url];
+      rej(new Error('외부 라이브러리를 불러오지 못했습니다. 네트워크 연결을 확인하세요.'));
+    };
     document.head.append(s);
   }));
 }
@@ -152,8 +155,19 @@ export function loadCss(url) {
     l.rel = 'stylesheet';
     l.href = url;
     l.onload = () => res();
-    l.onerror = () => { delete loaded[url]; rej(new Error('CSS 로드 실패: ' + url)); };
+    l.onerror = () => {
+      delete loaded[url];
+      rej(new Error('외부 스타일을 불러오지 못했습니다. 네트워크 연결을 확인하세요.'));
+    };
     document.head.append(l);
+  }));
+}
+
+const loadedModules = {};
+export function loadModule(url) {
+  return (loadedModules[url] ??= import(url).catch(() => {
+    delete loadedModules[url];
+    throw new Error('외부 라이브러리를 불러오지 못했습니다. 네트워크 연결을 확인하세요.');
   }));
 }
 

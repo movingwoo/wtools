@@ -41,6 +41,17 @@ a { color: var(--accent); text-decoration: none; }
 a:hover { text-decoration: underline; }
 
 #app { display: flex; min-height: 100vh; }
+.external-warning {
+  padding: 10px 16px;
+  border-bottom: 1px solid #f59e0b;
+  background: #fffbeb;
+  color: #92400e;
+  font-size: 13.5px;
+  text-align: center;
+}
+@media (prefers-color-scheme: dark) {
+  .external-warning { background: #422006; color: #fde68a; }
+}
 
 /* ---------- 사이드바 ---------- */
 #sidebar {

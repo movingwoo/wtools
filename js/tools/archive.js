@@ -1,5 +1,5 @@
 // 압축 / 아카이브
-import { tool, makeIO, h, kvTable, strToBytes, bytesToStr, bytesToB64, b64ToBytes, bytesToHex, hexToBytes, decodeInput, loadScript, LIB, download } from '../core.js';
+import { tool, makeIO, h, kvTable, strToBytes, bytesToStr, bytesToB64, b64ToBytes, bytesToHex, hexToBytes, decodeInput, loadScript, loadModule, LIB, download } from '../core.js';
 
 const CAT = '압축 / 아카이브';
 
@@ -136,7 +136,7 @@ tool({
       if (!f) return;
       fileOut.innerHTML = '해제 중...';
       try {
-        seekBzip ??= await import('https://cdn.jsdelivr.net/npm/seek-bzip@2.0.0/+esm');
+        seekBzip ??= await loadModule('https://cdn.jsdelivr.net/npm/seek-bzip@2.0.0/+esm');
         const buf = new Uint8Array(await f.arrayBuffer());
         const res = Uint8Array.from((seekBzip.default || seekBzip).decode(buf));
         fileOut.innerHTML = '';
@@ -164,7 +164,7 @@ tool({
       autorun: false,
       async process(text, o) {
         if (!text.trim()) return '';
-        seekBzip ??= await import('https://cdn.jsdelivr.net/npm/seek-bzip@2.0.0/+esm');
+        seekBzip ??= await loadModule('https://cdn.jsdelivr.net/npm/seek-bzip@2.0.0/+esm');
         const input = decodeInput(text, o.ifmt);
         const res = Uint8Array.from((seekBzip.default || seekBzip).decode(input));
         return outBytes(res, o.ofmt);
@@ -188,7 +188,7 @@ tool({
       actions: [{ id: 'comp', label: '압축' }, { id: 'decomp', label: '해제' }],
       autorun: false,
       async process(text, o, action) {
-        const mod = await import('https://cdn.jsdelivr.net/npm/lz4js@0.2.0/+esm');
+        const mod = await loadModule('https://cdn.jsdelivr.net/npm/lz4js@0.2.0/+esm');
         const lz4 = mod.default && mod.default.compress ? mod.default : mod;
         const input = decodeInput(text, o.ifmt);
         if (action === 'decomp') {

@@ -117,7 +117,16 @@ function byCat() {
 }
 
 /* ---------- 즐겨찾기 ---------- */
-const favorites = new Set(JSON.parse(localStorage.getItem('wtools-favorites') || '[]'));
+function loadStoredList(key) {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(key) || '[]');
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+const favorites = new Set(loadStoredList('wtools-favorites'));
 const saveFavorites = () => localStorage.setItem('wtools-favorites', JSON.stringify([...favorites]));
 
 function favoriteList() {
@@ -164,7 +173,7 @@ function toggleFavorite(id) {
 }
 
 /* ---------- 사이드바 ---------- */
-const collapsed = new Set(JSON.parse(localStorage.getItem('wtools-collapsed') || '[]'));
+const collapsed = new Set(loadStoredList('wtools-collapsed'));
 const saveCollapsed = () => localStorage.setItem('wtools-collapsed', JSON.stringify([...collapsed]));
 
 function navItem(t) {

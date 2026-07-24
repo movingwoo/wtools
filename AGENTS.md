@@ -6,7 +6,7 @@ This file applies to the entire repository.
 
 ## Project Overview
 
-W-Tools is a collection of developer utilities that runs as a pure static site. It uses HTML, CSS, and vanilla JavaScript ES modules; there is no build step, package manager, bundler, linter, or automated test suite.
+W-Tools is a collection of developer utilities that runs as a pure static site. It uses HTML, CSS, and vanilla JavaScript ES modules; the site itself has no build step, package manager, bundler, or linter. CI runs syntax/static validation and a Playwright browser smoke suite (`tests/`, CI-only — never required for hosting or serving the site).
 
 - Keep processing in the browser whenever possible. Do not introduce a backend or send user input to a server unless a feature inherently requires a network request and the UI makes that behavior clear.
 - Keep all user-facing text in Korean.
@@ -24,6 +24,7 @@ js/tools/*.js       Category modules; each module registers multiple related too
 assets/             Static images and icons
 manifest.json       PWA manifest (installability, icons, theme color)
 sw.js               Service worker; network-first caching for offline support
+tests/              Playwright browser smoke tests (CI-only; own package.json, not part of the site)
 FEATURES.md         Feature inventory grouped by category
 README.md           User-facing project documentation
 ```
@@ -36,7 +37,16 @@ Run the site through an HTTP server because ES modules do not work correctly whe
 python3 -m http.server 8000
 ```
 
-Then open `http://localhost:8000` and validate changes manually. There are no repository-provided test or lint commands.
+Then open `http://localhost:8000` and validate changes manually.
+
+CI (`.github/workflows/validate.yml`) checks JavaScript syntax, validates registrations and static assets, and runs Playwright browser smoke tests. To run the browser tests locally (requires Node.js 18+):
+
+```bash
+cd tests
+npm install
+npx playwright install chromium
+npx playwright test
+```
 
 For a quick JavaScript syntax/module check on macOS, use:
 

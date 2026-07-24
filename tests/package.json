@@ -1,0 +1,12 @@
+{
+  "name": "wtools-browser-tests",
+  "private": true,
+  "type": "module",
+  "description": "CI 전용 브라우저 스모크 테스트. 사이트 자체는 의존성 없이 정적 호스팅됩니다.",
+  "scripts": {
+    "test": "playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.50.1"
+  }
+}

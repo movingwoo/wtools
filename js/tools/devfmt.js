@@ -103,7 +103,7 @@ function jsonTree(value, key) {
 tool({
   id: 'json-format', cat: CAT, name: 'JSON 포맷/압축/트리 뷰어',
   desc: 'JSON을 정렬(pretty print), 압축(minify)하거나 접을 수 있는 트리로 표시합니다.',
-  keywords: 'json pretty minify tree viewer',
+  keywords: 'json pretty prettify beautify minify tree viewer formatter',
   render(root) {
     makeIO(root, {
       inputs: [{ id: 'input', label: 'JSON', rows: 10, value: '{"name":"WTools","list":[1,2,3],"nested":{"ok":true}}' }],
@@ -278,7 +278,7 @@ tool({
 tool({
   id: 'text-diff', cat: CAT, name: '텍스트 Diff (라인 비교)',
   desc: '두 텍스트를 라인 단위로 비교해 차이를 표시합니다.',
-  keywords: 'diff compare text',
+  keywords: 'diff compare text patch difference 비교',
   render(root) {
     makeIO(root, {
       inputs: [
@@ -467,7 +467,7 @@ function descField(expr, idx) {
 tool({
   id: 'crontab', cat: CAT, name: 'Crontab 표현식 생성/설명',
   desc: 'cron 표현식을 사람이 읽을 수 있는 설명으로 풀어주고 자주 쓰는 패턴을 제공합니다.',
-  keywords: 'cron crontab schedule',
+  keywords: 'cron crontab schedule expression job scheduler',
   render(root) {
     const presets = [
       ['* * * * *', '매분'], ['*/5 * * * *', '5분마다'], ['0 * * * *', '매시 정각'],

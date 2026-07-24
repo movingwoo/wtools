@@ -8,7 +8,7 @@ function pad(n, l = 2) { return String(n).padStart(l, '0'); }
 tool({
   id: 'unix-time', cat: CAT, name: 'Unix 타임스탬프 변환',
   desc: 'Unix 타임스탬프와 사람이 읽는 날짜를 상호 변환합니다.',
-  keywords: 'unix timestamp epoch time convert',
+  keywords: 'unix timestamp epoch time convert posix milliseconds seconds',
   render(root) {
     const io = makeIO(root, {
       inputs: [{ id: 'input', label: '타임스탬프(초/밀리초) 또는 날짜 문자열', rows: 1, value: String(Math.floor(Date.now() / 1000)) }],

@@ -399,6 +399,19 @@ tool({
   },
 });
 
+// 거절 샘플링: 2^32를 chars.length로 나눈 나머지 구간을 버려 modulo bias 제거
+function randomString(len, chars) {
+  const limit = Math.floor(0x100000000 / chars.length) * chars.length;
+  let s = '';
+  while (s.length < len) {
+    const batch = crypto.getRandomValues(new Uint32Array(len - s.length));
+    for (const v of batch) {
+      if (v < limit) s += chars[v % chars.length];
+    }
+  }
+  return s;
+}
+
 tool({
   id: 'token-gen', cat: CAT, name: '토큰 / 시크릿 생성기',
   desc: '암호학적으로 안전한 랜덤 토큰을 생성합니다.',
@@ -429,10 +442,7 @@ tool({
         if (!chars) throw new Error('커스텀 문자를 입력하세요.');
         const out = [];
         for (let n = 0; n < Math.max(1, +o.count); n++) {
-          const rnd = crypto.getRandomValues(new Uint32Array(len));
-          let s = '';
-          for (let i = 0; i < len; i++) s += chars[rnd[i] % chars.length];
-          out.push(s);
+          out.push(randomString(len, chars));
         }
         return out.join('\n');
       },

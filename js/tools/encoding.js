@@ -67,7 +67,7 @@ tool({
 tool({
   id: 'url-encode', cat: CAT, name: 'URL 인코딩/디코딩',
   desc: 'URL 퍼센트 인코딩(%XX)을 적용하거나 해제합니다.',
-  keywords: 'percent encodeURIComponent',
+  keywords: 'percent encodeURIComponent urlencode urldecode query escape',
   render(root) {
     makeIO(root, {
       inputs: [{ id: 'input', label: '입력', placeholder: 'https://example.com/?q=한글 검색' }],
@@ -84,7 +84,7 @@ tool({
 tool({
   id: 'url-parser', cat: CAT, name: 'URL 파서',
   desc: 'URL을 프로토콜, 호스트, 경로, 쿼리 파라미터 등으로 분해합니다.',
-  keywords: 'uri parse query string',
+  keywords: 'uri url parse query string qs parameter params',
   render(root) {
     makeIO(root, {
       inputs: [{ id: 'input', label: 'URL', rows: 3, placeholder: 'https://user:pw@example.com:8080/path/page?a=1&b=한글#frag' }],
@@ -333,7 +333,7 @@ const HS = { HS256: 'HmacSHA256', HS384: 'HmacSHA384', HS512: 'HmacSHA512' };
 tool({
   id: 'jwt', cat: CAT, name: 'JWT 인코딩/디코딩/검증',
   desc: 'JWT를 디코딩하고, HS256/384/512·RS256으로 서명을 생성하거나 검증합니다.',
-  keywords: 'json web token jsonwebtoken sign verify',
+  keywords: 'jwt json web token jsonwebtoken bearer sign verify claims',
   render(root) {
     // 디코딩 / 검증
     root.append(h('h3', null, '디코딩 / 검증'));

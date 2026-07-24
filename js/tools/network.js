@@ -232,7 +232,7 @@ tool({
 tool({
   id: 'dns-lookup', cat: CAT, name: 'DNS over HTTPS 조회',
   desc: 'Cloudflare DoH를 통해 도메인의 DNS 레코드를 조회합니다.',
-  keywords: 'dns doh lookup a aaaa mx txt cname',
+  keywords: 'dns doh lookup resolve resolver dig nslookup a aaaa mx txt cname',
   render(root) {
     const controller = new AbortController();
     makeIO(root, {

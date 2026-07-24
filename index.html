@@ -21,7 +21,8 @@
 <div id="app">
   <aside id="sidebar" aria-label="도구 메뉴">
     <a class="brand" href="#/">W-Tools</a>
-    <input id="search" type="search" placeholder="도구 검색 (/)" autocomplete="off">
+    <input id="search" type="search" placeholder="도구 검색 (/)" autocomplete="off"
+      role="combobox" aria-controls="nav" aria-expanded="false" aria-autocomplete="list">
     <div id="detect-result" class="detect-result hidden" aria-live="polite"></div>
     <nav id="nav"></nav>
     <button id="sidebar-top" type="button" aria-label="사이드바 맨 위로" title="맨 위로" aria-hidden="true"></button>

@@ -204,7 +204,7 @@ tool({
 tool({
   id: 'checksum-file', cat: CAT, name: '파일 해시 (체크섬)',
   desc: '파일을 선택해 MD5, SHA-1, SHA-256, SHA-512 체크섬을 계산합니다.',
-  keywords: 'file checksum verify download',
+  keywords: 'file checksum verify download digest integrity sha md5',
   render(root) {
     const out = h('div');
     const status = h('div', {

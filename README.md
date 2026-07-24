@@ -32,6 +32,16 @@ python3 -m http.server 8000
 # http://localhost:8000 접속
 ```
 
+## 검사
+
+외부 패키지 없이 도구 ID·카테고리, 로컬 모듈 import, 정적 자산과 서비스 워커 앱 셸을 검사:
+
+```bash
+python3 scripts/validate_static.py
+```
+
+GitHub Actions는 모든 PR과 `main` 브랜치 push에서 위 검사, JavaScript 구문 검사, 공백 오류 검사와 HTTP 앱 셸 스모크 테스트를 실행.
+
 ## 구조
 
 ```
@@ -42,6 +52,8 @@ js/main.js          해시 기반 라우터 / 사이드바 / 홈 화면
 js/tools/*.js       카테고리별 도구 구현 (모듈별로 분리)
 manifest.json       PWA 매니페스트 (설치, 아이콘, 테마 색상)
 sw.js               서비스워커; 앱 셸 사전 캐시 + network-first 갱신으로 오프라인 지원
+scripts/             의존성 없는 저장소·정적 사이트 검증 스크립트
+.github/workflows/   PR 및 main push 자동 검사
 ```
 
 무거운 라이브러리(jsrsasign, openpgp, pako, figlet 등)는 해당 도구를 열 때 CDN에서 **지연 로드**되어 빠른 초기 로딩. 핵심 라이브러리(crypto-js, js-yaml)만 초기에 로드.

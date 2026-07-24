@@ -64,6 +64,70 @@ tool({
   },
 });
 
+const STD_B32 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+const HEX_B32 = '0123456789ABCDEFGHIJKLMNOPQRSTUV';
+
+function b32Encode(bytes, alphabet = STD_B32, pad = '=') {
+  let bits = 0, value = 0, out = '';
+  for (const b of bytes) {
+    value = (value << 8) | b;
+    bits += 8;
+    while (bits >= 5) {
+      out += alphabet[(value >>> (bits - 5)) & 31];
+      bits -= 5;
+    }
+  }
+  if (bits > 0) out += alphabet[(value << (5 - bits)) & 31];
+  if (pad) while (out.length % 8) out += pad;
+  return out;
+}
+function b32Decode(str, alphabet = STD_B32, pad = '=') {
+  const map = {};
+  [...alphabet].forEach((c, i) => (map[c] = i));
+  const clean = [...str.toUpperCase().replace(/\s/g, '')].filter((c) => c !== pad).join('');
+  let bits = 0, value = 0;
+  const bytes = [];
+  for (const c of clean) {
+    if (!(c in map)) throw new Error(`알파벳에 없는 문자: "${c}"`);
+    value = (value << 5) | map[c];
+    bits += 5;
+    if (bits >= 8) {
+      bytes.push((value >>> (bits - 8)) & 255);
+      bits -= 8;
+    }
+  }
+  return new Uint8Array(bytes);
+}
+
+tool({
+  id: 'base32', cat: CAT, name: 'Base32 인코딩/디코딩',
+  desc: '텍스트를 Base32(RFC 4648)로 변환하거나 복원합니다. 표준·Extended Hex·커스텀 알파벳을 지원합니다.',
+  keywords: 'b32 encode decode otp secret rfc4648',
+  render(root) {
+    makeIO(root, {
+      inputs: [{ id: 'input', label: '입력', placeholder: 'Hello, World!' }],
+      options: [
+        { id: 'alpha', label: '알파벳', type: 'select', values: [['std', '표준'], ['hex', 'Extended Hex (0-9A-V)'], ['custom', '커스텀']] },
+        { id: 'custom', label: '커스텀 32자', type: 'text', size: 260, placeholder: STD_B32 },
+        { id: 'pad', label: '패딩(=)', type: 'checkbox', value: true },
+      ],
+      actions: [{ id: 'enc', label: '인코딩' }, { id: 'dec', label: '디코딩' }],
+      process(text, o, action) {
+        let alpha = STD_B32;
+        if (o.alpha === 'hex') alpha = HEX_B32;
+        if (o.alpha === 'custom') {
+          alpha = o.custom.toUpperCase();
+          if (new Set(alpha).size !== 32) throw new Error('커스텀 알파벳은 서로 다른 32자여야 합니다.');
+        }
+        const pad = o.pad ? '=' : '';
+        return action === 'dec'
+          ? bytesToStr(b32Decode(text, alpha, '='))
+          : b32Encode(strToBytes(text), alpha, pad);
+      },
+    });
+  },
+});
+
 tool({
   id: 'url-encode', cat: CAT, name: 'URL 인코딩/디코딩',
   desc: 'URL 퍼센트 인코딩(%XX)을 적용하거나 해제합니다.',

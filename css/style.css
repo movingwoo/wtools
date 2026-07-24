@@ -49,6 +49,15 @@ a:hover { text-decoration: underline; }
   font-size: 13.5px;
   text-align: center;
 }
+.update-notice {
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--accent);
+  background: var(--panel);
+  color: var(--text);
+  font-size: 13.5px;
+  text-align: center;
+}
+.update-notice span { margin-right: 8px; }
 @media (prefers-color-scheme: dark) {
   .external-warning { background: #422006; color: #fde68a; }
 }

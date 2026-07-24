@@ -191,10 +191,14 @@ export function download(name, data, type = 'application/octet-stream') {
 
 /* ---------- 외부 라이브러리 지연 로드 ---------- */
 const loaded = {};
-export function loadScript(url) {
+// lib: URL 문자열 또는 { url, integrity } (SRI 해시가 있으면 무결성 검증)
+export function loadScript(lib) {
+  const url = typeof lib === 'string' ? lib : lib.url;
+  const integrity = typeof lib === 'string' ? null : lib.integrity;
   return (loaded[url] ??= new Promise((res, rej) => {
     const s = document.createElement('script');
     s.src = url;
+    if (integrity) { s.integrity = integrity; s.crossOrigin = 'anonymous'; }
     s.onload = () => res();
     s.onerror = () => {
       delete loaded[url];
@@ -203,11 +207,14 @@ export function loadScript(url) {
     document.head.append(s);
   }));
 }
-export function loadCss(url) {
+export function loadCss(lib) {
+  const url = typeof lib === 'string' ? lib : lib.url;
+  const integrity = typeof lib === 'string' ? null : lib.integrity;
   return (loaded[url] ??= new Promise((res, rej) => {
     const l = document.createElement('link');
     l.rel = 'stylesheet';
     l.href = url;
+    if (integrity) { l.integrity = integrity; l.crossOrigin = 'anonymous'; }
     l.onload = () => res();
     l.onerror = () => {
       delete loaded[url];
@@ -225,28 +232,29 @@ export function loadModule(url) {
   }));
 }
 
+// SRI(Subresource Integrity)로 CDN 손상·변조 시 로드를 차단한다. 버전을 올릴 때 해시도 함께 갱신해야 한다.
 export const LIB = {
-  jsrsasign: 'https://cdn.jsdelivr.net/npm/jsrsasign@11.1.0/lib/jsrsasign-all-min.js',
-  marked: 'https://cdn.jsdelivr.net/npm/marked@12.0.2/marked.min.js',
-  hljs: 'https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js',
-  hljsCss: 'https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark-dimmed.min.css',
-  qrcode: 'https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js',
-  uaparser: 'https://cdn.jsdelivr.net/npm/ua-parser-js@1.0.38/dist/ua-parser.min.js',
-  beautifyJs: 'https://cdn.jsdelivr.net/npm/js-beautify@1.15.1/js/lib/beautify.min.js',
-  beautifyCss: 'https://cdn.jsdelivr.net/npm/js-beautify@1.15.1/js/lib/beautify-css.min.js',
-  beautifyHtml: 'https://cdn.jsdelivr.net/npm/js-beautify@1.15.1/js/lib/beautify-html.min.js',
-  sqlFormatter: 'https://cdn.jsdelivr.net/npm/sql-formatter@15.3.2/dist/sql-formatter.min.js',
-  jsdiff: 'https://cdn.jsdelivr.net/npm/diff@5.2.0/dist/diff.min.js',
-  figlet: 'https://cdn.jsdelivr.net/npm/figlet@1.7.0/lib/figlet.js',
-  pako: 'https://cdn.jsdelivr.net/npm/pako@2.1.0/dist/pako.min.js',
-  fflate: 'https://cdn.jsdelivr.net/npm/fflate@0.8.2/umd/index.js',
-  lzma: 'https://cdn.jsdelivr.net/npm/lzma@2.3.2/src/lzma_worker.min.js',
-  md4: 'https://cdn.jsdelivr.net/npm/js-md4@0.3.2/build/md4.min.js',
-  jsqr: 'https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js',
-  jsonpath: 'https://unpkg.com/jsonpath-plus@10.3.0/dist/index-browser-umd.min.cjs',
-  jmespath: 'https://cdn.jsdelivr.net/npm/jmespath@0.16.0/jmespath.min.js',
-  ajv: 'https://cdn.jsdelivr.net/npm/ajv@6.12.6/dist/ajv.bundle.js',
-  bcrypt: 'https://cdn.jsdelivr.net/npm/bcryptjs@2.4.3/dist/bcrypt.min.js',
+  jsrsasign: { url: 'https://cdn.jsdelivr.net/npm/jsrsasign@11.1.0/lib/jsrsasign-all-min.js', integrity: 'sha384-vbfVWK2rJ9x1Xsycv0IIV02oWFwkOZ5Ohb/cQGU2ldysPOlCR4OtdM1nvOZFbpzk' },
+  marked: { url: 'https://cdn.jsdelivr.net/npm/marked@12.0.2/marked.min.js', integrity: 'sha384-/TQbtLCAerC3jgaim+N78RZSDYV7ryeoBCVqTuzRrFec2akfBkHS7ACQ3PQhvMVi' },
+  hljs: { url: 'https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js', integrity: 'sha384-F/bZzf7p3Joyp5psL90p/p89AZJsndkSoGwRpXcZhleCWhd8SnRuoYo4d0yirjJp' },
+  hljsCss: { url: 'https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark-dimmed.min.css', integrity: 'sha384-PiLidnnRuzFgp4qiN8oGNmktrV8ETL+6a8heAxljUX4A+3XWlocwaMn9duBUepfK' },
+  qrcode: { url: 'https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js', integrity: 'sha384-lQXOAyZwHXE55JFyrOMB7nY2Wv+m5ZWNtJcHrd1rceRQXAYNLak8ukN5TjBTcIwz' },
+  uaparser: { url: 'https://cdn.jsdelivr.net/npm/ua-parser-js@1.0.38/dist/ua-parser.min.js', integrity: 'sha384-yT+3Fq5fjwzDR/suVYN+YMuGERziAMutX4NZ7W9Rz3mzuHipPpY7oe04Fd6wFJZB' },
+  beautifyJs: { url: 'https://cdn.jsdelivr.net/npm/js-beautify@1.15.1/js/lib/beautify.min.js', integrity: 'sha384-FVx1WK8VHSskkzcjxDxmZKSJ3KQ8vYOZo+sirXFdjOxUq4Y4+9IrtCG8iiisHHfj' },
+  beautifyCss: { url: 'https://cdn.jsdelivr.net/npm/js-beautify@1.15.1/js/lib/beautify-css.min.js', integrity: 'sha384-YkGkitXFTTE2YT+poOaBOfObka+86Q4ianXfq8SwPtTSW3SIFE4Ha5u33+xVK65+' },
+  beautifyHtml: { url: 'https://cdn.jsdelivr.net/npm/js-beautify@1.15.1/js/lib/beautify-html.min.js', integrity: 'sha384-j7zhOGXtPN67K2CFiNW3h/EvKRoW14dRbO8Pj4f2089y8m2RoxS2l627sobb19d3' },
+  sqlFormatter: { url: 'https://cdn.jsdelivr.net/npm/sql-formatter@15.3.2/dist/sql-formatter.min.js', integrity: 'sha384-7mUXtMlypVs4NSv+ZCUHAniscLZNgJXAaaOQrdOuYqKA6LvRVSlgbYyiMX0xyHuz' },
+  jsdiff: { url: 'https://cdn.jsdelivr.net/npm/diff@5.2.0/dist/diff.min.js', integrity: 'sha384-lJJVaUgxmk/PVfQnAsGN1QuJZrE+n6bg2EMu33yVZOJ2av/3UzTHbmnPCI7ENJYa' },
+  figlet: { url: 'https://cdn.jsdelivr.net/npm/figlet@1.7.0/lib/figlet.js', integrity: 'sha384-pX+W+tDvxyLP633VSCBwPlKIlXhOLmq+yYw7Vm2bo/NYS9bp8bzjV50qUlXVC1Qp' },
+  pako: { url: 'https://cdn.jsdelivr.net/npm/pako@2.1.0/dist/pako.min.js', integrity: 'sha384-rNlaE5fs9dGIjmxWDALQh/RBAaGRYT5ChrzHo6tRfgrZ36iRFAiquP5g41Jsv+0j' },
+  fflate: { url: 'https://cdn.jsdelivr.net/npm/fflate@0.8.2/umd/index.js', integrity: 'sha384-DT0Ls0mO7JmjTnT+oBuMhEJzYJO1zUqzuuMXNdnOmOQRIpN2BgSjvBV/j50NngIT' },
+  lzma: { url: 'https://cdn.jsdelivr.net/npm/lzma@2.3.2/src/lzma_worker.min.js', integrity: 'sha384-i0BmxJgY8ewnjHQFgeqUwAtroLPzl8tRN6M8tMYoR8fZPzUogiI6Uo8bUbzxKa9t' },
+  md4: { url: 'https://cdn.jsdelivr.net/npm/js-md4@0.3.2/build/md4.min.js', integrity: 'sha384-MoZ9k3YaW/GZNhasK9XhYqny3gz3Ht9G2Hy3VLx4oEJMq2WZAivb7Tu2yqIpQ9mR' },
+  jsqr: { url: 'https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js', integrity: 'sha384-b5Ya4Bq3qCyz39m2ISh+4DxjAIljdeFwK/BsXLuj9gugaNwAcj/ia15fxNZL9Nlx' },
+  jsonpath: { url: 'https://unpkg.com/jsonpath-plus@10.3.0/dist/index-browser-umd.min.cjs', integrity: 'sha384-hGQPqOxTPM4foQNgrQgUmEiH4XmDBHG/JM6hBfraI4LJ9LA9V/tDGADiGRXeC9/c' },
+  jmespath: { url: 'https://cdn.jsdelivr.net/npm/jmespath@0.16.0/jmespath.min.js', integrity: 'sha384-gWcKrbXrrv/Qu9WrcJK8aDvaUwv8LMxpzdBtpRCNn3eoq7D6uOySOdo2YFvhaYrx' },
+  ajv: { url: 'https://cdn.jsdelivr.net/npm/ajv@6.12.6/dist/ajv.bundle.js', integrity: 'sha384-FhxE5wb1R5PH1FNHJnhnZA5Th28cz8eOE7DjUCzNuwImYzw3t4Zl1wiWJhbuf+De' },
+  bcrypt: { url: 'https://cdn.jsdelivr.net/npm/bcryptjs@2.4.3/dist/bcrypt.min.js', integrity: 'sha384-qGFE4FIJLgCFuYs3nzg39XpCtvT5AZUhaBdjB3e1+vpKQa03AkyWOyBSFb9OcQ/g' },
 };
 
 /* ---------- 공통 도구 UI 빌더 ----------

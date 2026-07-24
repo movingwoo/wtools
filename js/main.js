@@ -21,6 +21,8 @@ const menuBtn = document.getElementById('menu-btn');
 const sidebarTop = document.getElementById('sidebar-top');
 const detectResult = document.getElementById('detect-result');
 const externalWarning = document.getElementById('external-resource-warning');
+const updateNotice = document.getElementById('update-notice');
+const updateApply = document.getElementById('update-apply');
 const MAX_DETECT_LENGTH = 64 * 1024;
 let pastedDetectionPending = false;
 let cleanupCurrentTool = null;
@@ -405,6 +407,30 @@ route();
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' })
+      .then((registration) => {
+        let refreshing = false;
+        const showUpdate = (worker) => {
+          if (!worker || !navigator.serviceWorker.controller) return;
+          updateNotice.classList.remove('hidden');
+          updateApply.onclick = () => {
+            updateApply.disabled = true;
+            updateApply.textContent = '적용 중…';
+            worker.postMessage({ type: 'SKIP_WAITING' });
+          };
+        };
+        if (registration.waiting) showUpdate(registration.waiting);
+        registration.addEventListener('updatefound', () => {
+          const worker = registration.installing;
+          worker?.addEventListener('statechange', () => {
+            if (worker.state === 'installed') showUpdate(worker);
+          });
+        });
+        navigator.serviceWorker.addEventListener('controllerchange', () => {
+          if (refreshing) return;
+          refreshing = true;
+          location.reload();
+        });
+      })
       .catch(() => { /* 오프라인 지원은 선택 사항이므로 무시한다. */ });
   });
 }

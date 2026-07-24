@@ -133,6 +133,8 @@ a:hover { text-decoration: underline; }
 }
 .detect-close:hover { background: var(--panel); color: var(--text); }
 .detect-close:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+/* 하단 고정 '맨 위로' 버튼(#sidebar-top)이 끝까지 스크롤한 마지막 항목의 별 버튼을 가리지 않도록 여백 확보 */
+#nav { padding-bottom: 60px; }
 #nav .cat { margin-bottom: 4px; }
 #nav .cat-title {
   font-size: 12px;

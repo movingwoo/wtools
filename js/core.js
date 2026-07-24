@@ -206,11 +206,13 @@ cfg = {
   inputs: [{id,label,rows,placeholder,value}]  // 생략 시 [{id:'input'}], null이면 입력 없음
   options: [{id,label,type:'select'|'text'|'password'|'number'|'checkbox',values,value,placeholder,size}]
   actions: [{id,label,primary}]                // 생략 시 자동 실행만
-  process: (input|{inputs}, opts, actionId) => string|Node|Promise
-  outputHTML: bool, outputRows, autorun (기본 true), runOnLoad (기본 false), note
+  process: (input|{inputs}, opts, actionId, signal) => string|Node|Promise
+  outputHTML: bool, outputRows, autorun (기본 true), runOnLoad (기본 false), note,
+  cancelable: bool, largeInputThreshold (기본 1,000,000자, false면 경고 안 함)
 }
 ------------------------------------------------ */
 export function makeIO(root, cfg) {
+  const largeInputThreshold = cfg.largeInputThreshold === false ? Infinity : (cfg.largeInputThreshold || 1_000_000);
   const wrap = h('div', { class: 'io', 'aria-busy': 'false' });
   const inputDefs = cfg.inputs === null ? [] : (cfg.inputs || [{ id: 'input', label: '입력' }]);
   const inputEls = {};
@@ -226,7 +228,11 @@ export function makeIO(root, cfg) {
     if (staged && def === inputDefs[0]) ta.value = staged.value;
     inputEls[def.id] = ta;
     wrap.append(formLabel(ta, def.label || '입력', { class: 'io-label' }), ta);
-    ta.addEventListener('input', () => { if (cfg.autorun !== false) run(); });
+    ta.addEventListener('input', () => {
+      largeInputApproved = false;
+      largeInputWarning.classList.add('hidden');
+      if (cfg.autorun !== false) run();
+    });
   }
 
   const optEls = {};
@@ -262,19 +268,29 @@ export function makeIO(root, cfg) {
 
   let lastAction = cfg.actions?.[0]?.id ?? null;
   const actionButtons = [];
+  let cancelButton = null;
   if (staged?.actionId && cfg.actions?.some((a) => a.id === staged.actionId)) lastAction = staged.actionId;
-  if (cfg.actions?.length) {
+  if (cfg.actions?.length || cfg.cancelable) {
     const row = h('div', { class: 'btn-row' });
-    for (const a of cfg.actions) {
+    for (const a of cfg.actions || []) {
       const b = h('button', { class: 'btn' + (a.primary !== false && a === cfg.actions[0] ? ' primary' : ''), type: 'button' }, a.label);
       b.addEventListener('click', () => { lastAction = a.id; run(); });
       actionButtons.push(b);
       row.append(b);
     }
+    if (cfg.cancelable) {
+      cancelButton = h('button', { class: 'btn hidden', type: 'button' }, '취소');
+      cancelButton.addEventListener('click', () => cancel());
+      row.append(cancelButton);
+    }
     wrap.append(row);
   }
 
   if (cfg.note) wrap.append(h('div', { class: 'note' }, cfg.note));
+  const largeInputWarning = h('div', { class: 'note large-input-warning hidden', role: 'alert' },
+    h('span', null, '입력이 매우 커서 브라우저가 잠시 응답하지 않을 수 있습니다.'),
+    h('button', { class: 'btn small', type: 'button', onclick: () => run(true) }, '그래도 처리'));
+  wrap.append(largeInputWarning);
 
   const out = cfg.outputHTML
     ? h('div', { class: 'out-html' })
@@ -314,28 +330,49 @@ export function makeIO(root, cfg) {
     }
   }
 
-  let seq = 0, running = false, pending = false;
+  let seq = 0, running = false, pending = false, controller = null, largeInputApproved = false;
   function setRunning(value, message = '') {
     running = value;
     wrap.setAttribute('aria-busy', String(value));
     actionButtons.forEach((button) => { button.disabled = value; });
+    if (cancelButton) {
+      cancelButton.classList.toggle('hidden', !value);
+      cancelButton.disabled = !value;
+    }
     status.classList.toggle('active', value || !!message);
     status.classList.toggle('error', !value && message.startsWith('처리 실패:'));
     status.textContent = value ? '처리 중…' : message;
   }
-  async function run() {
+  function inputLength() {
+    return Object.values(inputEls).reduce((sum, el) => sum + el.value.length, 0);
+  }
+  function cancel() {
+    if (!controller) return;
+    pending = false;
+    cancelButton.disabled = true;
+    status.textContent = '취소 중…';
+    controller.abort();
+  }
+  async function run(approveLargeInput = false) {
     if (running) {
       pending = true;
       return;
     }
+    if (approveLargeInput) largeInputApproved = true;
+    if (inputLength() > largeInputThreshold && !largeInputApproved) {
+      largeInputWarning.classList.remove('hidden');
+      return;
+    }
+    largeInputWarning.classList.add('hidden');
     const my = ++seq;
     const vals = {};
     for (const [id, el] of Object.entries(inputEls)) vals[id] = el.value;
     // 입력이 하나면 문자열을, 여러 개면 {id: 값} 객체를 process에 전달한다.
     const arg = cfg.inputs === null ? null : inputDefs.length === 1 ? vals[inputDefs[0].id] : vals;
     let isAsync = false;
+    controller = cfg.cancelable ? new AbortController() : null;
     try {
-      let res = cfg.process(arg, getOpts(), lastAction);
+      let res = cfg.process(arg, getOpts(), lastAction, controller?.signal);
       if (res && typeof res.then === 'function') {
         isAsync = true;
         setRunning(true);
@@ -344,9 +381,11 @@ export function makeIO(root, cfg) {
       if (my === seq && !pending) setOut(res);
       if (isAsync) setRunning(false, pending ? '' : '처리가 완료되었습니다.');
     } catch (e) {
-      if (my === seq && !pending) setOut(e?.message || String(e), true);
-      if (isAsync) setRunning(false, pending ? '' : '처리 실패: ' + (e?.message || String(e)));
+      const aborted = e?.name === 'AbortError';
+      if (my === seq && !pending) setOut(aborted ? '작업이 취소되었습니다.' : e?.message || String(e), !aborted);
+      if (isAsync) setRunning(false, pending ? '' : aborted ? '작업이 취소되었습니다.' : '처리 실패: ' + (e?.message || String(e)));
     } finally {
+      controller = null;
       if (isAsync && pending) {
         pending = false;
         run();
@@ -355,5 +394,5 @@ export function makeIO(root, cfg) {
   }
 
   if (cfg.runOnLoad || staged) run();
-  return { run, inputEls, optEls, out, status, setOut, getOpts };
+  return { run, cancel, inputEls, optEls, out, status, setOut, getOpts };
 }

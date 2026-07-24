@@ -348,6 +348,7 @@ table.grid th { background: var(--code-bg); }
 .copy-mini:hover { color: var(--accent); border-color: var(--accent); }
 
 .note { font-size: 13px; color: var(--muted); background: var(--accent-weak); border-radius: 8px; padding: 8px 12px; }
+.large-input-warning { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; }
 
 /* diff 표시 */
 .diff-add { background: rgba(22,163,74,.18); color: var(--ok); }

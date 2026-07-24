@@ -40,6 +40,7 @@ export function h(tag, attrs, ...kids) {
     else if (v === true) el.setAttribute(k, '');
     else if (v !== false && v != null) el.setAttribute(k, v);
   }
+  if (el.classList.contains('error') && !el.hasAttribute('role')) el.setAttribute('role', 'alert');
   for (const kid of kids.flat(Infinity)) {
     if (kid == null || kid === false) continue;
     el.append(kid.nodeType ? kid : String(kid));
@@ -53,15 +54,62 @@ export function formLabel(control, text, attrs = {}) {
   return h('label', { ...attrs, for: control.id }, text);
 }
 
+function legacyCopy(text) {
+  if (!document.queryCommandSupported?.('copy') || !document.hasFocus()) return false;
+  const input = h('textarea', {
+    readonly: true,
+    'aria-hidden': 'true',
+    style: { position: 'fixed', left: '-9999px', top: '0' },
+  });
+  input.value = text;
+  document.body.append(input);
+  input.select();
+  let copied = false;
+  try { copied = document.execCommand('copy'); } catch { /* 지원되지 않는 대체 동작 */ }
+  input.remove();
+  return copied;
+}
+
+export async function copyText(value) {
+  const text = String(typeof value === 'function' ? value() : value);
+  if (globalThis.isSecureContext && navigator.clipboard?.writeText) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return;
+    } catch (error) {
+      if (legacyCopy(text)) return;
+      if (error?.name === 'NotAllowedError')
+        throw new Error('클립보드 권한이 없어 복사하지 못했습니다. 브라우저의 사이트 권한을 확인하세요.');
+      throw new Error('클립보드에 복사하지 못했습니다. 브라우저 설정을 확인하세요.');
+    }
+  }
+  if (legacyCopy(text)) return;
+  if (!globalThis.isSecureContext)
+    throw new Error('보안 연결(HTTPS 또는 localhost)에서만 클립보드 복사를 사용할 수 있습니다.');
+  throw new Error('이 브라우저는 클립보드 복사를 지원하지 않습니다.');
+}
+
 export function copyBtn(getText, label = '복사') {
   const b = h('button', { class: 'copy-mini', type: 'button' }, label);
+  const announcement = h('span', { class: 'sr-only', role: 'status', 'aria-live': 'polite' });
   b.addEventListener('click', async () => {
     try {
-      await navigator.clipboard.writeText(typeof getText === 'function' ? getText() : getText);
+      await copyText(getText);
       b.textContent = '복사됨!';
-    } catch { b.textContent = '실패'; }
-    setTimeout(() => (b.textContent = label), 1200);
+      announcement.textContent = '클립보드에 복사했습니다.';
+    } catch (error) {
+      b.textContent = '복사 실패';
+      b.title = error.message;
+      announcement.textContent = error.message;
+    }
+    b.append(announcement);
+    setTimeout(() => {
+      b.textContent = label;
+      b.removeAttribute('title');
+      b.append(announcement);
+    }, 2500);
   });
+  b.append(announcement);
   return b;
 }
 
@@ -208,7 +256,7 @@ cfg = {
   actions: [{id,label,primary}]                // 생략 시 자동 실행만
   process: (input|{inputs}, opts, actionId, signal) => string|Node|Promise
   outputHTML: bool, outputRows, autorun (기본 true), runOnLoad (기본 false), note,
-  cancelable: bool, largeInputThreshold (기본 1,000,000자, false면 경고 안 함)
+  cancelable: bool, retryable: bool, largeInputThreshold (기본 1,000,000자, false면 경고 안 함)
 }
 ------------------------------------------------ */
 export function makeIO(root, cfg) {
@@ -308,7 +356,10 @@ export function makeIO(root, cfg) {
   const status = h('div', {
     class: 'io-status', role: 'status', 'aria-live': 'polite', 'aria-atomic': 'true',
   });
+  const retryButton = h('button', { class: 'btn small hidden', type: 'button' }, '다시 시도');
+  retryButton.addEventListener('click', () => run());
   wrap.append(status, h('div', { class: 'out-wrap' }, outHead, out));
+  status.after(retryButton);
   root.append(wrap);
 
   function getOpts() {
@@ -342,6 +393,7 @@ export function makeIO(root, cfg) {
     status.classList.toggle('active', value || !!message);
     status.classList.toggle('error', !value && message.startsWith('처리 실패:'));
     status.textContent = value ? '처리 중…' : message;
+    retryButton.classList.toggle('hidden', value || !cfg.retryable || !message.startsWith('처리 실패:'));
   }
   function inputLength() {
     return Object.values(inputEls).reduce((sum, el) => sum + el.value.length, 0);
@@ -364,6 +416,7 @@ export function makeIO(root, cfg) {
       return;
     }
     largeInputWarning.classList.add('hidden');
+    setRunning(false);
     const my = ++seq;
     const vals = {};
     for (const [id, el] of Object.entries(inputEls)) vals[id] = el.value;
@@ -383,7 +436,7 @@ export function makeIO(root, cfg) {
     } catch (e) {
       const aborted = e?.name === 'AbortError';
       if (my === seq && !pending) setOut(aborted ? '작업이 취소되었습니다.' : e?.message || String(e), !aborted);
-      if (isAsync) setRunning(false, pending ? '' : aborted ? '작업이 취소되었습니다.' : '처리 실패: ' + (e?.message || String(e)));
+      setRunning(false, pending ? '' : aborted ? '작업이 취소되었습니다.' : '처리 실패: ' + (e?.message || String(e)));
     } finally {
       controller = null;
       if (isAsync && pending) {

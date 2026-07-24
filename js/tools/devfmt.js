@@ -1,5 +1,5 @@
 // 코드 포맷팅 / 개발 유틸리티
-import { tool, makeIO, h, formLabel, kvTable, loadScript, loadCss, LIB, decodeInput, FMT_IN } from '../core.js';
+import { tool, makeIO, h, formLabel, kvTable, loadScript, loadCss, LIB, decodeInput, FMT_IN, copyBtn } from '../core.js';
 import { parseXML, parseCSV, toCSV } from './dataformat.js';
 
 const CAT = '코드 포맷팅 / 개발 유틸리티';
@@ -913,9 +913,7 @@ tool({
       grid,
       h('p', null, cmdOut, ' ', copyLater()));
     function copyLater() {
-      const b = h('button', { class: 'copy-mini', type: 'button' }, '복사');
-      b.addEventListener('click', () => navigator.clipboard.writeText(cmdOut.textContent));
-      return b;
+      return copyBtn(() => cmdOut.textContent);
     }
     fromOctal();
   },

@@ -238,7 +238,7 @@ tool({
       inputs: [{ id: 'input', label: '도메인', rows: 1, value: 'example.com' }],
       options: [{ id: 'type', label: '레코드 타입', type: 'select', values: ['A', 'AAAA', 'MX', 'TXT', 'CNAME', 'NS', 'SOA', 'CAA', 'SRV', 'PTR'] }],
       actions: [{ id: 'lookup', label: '조회' }],
-      outputHTML: true, autorun: false, cancelable: true,
+      outputHTML: true, autorun: false, cancelable: true, retryable: true,
       async process(text, o, _, signal) {
         const domain = text.trim();
         if (!domain) return '';

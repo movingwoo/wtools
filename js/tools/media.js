@@ -1,5 +1,5 @@
 // 이미지 / 미디어 / QR
-import { tool, makeIO, h, kvTable, loadScript, LIB, download, downloadZip, copyBtn, bytesToB64 } from '../core.js';
+import { tool, makeIO, h, kvTable, loadScript, loadModule, LIB, download, downloadZip, copyBtn, bytesToB64 } from '../core.js';
 
 const CAT = '이미지 / 미디어 / QR';
 
@@ -153,7 +153,7 @@ function encodeBMP({ data, width, height }) {
 
 let gifenc = null;
 async function encodeGIF(imageData) {
-  gifenc ??= await import('https://cdn.jsdelivr.net/npm/gifenc@1.0.3/+esm');
+  gifenc ??= await loadModule('https://cdn.jsdelivr.net/npm/gifenc@1.0.3/+esm');
   const palette = gifenc.quantize(imageData.data, 256);
   const index = gifenc.applyPalette(imageData.data, palette);
   const gif = gifenc.GIFEncoder();

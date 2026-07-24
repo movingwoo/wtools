@@ -19,6 +19,7 @@ const search = document.getElementById('search');
 const sidebar = document.getElementById('sidebar');
 const sidebarTop = document.getElementById('sidebar-top');
 const detectResult = document.getElementById('detect-result');
+const externalWarning = document.getElementById('external-resource-warning');
 const MAX_DETECT_LENGTH = 64 * 1024;
 let pastedDetectionPending = false;
 let cleanupCurrentTool = null;
@@ -337,6 +338,11 @@ route();
 
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
-    navigator.serviceWorker.register('sw.js').catch(() => { /* 오프라인 지원은 선택 사항이므로 무시한다. */ });
+    navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' })
+      .catch(() => { /* 오프라인 지원은 선택 사항이므로 무시한다. */ });
   });
 }
+
+window.addEventListener('load', () => {
+  if (!globalThis.CryptoJS || !globalThis.jsyaml) externalWarning.classList.remove('hidden');
+});

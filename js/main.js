@@ -2,7 +2,10 @@
 import { tools, categories, h, stageToolInput } from './core.js';
 import './tools/encoding.js';
 import './tools/dataformat.js';
-import './tools/devfmt.js';
+import './tools/devfmt-format.js';
+import './tools/devfmt-convert.js';
+import './tools/devfmt-diff.js';
+import './tools/devfmt-reference.js';
 import './tools/stringtools.js';
 import './tools/hashing.js';
 import './tools/cryptotools.js';

@@ -5,8 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <!-- frame-ancestors/sandbox/report-* 는 meta 태그로 전달 시 브라우저가 무시합니다. 클릭재킹 방지가 필요하면 서버/호스팅 설정에서 별도 헤더로 추가하세요.
      script-src에 'unsafe-eval'이 필요한 이유: ajv(JSON Schema 검증)가 검증 함수를 new Function()으로 컴파일합니다.
-     style-src에 'unsafe-inline'이 필요한 이유: 공통 UI 빌더(js/core.js의 h())가 인라인 style 객체를 CSSOM으로 직접 대입합니다. -->
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-eval' https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://unpkg.com; style-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://cdn.jsdelivr.net https://cloudflare-dns.com; object-src 'none'; base-uri 'self'; form-action 'self'">
+     style-src에 'unsafe-inline'이 필요한 이유: 공통 UI 빌더(js/core.js의 h())가 인라인 style 객체를 CSSOM으로 직접 대입합니다.
+     static.cloudflareinsights.com / cloudflareinsights.com: Cloudflare가 이 사이트를 서빙하며 자동 주입하는 Web Analytics 빔(beacon) 스크립트로, 저장소 소스에는 없습니다. -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-eval' https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://unpkg.com https://static.cloudflareinsights.com; style-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://cdn.jsdelivr.net https://cloudflare-dns.com https://cloudflareinsights.com; object-src 'none'; base-uri 'self'; form-action 'self'">
 <title>W-Tools</title>
 <meta name="description" content="MOVINGWOO Web Tools">
 <meta name="theme-color" media="(prefers-color-scheme: light)" content="#2563eb">

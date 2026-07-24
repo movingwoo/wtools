@@ -1,5 +1,5 @@
 // 문자열 / 텍스트 유틸리티
-import { tool, makeIO, h, kvTable, strToBytes, loadScript, LIB, copyBtn } from '../core.js';
+import { tool, makeIO, h, kvTable, strToBytes, loadScript, LIB, copyBtn, copyText } from '../core.js';
 
 const CAT = '문자열 / 텍스트';
 
@@ -201,7 +201,9 @@ tool({
     const catSel = h('select', null,
       h('option', { value: '' }, '전체 카테고리'),
       EMOJI_CAT.map(([v, l]) => h('option', { value: v }, l)));
-    const info = h('p', { class: 'note' }, '이모지 데이터 로드 중... (도구를 열 때 한 번만 내려받습니다)');
+    const info = h('p', {
+      class: 'note', role: 'status', 'aria-live': 'polite', 'aria-atomic': 'true',
+    }, '이모지 데이터 로드 중... (도구를 열 때 한 번만 내려받습니다)');
     const grid = h('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(52px, 1fr))', gap: '6px', marginTop: '12px' } });
     const sentinel = h('div', { style: { height: '1px' } });
     let list = [], filtered = [], shown = 0, warn = '', raf = 0, active = true;
@@ -220,8 +222,14 @@ tool({
           class: 'btn', type: 'button', title: t,
           style: { fontSize: '24px', padding: '8px 4px' },
           onclick: async () => {
-            await navigator.clipboard.writeText(e);
-            info.textContent = `${e} 복사됨! (${t})`;
+            try {
+              await copyText(e);
+              info.classList.remove('error');
+              info.textContent = `${e} 복사됨! (${t})`;
+            } catch (error) {
+              info.classList.add('error');
+              info.textContent = error.message;
+            }
           },
         }, e));
       }

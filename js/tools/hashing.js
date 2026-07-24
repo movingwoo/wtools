@@ -207,29 +207,50 @@ tool({
   keywords: 'file checksum verify download',
   render(root) {
     const out = h('div');
+    const status = h('div', {
+      class: 'io-status', role: 'status', 'aria-live': 'polite', 'aria-atomic': 'true',
+    });
     const file = h('input', { type: 'file', multiple: true });
+    const wrap = h('div', { class: 'io', 'aria-busy': 'false' },
+      h('label', { class: 'io-label' }, '파일 선택 (여러 개 가능, 브라우저 밖으로 전송되지 않습니다)'),
+      file, status, out);
     file.addEventListener('change', async () => {
       const list = [...file.files];
       if (!list.length) return;
+      file.disabled = true;
+      wrap.setAttribute('aria-busy', 'true');
+      status.className = 'io-status active';
+      status.textContent = '처리 중…';
       const frag = h('div');
-      for (let i = 0; i < list.length; i++) {
-        const f = list[i];
-        out.textContent = list.length > 1 ? `계산 중... (${i + 1}/${list.length})` : '계산 중...';
-        await new Promise((res) => setTimeout(res)); // 진행 표시가 그려지도록 양보
-        const buf = new Uint8Array(await f.arrayBuffer());
-        const wa = CryptoJS.lib.WordArray.create(buf);
-        frag.append(h('div', { style: { marginBottom: '14px' } }, kvTable([
-          ['파일', `${f.name} (${f.size.toLocaleString()} bytes)`],
-          ['MD5', CryptoJS.MD5(wa).toString()],
-          ['SHA-1', CryptoJS.SHA1(wa).toString()],
-          ['SHA-256', CryptoJS.SHA256(wa).toString()],
-          ['SHA-512', CryptoJS.SHA512(wa).toString()],
-        ])));
+      try {
+        for (let i = 0; i < list.length; i++) {
+          const f = list[i];
+          status.textContent = list.length > 1 ? `처리 중… (${i + 1}/${list.length})` : '처리 중…';
+          await new Promise((res) => setTimeout(res)); // 진행 표시가 그려지도록 양보
+          const buf = new Uint8Array(await f.arrayBuffer());
+          const wa = CryptoJS.lib.WordArray.create(buf);
+          frag.append(h('div', { style: { marginBottom: '14px' } }, kvTable([
+            ['파일', `${f.name} (${f.size.toLocaleString()} bytes)`],
+            ['MD5', CryptoJS.MD5(wa).toString()],
+            ['SHA-1', CryptoJS.SHA1(wa).toString()],
+            ['SHA-256', CryptoJS.SHA256(wa).toString()],
+            ['SHA-512', CryptoJS.SHA512(wa).toString()],
+          ])));
+        }
+        out.innerHTML = '';
+        out.append(frag);
+        status.textContent = '처리가 완료되었습니다.';
+      } catch (e) {
+        out.innerHTML = '';
+        out.append(h('span', { class: 'error' }, e?.message || String(e)));
+        status.className = 'io-status active error';
+        status.textContent = '처리 실패: ' + (e?.message || String(e));
+      } finally {
+        file.disabled = false;
+        wrap.setAttribute('aria-busy', 'false');
       }
-      out.innerHTML = '';
-      out.append(frag);
     });
-    root.append(h('div', { class: 'io' }, h('label', { class: 'io-label' }, '파일 선택 (여러 개 가능, 브라우저 밖으로 전송되지 않습니다)'), file, out));
+    root.append(wrap);
   },
 });
 

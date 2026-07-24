@@ -174,6 +174,9 @@ tool({
   keywords: 'image convert png jpeg webp gif bmp svg resize compress quality metadata',
   render(root) {
     const out = h('div');
+    const convertStatus = h('div', {
+      class: 'io-status', role: 'status', 'aria-live': 'polite', 'aria-atomic': 'true',
+    });
     const file = h('input', { type: 'file', accept: 'image/*', multiple: true });
     const fmt = h('select', null, [['original', '원본 포맷 유지'], ['image/png', 'PNG'], ['image/jpeg', 'JPEG'], ['image/webp', 'WebP'], ['image/gif', 'GIF'], ['image/bmp', 'BMP'], ['image/svg+xml', 'SVG']]
       .map(([v, l]) => h('option', { value: v, selected: v === 'image/png' }, l)));
@@ -194,6 +197,7 @@ tool({
     let outUrls = [];
     let seq = 0;
     let active = true;
+    let converting = false, convertPending = false;
 
     function dimensions(img) {
       let s;
@@ -230,56 +234,91 @@ tool({
 
     async function convert() {
       if (!items.length) return;
+      if (converting) {
+        convertPending = true;
+        seq++;
+        return;
+      }
+      converting = true;
       const my = ++seq;
-      const q = +quality.value / 100;
-      const progress = h('p', { class: 'note' }, '변환 중...');
-      outUrls.forEach((u) => URL.revokeObjectURL(u));
-      outUrls = [];
-      out.innerHTML = '';
-      out.append(progress);
-      const frag = h('div');
-      const results = []; // ZIP용 [{name, data}]
-      for (let i = 0; i < items.length; i++) {
-        if (items.length > 1) progress.textContent = `변환 중... (${i + 1}/${items.length})`;
-        const item = items[i];
-        try {
-          let type = fmt.value === 'original' ? item.type : fmt.value;
-          if (type === 'image/jpg') type = 'image/jpeg';
-          if (!['image/png', 'image/jpeg', 'image/webp', 'image/gif', 'image/bmp', 'image/svg+xml'].includes(type))
-            throw new Error('이 파일의 원본 포맷은 출력할 수 없습니다. 다른 출력 포맷을 선택하세요.');
-          const { blob, w, hgt } = await convertOne(item.img, type, q);
-          if (my !== seq) return;
-          const ext = type === 'image/svg+xml' ? 'svg' : type === 'image/jpeg' ? 'jpg' : type.split('/')[1];
-          const outName = items.length === 1 ? 'converted.' + ext : item.name.replace(/\.[^.]+$/, '') + '.' + ext;
-          const uri = URL.createObjectURL(blob);
-          outUrls.push(uri);
-          results.push({ name: outName, data: blob });
-          const change = item.size ? (1 - blob.size / item.size) * 100 : null;
-          const sizeText = `${(item.size / 1024).toFixed(1)} KB → ${(blob.size / 1024).toFixed(1)} KB` +
-            (change == null ? '' : ` (${change >= 0 ? change.toFixed(1) + '% 감소' : (-change).toFixed(1) + '% 증가'})`);
-          frag.append(h('div', { style: { marginBottom: '14px' } },
-            h('img', { src: uri, class: 'img-preview', style: { maxHeight: items.length > 1 ? '160px' : '260px' } }),
-            h('p', null, `${items.length > 1 ? item.name + ' → ' + outName + ' — ' : ''}${w} × ${hgt}, ${sizeText} `,
-              h('button', { class: 'btn small', type: 'button', onclick: () => download(outName, blob) }, '다운로드'))));
-        } catch (e) {
-          if (my !== seq) return;
-          frag.append(h('p', null, h('span', { class: 'error' }, `${item.name} 변환 실패: ${e.message}`)));
+      out.setAttribute('aria-busy', 'true');
+      convertStatus.className = 'io-status active';
+      convertStatus.textContent = '처리 중…';
+      try {
+        const q = +quality.value / 100;
+        const progress = h('p', { class: 'note' }, '변환 중...');
+        outUrls.forEach((u) => URL.revokeObjectURL(u));
+        outUrls = [];
+        out.innerHTML = '';
+        out.append(progress);
+        const frag = h('div');
+        const results = []; // ZIP용 [{name, data}]
+        let failedCount = 0;
+        for (let i = 0; i < items.length; i++) {
+          if (items.length > 1) {
+            progress.textContent = `변환 중... (${i + 1}/${items.length})`;
+            convertStatus.textContent = `처리 중… (${i + 1}/${items.length})`;
+          }
+          const item = items[i];
+          try {
+            let type = fmt.value === 'original' ? item.type : fmt.value;
+            if (type === 'image/jpg') type = 'image/jpeg';
+            if (!['image/png', 'image/jpeg', 'image/webp', 'image/gif', 'image/bmp', 'image/svg+xml'].includes(type))
+              throw new Error('이 파일의 원본 포맷은 출력할 수 없습니다. 다른 출력 포맷을 선택하세요.');
+            const { blob, w, hgt } = await convertOne(item.img, type, q);
+            if (my !== seq) return;
+            const ext = type === 'image/svg+xml' ? 'svg' : type === 'image/jpeg' ? 'jpg' : type.split('/')[1];
+            const outName = items.length === 1 ? 'converted.' + ext : item.name.replace(/\.[^.]+$/, '') + '.' + ext;
+            const uri = URL.createObjectURL(blob);
+            outUrls.push(uri);
+            results.push({ name: outName, data: blob });
+            const change = item.size ? (1 - blob.size / item.size) * 100 : null;
+            const sizeText = `${(item.size / 1024).toFixed(1)} KB → ${(blob.size / 1024).toFixed(1)} KB` +
+              (change == null ? '' : ` (${change >= 0 ? change.toFixed(1) + '% 감소' : (-change).toFixed(1) + '% 증가'})`);
+            frag.append(h('div', { style: { marginBottom: '14px' } },
+              h('img', { src: uri, class: 'img-preview', style: { maxHeight: items.length > 1 ? '160px' : '260px' } }),
+              h('p', null, `${items.length > 1 ? item.name + ' → ' + outName + ' — ' : ''}${w} × ${hgt}, ${sizeText} `,
+                h('button', { class: 'btn small', type: 'button', onclick: () => download(outName, blob) }, '다운로드'))));
+          } catch (e) {
+            if (my !== seq) return;
+            failedCount++;
+            frag.append(h('p', null, h('span', { class: 'error' }, `${item.name} 변환 실패: ${e.message}`)));
+          }
+        }
+        if (my !== seq) return;
+        out.innerHTML = '';
+        if (results.length > 1)
+          out.append(h('div', { class: 'btn-row', style: { marginBottom: '10px' } },
+            h('button', {
+              class: 'btn primary', type: 'button',
+              onclick: () => downloadZip('converted.zip', results).catch((e) => alert('ZIP 생성 실패: ' + e.message)),
+            }, `전체 ZIP 다운로드 (${results.length}개)`)));
+        out.append(h('p', { class: 'note' }, '변환이 완료되었습니다.'), frag);
+        convertStatus.className = failedCount ? 'io-status active error' : 'io-status active';
+        convertStatus.textContent = failedCount
+          ? `변환이 완료되었지만 ${failedCount}개 파일은 실패했습니다.`
+          : '처리가 완료되었습니다.';
+      } catch (e) {
+        if (my === seq) {
+          out.innerHTML = '';
+          out.append(h('span', { class: 'error' }, e?.message || String(e)));
+          convertStatus.className = 'io-status active error';
+          convertStatus.textContent = '처리 실패: ' + (e?.message || String(e));
+        }
+      } finally {
+        converting = false;
+        out.setAttribute('aria-busy', 'false');
+        if (convertPending && active) {
+          convertPending = false;
+          convert();
         }
       }
-      if (my !== seq) return;
-      out.innerHTML = '';
-      if (results.length > 1)
-        out.append(h('div', { class: 'btn-row', style: { marginBottom: '10px' } },
-          h('button', {
-            class: 'btn primary', type: 'button',
-            onclick: () => downloadZip('converted.zip', results).catch((e) => alert('ZIP 생성 실패: ' + e.message)),
-          }, `전체 ZIP 다운로드 (${results.length}개)`)));
-      out.append(frag);
     }
 
     file.addEventListener('change', async () => {
       const list = [...file.files];
       if (!list.length) return;
+      file.disabled = true;
       info.textContent = '이미지 로딩 중...';
       items.forEach((it) => URL.revokeObjectURL(it.url));
       items = [];
@@ -292,6 +331,7 @@ tool({
         if (ok) items.push({ name: f.name, type: f.type, size: f.size, img, url });
         else { URL.revokeObjectURL(url); failed.push(f.name); }
       }
+      file.disabled = false;
       info.textContent = (items.length === 1
         ? `원본: ${items[0].img.naturalWidth} × ${items[0].img.naturalHeight}`
         : `${items.length}개 파일 선택됨`) +
@@ -315,7 +355,7 @@ tool({
           percentOpt, maxOpts,
           h('span', { class: 'opt-item' }, h('label', null, '확대하지 않기'), noUpscale)),
         h('p', { class: 'note' }, '결과는 캔버스로 다시 인코딩되어 EXIF·GPS 등 원본 메타데이터가 제거됩니다. 화질을 유지한 채 메타데이터만 삭제하려면 EXIF 뷰어 / 메타데이터 제거 도구를 사용하세요. GIF는 첫 프레임만 처리되며 SVG 출력은 PNG를 내장한 파일입니다.'),
-        out));
+        convertStatus, out));
     return () => {
       active = false;
       seq++;

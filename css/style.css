@@ -288,7 +288,16 @@ button.btn:hover { border-color: var(--accent); color: var(--accent); }
 button.btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
 button.btn.primary:hover { opacity: .9; color: #fff; }
 button.btn.small { padding: 3px 10px; font-size: 12.5px; }
+button.btn:disabled { cursor: wait; opacity: .6; }
 
+.io-status {
+  display: none;
+  min-height: 20px;
+  color: var(--muted);
+  font-size: 13px;
+}
+.io-status.active { display: block; }
+.io-status.error { color: var(--danger); }
 .out-wrap { position: relative; }
 .out-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
 .out-html {

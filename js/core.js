@@ -191,7 +191,7 @@ cfg = {
 }
 ------------------------------------------------ */
 export function makeIO(root, cfg) {
-  const wrap = h('div', { class: 'io' });
+  const wrap = h('div', { class: 'io', 'aria-busy': 'false' });
   const inputDefs = cfg.inputs === null ? [] : (cfg.inputs || [{ id: 'input', label: '입력' }]);
   const inputEls = {};
   const staged = inputDefs.length ? takeToolInput() : null;
@@ -239,12 +239,14 @@ export function makeIO(root, cfg) {
   }
 
   let lastAction = cfg.actions?.[0]?.id ?? null;
+  const actionButtons = [];
   if (staged?.actionId && cfg.actions?.some((a) => a.id === staged.actionId)) lastAction = staged.actionId;
   if (cfg.actions?.length) {
     const row = h('div', { class: 'btn-row' });
     for (const a of cfg.actions) {
       const b = h('button', { class: 'btn' + (a.primary !== false && a === cfg.actions[0] ? ' primary' : ''), type: 'button' }, a.label);
       b.addEventListener('click', () => { lastAction = a.id; run(); });
+      actionButtons.push(b);
       row.append(b);
     }
     wrap.append(row);
@@ -258,7 +260,10 @@ export function makeIO(root, cfg) {
   const outHead = h('div', { class: 'out-head' },
     h('label', { class: 'io-label' }, cfg.outputLabel || '결과'),
     copyBtn(() => (cfg.outputHTML ? out.textContent : out.value)));
-  wrap.append(h('div', { class: 'out-wrap' }, outHead, out));
+  const status = h('div', {
+    class: 'io-status', role: 'status', 'aria-live': 'polite', 'aria-atomic': 'true',
+  });
+  wrap.append(status, h('div', { class: 'out-wrap' }, outHead, out));
   root.append(wrap);
 
   function getOpts() {
@@ -280,22 +285,46 @@ export function makeIO(root, cfg) {
     }
   }
 
-  let seq = 0;
+  let seq = 0, running = false, pending = false;
+  function setRunning(value, message = '') {
+    running = value;
+    wrap.setAttribute('aria-busy', String(value));
+    actionButtons.forEach((button) => { button.disabled = value; });
+    status.classList.toggle('active', value || !!message);
+    status.classList.toggle('error', !value && message.startsWith('처리 실패:'));
+    status.textContent = value ? '처리 중…' : message;
+  }
   async function run() {
+    if (running) {
+      pending = true;
+      return;
+    }
     const my = ++seq;
     const vals = {};
     for (const [id, el] of Object.entries(inputEls)) vals[id] = el.value;
     // 입력이 하나면 문자열을, 여러 개면 {id: 값} 객체를 process에 전달한다.
     const arg = cfg.inputs === null ? null : inputDefs.length === 1 ? vals[inputDefs[0].id] : vals;
+    let isAsync = false;
     try {
       let res = cfg.process(arg, getOpts(), lastAction);
-      if (res instanceof Promise) res = await res;
-      if (my === seq) setOut(res);
+      if (res && typeof res.then === 'function') {
+        isAsync = true;
+        setRunning(true);
+        res = await res;
+      }
+      if (my === seq && !pending) setOut(res);
+      if (isAsync) setRunning(false, pending ? '' : '처리가 완료되었습니다.');
     } catch (e) {
-      if (my === seq) setOut(e?.message || String(e), true);
+      if (my === seq && !pending) setOut(e?.message || String(e), true);
+      if (isAsync) setRunning(false, pending ? '' : '처리 실패: ' + (e?.message || String(e)));
+    } finally {
+      if (isAsync && pending) {
+        pending = false;
+        run();
+      }
     }
   }
 
   if (cfg.runOnLoad || staged) run();
-  return { run, inputEls, optEls, out, setOut, getOpts };
+  return { run, inputEls, optEls, out, status, setOut, getOpts };
 }

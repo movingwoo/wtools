@@ -415,6 +415,9 @@ route();
 
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
+    // 첫 설치 시 clients.claim()으로 제어권만 넘어온 경우와
+    // 업데이트로 컨트롤러가 교체된 경우를 구분하기 위해 기록해 둔다.
+    let hadController = !!navigator.serviceWorker.controller;
     navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' })
       .then((registration) => {
         let refreshing = false;
@@ -435,6 +438,11 @@ if ('serviceWorker' in navigator) {
           });
         });
         navigator.serviceWorker.addEventListener('controllerchange', () => {
+          if (!hadController) {
+            // 첫 방문: 페이지는 이미 네트워크에서 로드됐으므로 새로고침이 필요 없다.
+            hadController = true;
+            return;
+          }
           if (refreshing) return;
           refreshing = true;
           location.reload();

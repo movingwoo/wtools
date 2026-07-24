@@ -40,6 +40,17 @@ test('해시 라우팅 직접 진입과 새로고침이 동작한다', async ({ 
   await expect(page.locator('.tool-header h1')).toHaveText('URL 인코딩/디코딩');
 });
 
+test('사이드바 하단까지 스크롤해도 즐겨찾기 별을 클릭할 수 있다', async ({ page }) => {
+  await page.goto('/');
+  await page.locator('#sidebar').evaluate((el) => { el.scrollTop = el.scrollHeight; });
+  await expect(page.locator('#sidebar-top')).toBeVisible();
+  // 고정된 '맨 위로' 버튼이 별 버튼을 가리면 실좌표 클릭이 가로채져 즐겨찾기가 토글되지 않는다.
+  const lastStar = page.locator('#nav .nav-item .star-btn').last();
+  const box = await lastStar.boundingBox();
+  await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+  await expect(lastStar).toHaveText('★');
+});
+
 test('Base64 도구가 입력을 변환한다', async ({ page }) => {
   await page.goto('/#/tool/base64');
   const input = page.locator('#content textarea.mono:not(.out)').first();

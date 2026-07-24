@@ -1,5 +1,5 @@
 // 네트워크
-import { tool, makeIO, h, kvTable, loadScript, LIB, copyBtn } from '../core.js';
+import { tool, makeIO, h, formLabel, kvTable, loadScript, LIB, copyBtn } from '../core.js';
 
 const CAT = '네트워크';
 
@@ -420,8 +420,8 @@ tool({
         button('호환성 우선', () => setPolicy(compatiblePreset)),
         button('모두 해제', () => setPolicy({}))),
       h('div', { style: { overflowX: 'auto' } }, table),
-      h('div', { class: 'opt-row', style: { marginBottom: '10px' } }, h('span', { class: 'opt-item' }, h('label', null, '헤더 종류'), headerName)),
-      h('div', { class: 'out-head' }, h('label', { class: 'io-label' }, '생성된 헤더'), copyBtn(() => policyOut.value)),
+      h('div', { class: 'opt-row', style: { marginBottom: '10px' } }, h('span', { class: 'opt-item' }, formLabel(headerName, '헤더 종류'), headerName)),
+      h('div', { class: 'out-head' }, formLabel(policyOut, '생성된 헤더', { class: 'io-label' }), copyBtn(() => policyOut.value)),
       policyOut,
       h('h3', { style: { fontSize: '16px', marginBottom: '8px' } }, '보안 검사'),
       warnings);
@@ -444,7 +444,7 @@ tool({
   keywords: 'http status code reference 404 500',
   render(root) {
     const box = h('div');
-    const s = h('input', { type: 'text', placeholder: '검색 (예: 404, redirect, forbidden)', style: { width: '100%', marginBottom: '12px' } });
+    const s = h('input', { type: 'text', 'aria-label': 'HTTP 상태 코드 검색', placeholder: '검색 (예: 404, redirect, forbidden)', style: { width: '100%', marginBottom: '12px' } });
     function draw() {
       const q = s.value.trim().toLowerCase();
       box.innerHTML = '';
@@ -476,7 +476,7 @@ tool({
   keywords: 'mime type content-type extension',
   render(root) {
     const box = h('div');
-    const s = h('input', { type: 'text', placeholder: '검색 (예: json, png, video)', style: { width: '100%', marginBottom: '12px' } });
+    const s = h('input', { type: 'text', 'aria-label': 'MIME 타입 검색', placeholder: '검색 (예: json, png, video)', style: { width: '100%', marginBottom: '12px' } });
     function draw() {
       const q = s.value.trim().toLowerCase();
       const rows = Object.entries(MIME_TYPES).filter(([m, e]) => !q || m.includes(q) || e.includes(q));
@@ -496,7 +496,7 @@ tool({
   render(root) {
     const display = h('div', { class: 'big-time', style: { fontSize: '28px' } }, '아무 키나 누르세요');
     const table = h('div');
-    const target = h('input', { type: 'text', placeholder: '여기를 클릭한 뒤 키를 누르세요', style: { width: '100%', marginBottom: '12px', textAlign: 'center' } });
+    const target = h('input', { type: 'text', 'aria-label': '키 입력 영역', placeholder: '여기를 클릭한 뒤 키를 누르세요', style: { width: '100%', marginBottom: '12px', textAlign: 'center' } });
     target.addEventListener('keydown', (e) => {
       e.preventDefault();
       display.textContent = e.key === ' ' ? '(Space)' : e.key;

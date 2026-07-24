@@ -1,5 +1,5 @@
 // 해싱
-import { tool, makeIO, h, kvTable, strToBytes, decodeInput, FMT_IN, loadScript, LIB } from '../core.js';
+import { tool, makeIO, h, formLabel, kvTable, strToBytes, decodeInput, FMT_IN, loadScript, LIB } from '../core.js';
 
 const CAT = '해싱';
 
@@ -212,7 +212,7 @@ tool({
     });
     const file = h('input', { type: 'file', multiple: true });
     const wrap = h('div', { class: 'io', 'aria-busy': 'false' },
-      h('label', { class: 'io-label' }, '파일 선택 (여러 개 가능, 브라우저 밖으로 전송되지 않습니다)'),
+      formLabel(file, '파일 선택 (여러 개 가능, 브라우저 밖으로 전송되지 않습니다)', { class: 'io-label' }),
       file, status, out);
     file.addEventListener('change', async () => {
       const list = [...file.files];
@@ -332,6 +332,6 @@ tool({
       fileOut.innerHTML = '';
       fileOut.append(h('p', { class: 'note' }, `${f.name} (${f.size.toLocaleString()} bytes)`), table(bytes));
     });
-    root.append(h('div', { class: 'io' }, h('label', { class: 'io-label' }, '또는 파일 선택 (브라우저 밖으로 전송되지 않습니다)'), file, fileOut));
+    root.append(h('div', { class: 'io' }, formLabel(file, '또는 파일 선택 (브라우저 밖으로 전송되지 않습니다)', { class: 'io-label' }), file, fileOut));
   },
 });

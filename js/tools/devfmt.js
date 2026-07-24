@@ -1,5 +1,5 @@
 // 코드 포맷팅 / 개발 유틸리티
-import { tool, makeIO, h, kvTable, loadScript, loadCss, LIB, decodeInput, FMT_IN } from '../core.js';
+import { tool, makeIO, h, formLabel, kvTable, loadScript, loadCss, LIB, decodeInput, FMT_IN } from '../core.js';
 import { parseXML, parseCSV, toCSV } from './dataformat.js';
 
 const CAT = '코드 포맷팅 / 개발 유틸리티';
@@ -872,7 +872,7 @@ tool({
       h('tr', null, h('th', null, ''), perms.map((p) => h('th', null, p))),
       who.map((w, wi) => h('tr', null, h('th', null, w),
         perms.map((_, pi) => {
-          const cb = h('input', { type: 'checkbox' });
+          const cb = h('input', { type: 'checkbox', 'aria-label': `${who[wi]} ${perms[pi]}` });
           boxes[wi * 3 + pi] = cb;
           cb.addEventListener('change', update);
           return h('td', { style: { textAlign: 'center' } }, cb);
@@ -908,8 +908,8 @@ tool({
     octInput.addEventListener('input', fromOctal);
     root.append(
       h('div', { class: 'opt-row', style: { marginBottom: '14px' } },
-        h('span', { class: 'opt-item' }, h('label', null, '8진수'), octInput),
-        h('span', { class: 'opt-item' }, h('label', null, '심볼릭'), symOut)),
+        h('span', { class: 'opt-item' }, formLabel(octInput, '8진수'), octInput),
+        h('span', { class: 'opt-item' }, h('span', null, '심볼릭'), symOut)),
       grid,
       h('p', null, cmdOut, ' ', copyLater()));
     function copyLater() {
@@ -1056,9 +1056,9 @@ tool({
     ta.addEventListener('input', fromText);
     fmt.addEventListener('change', fromText);
     root.append(h('div', { class: 'io' },
-      h('label', { class: 'io-label' }, '파일 선택 (브라우저 밖으로 전송되지 않습니다)'), file,
-      h('label', { class: 'io-label', style: { marginTop: '10px' } }, '또는 직접 입력'), ta,
-      h('div', { class: 'opt-row' }, h('span', { class: 'opt-item' }, h('label', null, '입력 형식'), fmt)),
+      formLabel(file, '파일 선택 (브라우저 밖으로 전송되지 않습니다)', { class: 'io-label' }), file,
+      formLabel(ta, '또는 직접 입력', { class: 'io-label', style: { marginTop: '10px' } }), ta,
+      h('div', { class: 'opt-row' }, h('span', { class: 'opt-item' }, formLabel(fmt, '입력 형식'), fmt)),
       info, out));
   },
 });

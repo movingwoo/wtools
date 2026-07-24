@@ -19,7 +19,7 @@
   외부 라이브러리를 불러오지 못했습니다. 홈과 기본 도구는 사용할 수 있지만 일부 기능에는 네트워크 연결이 필요합니다.
 </div>
 <div id="app">
-  <aside id="sidebar">
+  <aside id="sidebar" aria-label="도구 메뉴">
     <a class="brand" href="#/">W-Tools</a>
     <input id="search" type="search" placeholder="도구 검색 (/)" autocomplete="off">
     <div id="detect-result" class="detect-result hidden" aria-live="polite"></div>
@@ -28,6 +28,6 @@
   </aside>
   <main id="content"></main>
 </div>
-<button id="menu-btn" aria-label="메뉴">☰</button>
+<button id="menu-btn" type="button" aria-label="도구 메뉴 열기" aria-controls="sidebar" aria-expanded="false">☰</button>
 </body>
 </html>

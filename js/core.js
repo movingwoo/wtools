@@ -47,6 +47,12 @@ export function h(tag, attrs, ...kids) {
   return el;
 }
 
+let fieldId = 0;
+export function formLabel(control, text, attrs = {}) {
+  if (!control.id) control.id = `wtools-field-${++fieldId}`;
+  return h('label', { ...attrs, for: control.id }, text);
+}
+
 export function copyBtn(getText, label = '복사') {
   const b = h('button', { class: 'copy-mini', type: 'button' }, label);
   b.addEventListener('click', async () => {
@@ -212,13 +218,14 @@ export function makeIO(root, cfg) {
 
   for (const def of inputDefs) {
     const ta = h('textarea', {
+      id: `wtools-${def.id}-${++fieldId}`,
       class: 'mono', rows: def.rows || 8,
       placeholder: def.placeholder || '', spellcheck: 'false',
     });
     if (def.value != null) ta.value = def.value;
     if (staged && def === inputDefs[0]) ta.value = staged.value;
     inputEls[def.id] = ta;
-    wrap.append(h('label', { class: 'io-label' }, def.label || '입력'), ta);
+    wrap.append(formLabel(ta, def.label || '입력', { class: 'io-label' }), ta);
     ta.addEventListener('input', () => { if (cfg.autorun !== false) run(); });
   }
 
@@ -240,6 +247,7 @@ export function makeIO(root, cfg) {
         if (o.value != null) el.value = o.value;
         if (o.size) el.style.width = o.size + 'px';
       }
+      el.id = `wtools-${o.id}-${++fieldId}`;
       el.addEventListener(o.type === 'text' || o.type === 'password' || o.type === 'number' ? 'input' : 'change',
         () => { if (cfg.autorun !== false) run(); });
       optEls[o.id] = el;
@@ -247,7 +255,7 @@ export function makeIO(root, cfg) {
         if (el.type === 'checkbox') el.checked = !!staged.options[o.id];
         else el.value = staged.options[o.id];
       }
-      row.append(h('span', { class: 'opt-item' }, o.label ? h('label', null, o.label) : null, el));
+      row.append(h('span', { class: 'opt-item' }, o.label ? formLabel(el, o.label) : null, el));
     }
     wrap.append(row);
   }
@@ -271,8 +279,15 @@ export function makeIO(root, cfg) {
   const out = cfg.outputHTML
     ? h('div', { class: 'out-html' })
     : h('textarea', { class: 'mono out', rows: cfg.outputRows || 8, readonly: true, spellcheck: 'false' });
+  const outLabel = cfg.outputHTML
+    ? h('span', { class: 'io-label', id: `wtools-output-label-${++fieldId}` }, cfg.outputLabel || '결과')
+    : formLabel(out, cfg.outputLabel || '결과', { class: 'io-label' });
+  if (cfg.outputHTML) {
+    out.setAttribute('role', 'region');
+    out.setAttribute('aria-labelledby', outLabel.id);
+  }
   const outHead = h('div', { class: 'out-head' },
-    h('label', { class: 'io-label' }, cfg.outputLabel || '결과'),
+    outLabel,
     copyBtn(() => (cfg.outputHTML ? out.textContent : out.value)));
   const status = h('div', {
     class: 'io-status', role: 'status', 'aria-live': 'polite', 'aria-atomic': 'true',

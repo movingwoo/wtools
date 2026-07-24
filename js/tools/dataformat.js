@@ -466,7 +466,7 @@ tool({
       style: { height: '28px', borderRadius: '5px', border: '1px solid var(--border)', background: hex, cursor: 'pointer', padding: '0' },
       onclick: () => { io.inputEls.input.value = hex; io.run(); },
     })));
-    io.inputEls.input.after(h('label', { class: 'io-label' }, '색상 표 (클릭하여 선택)'), swatches);
+    io.inputEls.input.after(h('span', { class: 'io-label' }, '색상 표 (클릭하여 선택)'), swatches);
   },
 });
 

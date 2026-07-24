@@ -1,0 +1,53 @@
+name: Validate static site
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: validate-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Check JavaScript syntax
+        shell: bash
+        run: |
+          while IFS= read -r file; do
+            node --input-type=module --check < "$file"
+          done < <(find js -name '*.js' -type f | sort)
+          node --check sw.js
+
+      - name: Validate registrations and static assets
+        run: python3 scripts/validate_static.py
+
+      - name: Check whitespace
+        shell: bash
+        run: |
+          empty_tree=$(git hash-object -t tree /dev/null)
+          git diff --check "$empty_tree" HEAD
+
+      - name: Smoke-test app shell over HTTP
+        shell: bash
+        run: |
+          python3 -m http.server 8000 > /tmp/wtools-http.log 2>&1 &
+          server_pid=$!
+          trap 'kill "$server_pid"' EXIT
+          python3 scripts/validate_static.py --base-url http://127.0.0.1:8000

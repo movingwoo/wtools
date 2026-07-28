@@ -1,6 +1,6 @@
 // 해싱 도구 정밀 테스트 — NIST/RFC 표준 테스트 벡터 사용.
 // MD4는 CDN 라이브러리를 로드하므로 외부 스크립트 지연 로드 경로도 함께 검증된다.
-import { test, expect, toolCase, openTool, uploadFile } from '../helpers.js';
+import { test, expect, toolCases, openTool, uploadFile } from '../helpers.js';
 
 const cases = [
   // 해시 생성 — "abc"의 표준 벡터 (RFC 1319/1320, FIPS 180/202)
@@ -103,7 +103,7 @@ const cases = [
   },
 ];
 
-for (const c of cases) toolCase(c);
+toolCases('hashing', cases);
 
 /* ---------- 파일 입력 경로 ---------- */
 

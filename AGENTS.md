@@ -6,7 +6,7 @@ This file applies to the entire repository.
 
 ## Project Overview
 
-W-Tools is a collection of developer utilities that runs as a pure static site. It uses HTML, CSS, and vanilla JavaScript ES modules; the site itself has no build step, package manager, bundler, or linter. CI runs syntax/static validation and a Playwright browser smoke suite (`tests/`, CI-only — never required for hosting or serving the site).
+W-Tools is a collection of developer utilities that runs as a pure static site. It uses HTML, CSS, and vanilla JavaScript ES modules; the site itself has no build step, package manager, bundler, or linter. CI runs syntax/static validation and a Playwright browser suite (`tests/`, CI-only — never required for hosting or serving the site) that covers both rendering and per-tool input/output accuracy.
 
 - Keep processing in the browser whenever possible. Do not introduce a backend or send user input to a server unless a feature inherently requires a network request and the UI makes that behavior clear.
 - Keep all user-facing text in Korean.
@@ -24,7 +24,10 @@ js/tools/*.js       Category modules; each module registers multiple related too
 assets/             Static images and icons
 manifest.json       PWA manifest (installability, icons, theme color)
 sw.js               Service worker; network-first caching for offline support
-tests/              Playwright browser smoke tests (CI-only; own package.json, not part of the site)
+tests/              Playwright browser tests (CI-only; own package.json, not part of the site)
+tests/tools/        Per-tool input/output cases, one spec per `js/tools/` module
+tests/helpers.js    Shared UI driver and the table-driven `toolCases` runner
+tests/fixtures.js   Test material built at run time (images, certificates, keys)
 FEATURES.md         Feature inventory grouped by category
 README.md           User-facing project documentation
 ```
@@ -46,7 +49,25 @@ cd tests
 npm install
 npx playwright install chromium
 npx playwright test
+npx playwright test tools/network.spec.js   # one module
+npx playwright test -g "subnet"             # by case name
 ```
+
+## Browser Tests
+
+The suite has two layers:
+
+- `smoke.spec.js` and `tools-render.spec.js` cover the app shell, routing, search, and that every registered tool renders without console errors.
+- `tests/tools/<module>.spec.js` covers the output each tool produces, one spec per `js/tools/` module.
+
+Follow these conventions when adding cases:
+
+- Declare cases as a table and run them with `toolCases('<module>', cases)` from `tests/helpers.js`. Write a plain `test(...)` only when a case needs custom steps such as file upload, downloads, or a multi-step flow. The group name is what identifies the spec in failure output, because table-driven tests report `helpers.js` as their location.
+- Verify time- or random-dependent tools by format (regex, length, range), never by exact value.
+- Use published test vectors for anything backed by a standard (hash, cipher, fingerprint) and cross-check against a second implementation, such as a Node built-in, where practical.
+- Build binary and secret material at run time in `tests/fixtures.js`. Do not commit images, archives, or private keys.
+- Stub external network calls with `page.route` so a case never depends on a live service.
+- Console errors fail every test. Allow an expected one with `test.use({ allowConsoleErrors: ['...'] })` and explain why in a comment.
 
 For a quick JavaScript syntax/module check on macOS, use:
 
@@ -122,7 +143,8 @@ Prefer shared APIs from `js/core.js` instead of duplicating them:
 3. Confirm the category string exists in `js/core.js` and the tool ID is not already registered.
 4. If a new module was created, import it from `js/main.js`.
 5. Update the corresponding category in `FEATURES.md`. Update `README.md` as well if the public overview, setup, or architecture changed.
-6. Run the syntax check and perform relevant browser validation.
+6. Add or update a case in `tests/tools/<module>.spec.js` that covers the new or changed behavior.
+7. Run the syntax check and perform relevant browser validation.
 
 ## Change Discipline
 

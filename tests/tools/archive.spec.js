@@ -1,7 +1,7 @@
 // 압축 / 아카이브 도구 정밀 테스트.
 // 다른 구현(node zlib, python bz2/lzma)이 만든 벡터를 해제해 교차 검증하고,
 // 압축 → 해제 왕복과 파일 업로드/다운로드 경로를 확인한다.
-import { test, expect, toolCase, openTool, ioSection, runIO, uploadFile, grabDownload } from '../helpers.js';
+import { test, expect, toolCases, openTool, ioSection, runIO, uploadFile, grabDownload } from '../helpers.js';
 
 const MSG = 'hello wtools compression test\n'.repeat(3); // 90바이트
 // 원문 MSG를 다른 구현으로 압축한 벡터: node zlib(gzip/deflate/deflateRaw), python bz2/lzma(FORMAT_ALONE)
@@ -56,7 +56,7 @@ const cases = [
   { name: 'bzip2: bzip2 데이터가 아니면 에러', tool: 'bzip2', io: 0, options: { '입력 형식': 'base64' }, inputs: 'AAAA', action: '해제', error: 'Not bzip data: bad magic' },
 ];
 
-for (const c of cases) toolCase(c);
+toolCases('archive', cases);
 
 /* ---------- 압축 → 해제 왕복 ---------- */
 

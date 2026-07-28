@@ -2,7 +2,7 @@
 // 결정적 벡터(raw 키 + 0 IV AES, RFC 4226 HOTP, PBKDF2 고정 솔트)와
 // 왕복(암호화→복호화) 검증을 함께 사용한다. bcrypt·jsrsasign·openpgp는
 // CDN 지연 로드 경로까지 함께 검증된다.
-import { test, expect, toolCase, openTool, ioSection, setOption, fillInputs, clickAction } from '../helpers.js';
+import { test, expect, toolCases, openTool, ioSection, setOption, fillInputs, clickAction } from '../helpers.js';
 
 // AES-128-CBC, 키 000102..0f, 0 IV, PKCS7 — node crypto로 계산한 기대값
 const AES_KEY = '000102030405060708090a0b0c0d0e0f';
@@ -99,7 +99,7 @@ const cases = [
   },
 ];
 
-for (const c of cases) toolCase(c);
+toolCases('cryptotools', cases);
 
 // 대칭키 암호화 → 복호화 왕복 (OpenSSL 비밀번호 모드, 솔트가 랜덤이라 왕복으로 검증)
 for (const toolId of ['aes', 'des', 'tripledes', 'blowfish']) {

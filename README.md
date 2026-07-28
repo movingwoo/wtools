@@ -40,7 +40,7 @@ python3 -m http.server 8000
 python3 scripts/validate_static.py
 ```
 
-GitHub Actions는 모든 PR과 `main` 브랜치 push에서 위 검사, JavaScript 구문 검사, 공백 오류 검사와 HTTP 앱 셸 스모크 테스트를 실행.
+GitHub Actions는 모든 PR과 `main` 브랜치 push에서 위 검사, JavaScript 구문 검사, 공백 오류 검사, HTTP 앱 셸 스모크 테스트, Playwright 브라우저 테스트(전체 도구 렌더링 + 도구별 입출력 정확성)를 실행.
 
 ## 구조
 

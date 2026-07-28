@@ -2,7 +2,7 @@
 // 개인키는 커밋하지 않으므로 자체 서명 인증서와 키를 테스트 실행 중에 만들고,
 // SSH 공개키는 GitHub가 공개한 호스트 키 벡터를 쓴다 (지문은 node crypto로 교차 검증).
 import { createHash } from 'node:crypto';
-import { test, expect, toolCase, openTool, ioSection, setOption, fillInputs, clickAction, kvValue } from '../helpers.js';
+import { test, expect, toolCases, openTool, ioSection, setOption, fillInputs, clickAction, kvValue } from '../helpers.js';
 import { PKI, makeTestPki, pemToDer } from '../fixtures.js';
 
 const pki = makeTestPki();
@@ -117,7 +117,7 @@ const cases = [
   },
 ];
 
-for (const c of cases) toolCase(c);
+toolCases('pki', cases);
 
 /* ---------- pem-hex 왕복 ---------- */
 

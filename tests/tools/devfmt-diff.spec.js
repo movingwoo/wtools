@@ -1,5 +1,5 @@
 // Diff / 정규식 테스터 정밀 테스트.
-import { test, expect, toolCase, openTool, ioSection, setOption, fillInputs } from '../helpers.js';
+import { test, expect, toolCases, openTool, ioSection, setOption, fillInputs } from '../helpers.js';
 
 // grid 표를 [[셀, ...], ...]로 읽는다 (헤더 행 포함).
 function gridRows(scope) {
@@ -50,7 +50,7 @@ const cases = [
   },
 ];
 
-for (const c of cases) toolCase(c);
+toolCases('devfmt-diff', cases);
 
 /* ---------- json-diff: 표 내용 ---------- */
 

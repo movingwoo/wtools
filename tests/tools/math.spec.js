@@ -1,6 +1,6 @@
 // 수학 / 논리 / 랜덤 도구 정밀 테스트.
 // 랜덤 도구는 정확값 대신 형식(자릿수·행 수)을 검증한다.
-import { test, expect, toolCase, openTool, ioSection, setOption, fillInputs, clickAction } from '../helpers.js';
+import { test, expect, toolCases, openTool, ioSection, setOption, fillInputs, clickAction } from '../helpers.js';
 
 const cases = [
   // 산술 / 통계
@@ -72,7 +72,7 @@ const cases = [
   },
 ];
 
-for (const c of cases) toolCase(c);
+toolCases('math', cases);
 
 // UUID v4 생성 — 무작위이므로 형식만 검증
 test('uuid: v4 생성 형식', async ({ page }) => {

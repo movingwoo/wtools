@@ -3,6 +3,12 @@ import { tool, makeIO, h, kvTable, bytesToHex, hexToBytes, bytesToStr, loadScrip
 
 const CAT = '공개키 / 인증서';
 
+/* KEYUTIL.getPEM은 isPublic인 키 객체만 공개키 PEM으로 내보내므로, 개인키 객체에는 쓸 수 없다.
+   개인키가 함께 들고 있는 공개 부분(RSA n·e, EC 곡선·공개점)으로 직접 SPKI를 만든다. */
+function publicKeyPem(key) {
+  return hextopem(new KJUR.asn1.x509.SubjectPublicKeyInfo(key).tohex(), 'PUBLIC KEY').replace(/\r\n/g, '\n').trim();
+}
+
 tool({
   id: 'x509-parse', cat: CAT, name: 'X.509 인증서 파싱',
   desc: 'PEM 인증서를 파싱해 주체, 발급자, 유효기간, 확장 등을 표시합니다.',
@@ -162,11 +168,11 @@ tool({
           rows.push(['키 크기', bits + ' bit']);
           rows.push(['공개 지수 (e)', key.e]);
           rows.push(['모듈러스 (n)', key.n.toString(16).slice(0, 64) + '...']);
-          rows.push(['공개키 PEM', KEYUTIL.getPEM(key)]);
+          rows.push(['공개키 PEM', publicKeyPem(key)]);
         } else if (key.type === 'EC') {
           rows.push(['곡선', key.curveName || '알 수 없음']);
           rows.push(['공개키 (hex)', (key.pubKeyHex || '').slice(0, 66) + '...']);
-          rows.push(['공개키 PEM', KEYUTIL.getPEM(key)]);
+          rows.push(['공개키 PEM', publicKeyPem(key)]);
         }
         return kvTable(rows);
       },

@@ -5,18 +5,46 @@ const CAT = '코드 포맷팅 / 개발 유틸리티';
 
 /* ---------- Crontab ---------- */
 const CRON_FIELDS = ['분', '시', '일', '월', '요일'];
+// 간격(*/n)을 설명할 때 쓰는 단위. 필드 이름과 달라서 따로 둔다 ("2시 간격" → "2시간 간격").
+const CRON_STEP_UNITS = ['분', '시간', '일', '개월', '요일'];
+const CRON_RANGES = [[0, 59], [0, 23], [1, 31], [1, 12], [0, 7]];
 const MONTH_KO = ['', '1월', '2월', '3월', '4월', '5월', '6월', '7월', '8월', '9월', '10월', '11월', '12월'];
 const DOW_KO = ['일요일', '월요일', '화요일', '수요일', '목요일', '금요일', '토요일', '일요일'];
+const MONTH_NAMES = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
+const DOW_NAMES = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
+
+// 필드 하나를 검사한다. 숫자는 범위를, 이름(JAN, MON 등)은 해당 필드의 목록을 확인한다.
+function checkField(expr, idx) {
+  const [min, max] = CRON_RANGES[idx];
+  const names = idx === 3 ? MONTH_NAMES : idx === 4 ? DOW_NAMES : [];
+  const bad = (part, why) => new Error(`${CRON_FIELDS[idx]} 필드의 "${part}"가 올바르지 않습니다. ${why}`);
+  for (const part of expr.split(',')) {
+    const m = part.match(/^(\*|[^/-]+(?:-[^/-]+)?)(?:\/(\d+))?$/);
+    if (!m) throw bad(part, '형식을 확인하세요.');
+    if (m[2] !== undefined && +m[2] < 1) throw bad(part, '간격은 1 이상이어야 합니다.');
+    if (m[1] === '*') continue;
+    const values = m[1].split('-').map((v) => {
+      if (/^\d+$/.test(v)) return +v;
+      const found = names.indexOf(v.toUpperCase());
+      if (found < 0) throw bad(part, `${min}~${max} 범위의 숫자를 사용하세요.`);
+      return idx === 3 ? found + 1 : found;
+    });
+    if (values.some((v) => v < min || v > max)) throw bad(part, `${min}~${max} 범위여야 합니다.`);
+    if (values.length === 2 && values[0] > values[1]) throw bad(part, '범위의 시작이 끝보다 큽니다.');
+  }
+}
+
 function descField(expr, idx) {
   const unit = CRON_FIELDS[idx];
+  const step = CRON_STEP_UNITS[idx];
   const name = (v) => idx === 3 ? (MONTH_KO[v] || v) : idx === 4 ? (DOW_KO[v] ?? v) : v;
   if (expr === '*') return null;
   return expr.split(',').map((part) => {
     let m;
-    if ((m = part.match(/^\*\/(\d+)$/))) return `${m[1]}${idx <= 1 ? unit : ''} ${unit} 간격마다`;
-    if ((m = part.match(/^(\d+)-(\d+)\/(\d+)$/))) return `${name(+m[1])}~${name(+m[2])} 사이 ${m[3]} 간격`;
+    if ((m = part.match(/^\*\/(\d+)$/))) return `${m[1]}${step} 간격마다`;
+    if ((m = part.match(/^(\d+)-(\d+)\/(\d+)$/))) return `${name(+m[1])}~${name(+m[2])} 사이 ${m[3]}${step} 간격`;
     if ((m = part.match(/^(\d+)-(\d+)$/))) return `${name(+m[1])}~${name(+m[2])}`;
-    if ((m = part.match(/^(\d+)\/(\d+)$/))) return `${name(+m[1])}부터 ${m[2]} 간격`;
+    if ((m = part.match(/^(\d+)\/(\d+)$/))) return `${name(+m[1])}부터 ${m[2]}${step} 간격`;
     return `${name(isNaN(+part) ? part : +part)}`;
   }).join(', ') + ` (${unit})`;
 }
@@ -37,6 +65,7 @@ tool({
       process(text) {
         const parts = text.trim().split(/\s+/);
         if (parts.length !== 5) throw new Error('cron 표현식은 5개 필드(분 시 일 월 요일)여야 합니다.');
+        parts.forEach(checkField);
         const rows = parts.map((p, i) => [CRON_FIELDS[i], p + (descField(p, i) ? ' → ' + descField(p, i) : ' → 매 ' + CRON_FIELDS[i])]);
         const descs = parts.map((p, i) => descField(p, i)).filter(Boolean);
         return h('div', null,

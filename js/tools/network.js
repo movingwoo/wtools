@@ -266,6 +266,33 @@ tool({
   },
 });
 
+/* ---------- IPv6 추출 ----------
+   축약(::) 표기까지 정규식 하나로 정확히 잡으려면 식이 지나치게 길어지고, 느슨하게 쓰면
+   std::vector 같은 문자열까지 잡힌다. 후보를 넉넉히 뽑은 뒤 RFC 4291 규칙으로 걸러낸다. */
+const IPV6_CANDIDATE = /(?<![0-9a-fA-F:.])(?:[0-9a-fA-F]{0,4}:){2,7}(?:[0-9a-fA-F]{1,4}|(?:\d{1,3}\.){3}\d{1,3})?(?![0-9a-fA-F:.])/g;
+const IPV4_TAIL = /^(?:(?:25[0-5]|2[0-4]\d|1?\d?\d)\.){3}(?:25[0-5]|2[0-4]\d|1?\d?\d)$/;
+
+function isIpv6(text) {
+  const halves = text.split('::');
+  if (halves.length > 2) return false;
+  let groups = 0;
+  for (let i = 0; i < halves.length; i++) {
+    if (!halves[i]) continue;
+    const parts = halves[i].split(':');
+    if (parts.includes('')) return false;
+    // ::ffff:192.0.2.1 처럼 끝이 IPv4 표기면 그룹 두 개로 센다.
+    if (i === halves.length - 1 && parts[parts.length - 1].includes('.')) {
+      if (!IPV4_TAIL.test(parts.pop())) return false;
+      groups += 2;
+    }
+    if (parts.some((p) => !/^[0-9a-fA-F]{1,4}$/.test(p))) return false;
+    groups += parts.length;
+  }
+  // 축약 표기는 그룹이 8개 미만. 최소 그룹 수를 둬서 `d::` 같은 오탐을 거른다.
+  if (halves.length === 2) return groups >= (text.startsWith('::') ? 1 : 2) && groups <= 7;
+  return groups === 8;
+}
+
 tool({
   id: 'extract', cat: CAT, name: '이메일/URL/IP 추출',
   desc: '텍스트에서 이메일, URL, 도메인, IP 주소를 추출합니다.',
@@ -284,9 +311,10 @@ tool({
           url: /https?:\/\/[^\s<>"'`]+/g,
           domain: /\b(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}\b/g,
           ipv4: /\b(?:(?:25[0-5]|2[0-4]\d|1?\d?\d)\.){3}(?:25[0-5]|2[0-4]\d|1?\d?\d)\b/g,
-          ipv6: /\b(?:[0-9a-fA-F]{1,4}:){2,7}[0-9a-fA-F]{0,4}\b/g,
         };
-        let matches = text.match(patterns[o.type]) || [];
+        let matches = o.type === 'ipv6'
+          ? (text.match(IPV6_CANDIDATE) || []).filter(isIpv6)
+          : (text.match(patterns[o.type]) || []);
         if (o.unique) matches = [...new Set(matches)];
         if (o.sort) matches.sort();
         return matches.join('\n') + (matches.length ? `\n\n// ${matches.length}개` : '결과 없음');

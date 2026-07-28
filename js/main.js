@@ -376,6 +376,8 @@ function renderTool(id) {
     const cleanup = t.render(box.querySelector('.tool-body'));
     if (typeof cleanup === 'function') cleanupCurrentTool = cleanup;
   } catch (e) {
+    // 사용자에게는 안내 문구를 보여주되, 예외 자체는 콘솔에 남겨 진단·자동 검사가 가능하게 한다.
+    console.error(`도구 "${t.id}" 렌더링 실패:`, e);
     box.append(h('p', { class: 'error' }, '도구 로드 중 오류: ' + e.message));
   }
   document.title = t.name + ' — W-Tools';

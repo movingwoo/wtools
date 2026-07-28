@@ -291,10 +291,23 @@ tool({
   },
 });
 
+// PEM(SPKI 공개키 / PKCS#8 개인키) → WebCrypto RSA-OAEP 키
+async function importRsaOaepKey(pem, format, usage) {
+  const type = format === 'spki' ? 'PUBLIC KEY' : 'PRIVATE KEY';
+  const m = pem.match(new RegExp(`-----BEGIN ${type}-----([\\s\\S]+?)-----END ${type}-----`));
+  if (!m) throw new Error(`${format === 'spki' ? '공개키(SPKI)' : '개인키(PKCS#8)'} PEM을 입력하세요. (-----BEGIN ${type}----- 블록)`);
+  try {
+    return await crypto.subtle.importKey(format, b64ToBytes(m[1].replace(/\s/g, '')),
+      { name: 'RSA-OAEP', hash: 'SHA-256' }, false, [usage]);
+  } catch {
+    throw new Error('키를 불러오지 못했습니다. PEM 형식과 키 종류를 확인하세요.');
+  }
+}
+
 tool({
   id: 'rsa-crypt', cat: CAT, name: 'RSA 암호화/복호화·서명/검증',
-  desc: 'RSA 공개키로 암호화, 개인키로 복호화하거나 서명/검증합니다.',
-  keywords: 'rsa encrypt decrypt sign verify',
+  desc: 'RSA 공개키로 암호화(OAEP), 개인키로 복호화하거나 서명/검증합니다.',
+  keywords: 'rsa oaep encrypt decrypt sign verify',
   render(root) {
     makeIO(root, {
       inputs: [
@@ -305,17 +318,24 @@ tool({
       actions: [{ id: 'enc', label: '암호화' }, { id: 'dec', label: '복호화' }, { id: 'sign', label: '서명' }, { id: 'verify', label: '검증' }],
       autorun: false, outputRows: 6,
       async process(v, o, action) {
-        await loadScript(LIB.jsrsasign);
         const key = v.key.trim();
         if (!key) throw new Error('PEM 키를 입력하세요.');
+        // 암호화/복호화는 WebCrypto RSA-OAEP(SHA-256) 사용
         if (action === 'enc') {
-          const pub = KEYUTIL.getKey(key);
-          return hextob64(KJUR.crypto.Cipher.encrypt(v.text, pub, 'RSA'));
+          const pub = await importRsaOaepKey(key, 'spki', 'encrypt');
+          const buf = await crypto.subtle.encrypt({ name: 'RSA-OAEP' }, pub, strToBytes(v.text));
+          return bytesToB64(new Uint8Array(buf));
         }
         if (action === 'dec') {
-          const prv = KEYUTIL.getKey(key);
-          return KJUR.crypto.Cipher.decrypt(b64tohex(v.text.trim()), prv, 'RSA');
+          const prv = await importRsaOaepKey(key, 'pkcs8', 'decrypt');
+          try {
+            const buf = await crypto.subtle.decrypt({ name: 'RSA-OAEP' }, prv, b64ToBytes(v.text.trim()));
+            return bytesToStr(new Uint8Array(buf));
+          } catch {
+            throw new Error('복호화 실패 (키/암호문 형식을 확인하세요).');
+          }
         }
+        await loadScript(LIB.jsrsasign);
         if (action === 'sign') {
           const sig = new KJUR.crypto.Signature({ alg: o.hash + 'withRSA' });
           sig.init(key);
@@ -332,7 +352,7 @@ tool({
           return sig.verify(b64tohex(parts[1].trim())) ? '✔ 서명이 유효합니다.' : '✘ 서명이 올바르지 않습니다.';
         }
       },
-      note: '검증 시 입력 형식: 원문 다음 줄에 "---SIGNATURE---", 그 다음 줄에 Base64 서명.',
+      note: '암호화는 RSA-OAEP(SHA-256), 서명은 PKCS#1 v1.5입니다. 검증 시 입력 형식: 원문 다음 줄에 "---SIGNATURE---", 그 다음 줄에 Base64 서명.',
     });
   },
 });

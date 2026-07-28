@@ -1,5 +1,9 @@
-// 테스트용 이미지 바이트 생성기.
-// 바이너리 파일을 저장소에 커밋하지 않도록, 필요한 이미지를 테스트 실행 중에 만든다.
+// 테스트용 이미지·인증서 재료 생성기.
+// 바이너리 파일과 개인키를 저장소에 커밋하지 않도록, 필요한 재료를 테스트 실행 중에 만든다.
+import { execFileSync } from 'node:child_process';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import zlib from 'node:zlib';
 
 const CRC_TABLE = Array.from({ length: 256 }, (_, n) => {
@@ -109,4 +113,38 @@ export function makeJpegWithExif({ make = 'WTools', model = 'TestCam', orientati
     Buffer.from([0xff, 0xda, 0x00, 0x08, 0x01, 0x01, 0x00, 0x00, 0x3f, 0x00]), // SOS
     Buffer.from([0xff, 0xd9]), // EOI
   ]);
+}
+
+/* ---------- PKI 테스트 재료 ----------
+   개인키는 저장소에 커밋하지 않는다. 필요한 키와 자체 서명 인증서를 테스트 실행 중에
+   openssl로 새로 만들고, 검증에 쓰는 필드(주체·시리얼·SAN 등)만 고정한다. */
+export const PKI = {
+  subject: '/C=KR/O=WTools Test/CN=test.wtools.local',
+  serialHex: '1234',
+  days: 3650,
+  passphrase: 'wtools-test-pass',
+  san: ['test.wtools.local', 'www.test.wtools.local', '127.0.0.1'],
+};
+
+export function makeTestPki() {
+  const dir = mkdtempSync(join(tmpdir(), 'wtools-pki-'));
+  const run = (...args) => execFileSync('openssl', args, { cwd: dir, stdio: ['ignore', 'pipe', 'pipe'] });
+  try {
+    run('req', '-x509', '-newkey', 'rsa:2048', '-keyout', 'rsa.pem', '-out', 'cert.pem', '-nodes',
+      '-days', String(PKI.days), '-sha256', '-set_serial', String(parseInt(PKI.serialHex, 16)),
+      '-subj', PKI.subject,
+      '-addext', `subjectAltName=DNS:${PKI.san[0]},DNS:${PKI.san[1]},IP:${PKI.san[2]}`,
+      '-addext', 'keyUsage=digitalSignature,keyEncipherment');
+    run('ecparam', '-name', 'prime256v1', '-genkey', '-noout', '-out', 'ec.pem');
+    run('pkcs8', '-topk8', '-in', 'rsa.pem', '-out', 'rsa-enc.pem', '-v2', 'aes-256-cbc', '-passout', 'pass:' + PKI.passphrase);
+    const read = (name) => readFileSync(join(dir, name), 'utf8');
+    return { cert: read('cert.pem'), rsaKey: read('rsa.pem'), ecKey: read('ec.pem'), encryptedRsaKey: read('rsa-enc.pem') };
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+// PEM 블록 하나를 DER 바이트로 되돌린다.
+export function pemToDer(pem) {
+  return Buffer.from(pem.replace(/-----[^-]+-----|\s/g, ''), 'base64');
 }

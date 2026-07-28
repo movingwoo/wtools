@@ -4,15 +4,19 @@
 import { test as base, expect } from '@playwright/test';
 
 // 모든 테스트에서 콘솔 에러와 처리되지 않은 예외를 자동 수집하고 0건임을 확인한다.
+// 오류 응답 처리를 검증하는 테스트처럼 브라우저가 직접 남기는 로그가 있으면
+// test.use({ allowConsoleErrors: [문자열|정규식, ...] })로 예외를 지정한다.
 export const test = base.extend({
-  _errorGuard: [async ({ page }, use) => {
+  allowConsoleErrors: [[], { option: true }],
+  _errorGuard: [async ({ page, allowConsoleErrors }, use) => {
     const errors = [];
     page.on('pageerror', (err) => errors.push(`pageerror: ${err.message}`));
     page.on('console', (msg) => {
       if (msg.type() === 'error') errors.push(`console.error: ${msg.text()}`);
     });
     await use();
-    expect(errors, '페이지 콘솔 에러').toEqual([]);
+    const allowed = (text) => allowConsoleErrors.some((p) => (p instanceof RegExp ? p.test(text) : text.includes(p)));
+    expect(errors.filter((e) => !allowed(e)), '페이지 콘솔 에러').toEqual([]);
   }, { auto: true }],
 });
 export { expect };
@@ -51,8 +55,10 @@ export function clickAction(io, label) {
 }
 
 // kvTable 출력에서 키에 해당하는 값을 읽는다 (복사 버튼 텍스트 제외). 없으면 null.
-export function kvValue(io, key) {
-  return io.locator('.out-html').first().evaluate((root, k) => {
+// scope는 makeIO 블록이나 #content 등 임의의 영역. 출력 영역이 있으면 그 안에서만 찾는다.
+export function kvValue(scope, key) {
+  return scope.evaluate((el, k) => {
+    const root = el.querySelector('.out-html') || el;
     for (const tr of root.querySelectorAll('table.kv tr')) {
       if (tr.querySelector('th')?.textContent.trim() === k) {
         const td = tr.querySelector('td').cloneNode(true);

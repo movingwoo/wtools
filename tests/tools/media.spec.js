@@ -70,21 +70,24 @@ const cases = [
   },
 ];
 
-for (const c of cases) {
-  if (!c.upload) { toolCase(c); continue; }
-  test(c.name, async ({ page }) => {
-    await openTool(page, c.tool);
-    const content = page.locator('#content');
-    await uploadFile(content, c.upload.label, c.upload.file);
-    for (const [label, value] of Object.entries(c.options ?? {})) await setOption(content, label, value);
-    for (const text of c.htmlContains ?? []) await expect(content).toContainText(text);
-    if (c.htmlError) await expect(content.locator('.error').first()).toHaveText(c.htmlError);
-    for (const [key, expected] of Object.entries(c.kv ?? {})) {
-      await expect(content.locator('table.kv tr').filter({ has: page.getByText(key, { exact: true }) })).toContainText(expected);
-    }
-    if (c.paletteCount != null) await expect(content.locator('table.kv tr')).toHaveCount(c.paletteCount);
-  });
-}
+// 업로드가 필요한 케이스는 makeIO 블록이 아니라 #content 전체를 대상으로 실행한다.
+test.describe('media', () => {
+  for (const c of cases) {
+    if (!c.upload) { toolCase(c); continue; }
+    test(c.name, async ({ page }) => {
+      await openTool(page, c.tool);
+      const content = page.locator('#content');
+      await uploadFile(content, c.upload.label, c.upload.file);
+      for (const [label, value] of Object.entries(c.options ?? {})) await setOption(content, label, value);
+      for (const text of c.htmlContains ?? []) await expect(content).toContainText(text);
+      if (c.htmlError) await expect(content.locator('.error').first()).toHaveText(c.htmlError);
+      for (const [key, expected] of Object.entries(c.kv ?? {})) {
+        await expect(content.locator('table.kv tr').filter({ has: page.getByText(key, { exact: true }) })).toContainText(expected);
+      }
+      if (c.paletteCount != null) await expect(content.locator('table.kv tr')).toHaveCount(c.paletteCount);
+    });
+  }
+});
 
 /* ---------- QR 생성 → 리더 왕복 ---------- */
 

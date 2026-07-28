@@ -1,5 +1,5 @@
 // 개발 유틸리티 변환기(cURL/fetch, SQL INSERT, docker) 정밀 테스트.
-import { test, expect, toolCase, openTool, ioSection, runIO } from '../helpers.js';
+import { test, expect, toolCases, openTool, ioSection, runIO } from '../helpers.js';
 
 const CURL = "curl -X POST 'https://api.example.com/users' -H 'Content-Type: application/json' --data-raw '{\"name\":\"kim\"}'";
 // fetch → cURL은 URL을 마지막 인자로 붙인다.
@@ -121,7 +121,7 @@ const cases = [
   { name: 'docker-convert: 이미지가 없으면 에러', tool: 'docker-convert', inputs: 'docker run -d --name web', action: 'run → compose', error: '이미지 이름을 찾지 못했습니다.' },
 ];
 
-for (const c of cases) toolCase(c);
+toolCases('devfmt-convert', cases);
 
 /* ---------- 왕복(round-trip) 변환 ---------- */
 

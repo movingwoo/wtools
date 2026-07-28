@@ -1,6 +1,6 @@
 // 날짜 / 시간 도구 정밀 테스트.
 // 로컬 시간 의존 결과가 결정적이 되도록 시간대를 서울로 고정한다.
-import { test, toolCase } from '../helpers.js';
+import { test, toolCases } from '../helpers.js';
 
 test.use({ timezoneId: 'Asia/Seoul' });
 
@@ -80,4 +80,4 @@ const cases = [
   },
 ];
 
-for (const c of cases) toolCase(c);
+toolCases('datetime', cases);

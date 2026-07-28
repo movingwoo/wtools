@@ -1,7 +1,7 @@
 // 네트워크 도구 정밀 테스트.
 // 대부분 순수 계산이라 정확값을 검증하고, 난수(ULA·랜덤 MAC)와 브라우저 환경 의존
 // 도구(keycode·device-info)는 형식만 확인한다. DNS 조회는 DoH 응답을 가로채 고정한다.
-import { test, expect, toolCase, openTool, ioSection, setOption, fillInputs, clickAction, kvValue } from '../helpers.js';
+import { test, expect, toolCases, openTool, ioSection, setOption, fillInputs, clickAction, kvValue } from '../helpers.js';
 
 const EXTRACT_TEXT = [
   '문의: kim@example.com, lee@test.co.kr, kim@example.com',
@@ -155,7 +155,7 @@ const cases = [
   /* ---------- http-status / mime-types 는 검색 UI라 별도 테스트 ---------- */
 ];
 
-for (const c of cases) toolCase(c);
+toolCases('network', cases);
 
 /* ---------- ipv6-ula: 난수라 형식만 검증 ---------- */
 

@@ -1,5 +1,5 @@
 // 데이터 포맷 변환 도구 정밀 테스트 — 포맷 간 변환 결과와 왕복(round-trip) 보존을 검증한다.
-import { test, expect, toolCase, openTool, ioSection, runIO } from '../helpers.js';
+import { test, expect, toolCases, openTool, ioSection, runIO } from '../helpers.js';
 
 const JSON_SRC = '{"name":"WTools","version":1,"tags":["web","tools"]}';
 const YAML_SRC = 'name: WTools\nversion: 1\ntags:\n  - web\n  - tools\n';
@@ -176,7 +176,7 @@ const cases = [
   { name: 'ip-format: 32비트 범위 초과는 에러', tool: 'ip-format', inputs: '4294967296', htmlError: '32비트 범위를 벗어났습니다.' },
 ];
 
-for (const c of cases) toolCase(c);
+toolCases('dataformat', cases);
 
 /* ---------- 왕복(round-trip) 변환 ---------- */
 

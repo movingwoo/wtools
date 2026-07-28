@@ -1,5 +1,5 @@
 // 인코딩 / 디코딩 도구 정밀 테스트 — 대표 입력에 대한 기대 출력 검증.
-import { test, expect, toolCase, openTool, ioSection, fillInputs, setOption, clickAction } from '../helpers.js';
+import { test, expect, toolCases, openTool, ioSection, fillInputs, setOption, clickAction } from '../helpers.js';
 
 const cases = [
   // Base64
@@ -83,4 +83,4 @@ const cases = [
   },
 ];
 
-for (const c of cases) toolCase(c);
+toolCases('encoding', cases);

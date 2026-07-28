@@ -1,5 +1,5 @@
 // 개발 참조표 / 계산기 도구 정밀 테스트 (crontab, chmod, git 치트시트).
-import { test, expect, toolCase, openTool, ioSection } from '../helpers.js';
+import { test, expect, toolCases, openTool, ioSection } from '../helpers.js';
 
 const cases = [
   /* ---------- crontab ---------- */
@@ -45,7 +45,7 @@ const cases = [
   { name: 'crontab: 0 간격은 에러', tool: 'crontab', inputs: '*/0 * * * *', htmlError: '분 필드의 "*/0"가 올바르지 않습니다. 간격은 1 이상이어야 합니다.' },
 ];
 
-for (const c of cases) toolCase(c);
+toolCases('devfmt-reference', cases);
 
 test('crontab: 자주 쓰는 패턴 버튼', async ({ page }) => {
   await openTool(page, 'crontab');

@@ -1,6 +1,6 @@
 // 문자열 / 텍스트 도구 정밀 테스트.
 // 시간/난수 의존 도구(lorem 랜덤 부분, dummy-data)는 정확값 대신 형식을 검증한다.
-import { test, expect, toolCase, openTool, ioSection, setOption, clickAction } from '../helpers.js';
+import { test, expect, toolCases, openTool, ioSection, setOption, clickAction } from '../helpers.js';
 
 const cases = [
   // 대소문자 변환
@@ -53,7 +53,7 @@ const cases = [
   },
 ];
 
-for (const c of cases) toolCase(c);
+toolCases('string', cases);
 
 // 더미 데이터 생성기 — 무작위 값이므로 구조와 형식만 검증
 test('dummy-data: JSON 형식과 행 수·필드 형식', async ({ page }) => {

@@ -114,6 +114,14 @@ c = {
   htmlError: 문자열|정규식,            // outputHTML 에러 메시지
 }
 */
+// 한 spec 파일의 케이스를 그룹으로 묶어 실행한다. toolCase가 만든 테스트의 위치는
+// 이 파일(helpers.js)로 찍히므로, 실패 출력에서 어느 spec인지 알 수 있게 group을 붙인다.
+export function toolCases(group, cases) {
+  test.describe(group, () => {
+    for (const c of cases) toolCase(c);
+  });
+}
+
 export function toolCase(c) {
   test(c.name, async ({ page }) => {
     await openTool(page, c.tool);

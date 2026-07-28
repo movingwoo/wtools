@@ -1,5 +1,5 @@
 // 코드/문서 포맷터 정밀 테스트. sql-formatter·js-beautify·marked 등 CDN 라이브러리 경로도 함께 검증한다.
-import { test, expect, toolCase, openTool, ioSection, runIO, uploadFile } from '../helpers.js';
+import { test, expect, toolCases, openTool, ioSection, runIO, uploadFile } from '../helpers.js';
 import { makePng } from '../fixtures.js';
 
 const cases = [
@@ -85,7 +85,7 @@ const cases = [
   },
 ];
 
-for (const c of cases) toolCase(c);
+toolCases('devfmt-format', cases);
 
 test('markdown-html: 미리보기는 샌드박스 iframe으로 렌더링', async ({ page }) => {
   await openTool(page, 'markdown-html');

@@ -28,8 +28,9 @@ export function ioSection(page, index = 0) {
 }
 
 // 옵션 컨트롤을 라벨 텍스트로 찾아 값을 설정한다. select는 option의 value 기준.
+// 입력 textarea와 라벨이 겹칠 수 있으므로 옵션 행 안에서만 찾는다.
 export async function setOption(io, label, value) {
-  const control = io.getByLabel(label, { exact: true });
+  const control = io.locator('.opt-row').getByLabel(label, { exact: true });
   const kind = await control.evaluate((el) => (el.tagName === 'SELECT' ? 'select' : el.type));
   if (kind === 'select') await control.selectOption(String(value));
   else if (kind === 'checkbox') await control.setChecked(!!value);
@@ -63,6 +64,20 @@ export function kvValue(io, key) {
   }, key);
 }
 
+/* 옵션·입력·액션을 적용하고 출력 문자열을 돌려준다. 왕복(round-trip) 변환 검증용.
+   이전 결과를 다시 읽는 일이 없도록 입력을 비워 출력을 초기화한 뒤 실행한다. */
+export async function runIO(io, { options, inputs, action } = {}) {
+  for (const [label, value] of Object.entries(options ?? {})) await setOption(io, label, value);
+  const out = io.locator('textarea.out');
+  await fillInputs(io, Array.isArray(inputs) ? inputs.map(() => '') : '');
+  if (action) await clickAction(io, action);
+  await expect(out).toHaveValue('');
+  await fillInputs(io, inputs);
+  if (action) await clickAction(io, action);
+  await expect(out).not.toHaveValue('');
+  return out.inputValue();
+}
+
 /* 테이블 주도 케이스 실행기. 케이스 하나가 테스트 하나가 된다.
 c = {
   name: 테스트 이름, tool: 도구 id, io: makeIO 블록 순번 (기본 0),
@@ -73,6 +88,7 @@ c = {
   error: 문자열,                       // textarea 에러 (⚠ 접두어는 자동)
   kv: { 키: 문자열|정규식 },           // kvTable 행 값
   htmlContains: [문자열, ...],         // outputHTML 텍스트 포함 여부
+  htmlValue: 문자열|정규식,            // outputHTML 텍스트 전체 (공백·줄바꿈 그대로 비교)
   htmlError: 문자열|정규식,            // outputHTML 에러 메시지
 }
 */
@@ -86,6 +102,11 @@ export function toolCase(c) {
     if (c.output !== undefined) await expect(io.locator('textarea.out')).toHaveValue(c.output);
     if (c.error) await expect(io.locator('textarea.out')).toHaveValue('⚠ ' + c.error);
     for (const text of c.htmlContains ?? []) await expect(io.locator('.out-html').first()).toContainText(text);
+    if (c.htmlValue !== undefined) {
+      const poll = expect.poll(() => io.locator('.out-html').first().evaluate((el) => el.textContent), { message: 'out-html 텍스트' });
+      if (c.htmlValue instanceof RegExp) await poll.toMatch(c.htmlValue);
+      else await poll.toBe(c.htmlValue);
+    }
     if (c.htmlError) await expect(io.locator('.out-html .error').first()).toHaveText(c.htmlError);
     for (const [key, expected] of Object.entries(c.kv ?? {})) {
       const poll = expect.poll(() => kvValue(io, key), { message: `kvTable["${key}"]` });

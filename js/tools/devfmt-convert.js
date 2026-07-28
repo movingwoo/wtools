@@ -51,20 +51,102 @@ function curlToFetch(text) {
     'const data = await response.json();';
 }
 
+// fetch 인자에 쓰인 JS 리터럴을 읽는 최소 파서.
+// 작은따옴표 문자열, 따옴표 없는 키, 후행 쉼표를 허용하고 문자열 안의 따옴표를 그대로 보존한다.
+function jsLiteralReader(src, pos) {
+  let i = pos;
+  const ws = () => { while (i < src.length && /\s/.test(src[i])) i++; };
+  const string = () => {
+    const quote = src[i++];
+    let out = '';
+    while (i < src.length) {
+      const c = src[i++];
+      if (c === '\\') {
+        const esc = src[i++];
+        if (esc === 'u') { out += String.fromCharCode(parseInt(src.slice(i, i + 4), 16)); i += 4; }
+        else out += ({ n: '\n', r: '\r', t: '\t', b: '\b', f: '\f' }[esc] ?? esc);
+      } else if (c === quote) return out;
+      else out += c;
+    }
+    throw new Error('닫히지 않은 문자열이 있습니다.');
+  };
+  const value = () => {
+    ws();
+    const c = src[i];
+    if (c === '"' || c === "'" || c === '`') return string();
+    if (c === '{') return object();
+    if (c === '[') return array();
+    const m = /^(?:-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?|true|false|null|undefined)\b/.exec(src.slice(i));
+    if (!m) throw new Error('fetch 옵션에는 문자열, 숫자 같은 리터럴 값만 사용할 수 있습니다.');
+    i += m[0].length;
+    if (m[0] === 'true' || m[0] === 'false') return m[0] === 'true';
+    if (m[0] === 'null' || m[0] === 'undefined') return null;
+    return Number(m[0]);
+  };
+  const array = () => {
+    i++; // [
+    const arr = [];
+    for (;;) {
+      ws();
+      if (src[i] === ']') { i++; return arr; }
+      arr.push(value());
+      ws();
+      if (src[i] === ',') { i++; continue; }
+      if (src[i] === ']') { i++; return arr; }
+      throw new Error('배열에서 쉼표나 닫는 대괄호를 찾지 못했습니다.');
+    }
+  };
+  const object = () => {
+    i++; // {
+    const obj = {};
+    for (;;) {
+      ws();
+      if (src[i] === '}') { i++; return obj; }
+      let key;
+      if (src[i] === '"' || src[i] === "'" || src[i] === '`') key = string();
+      else {
+        const m = /^[A-Za-z_$][\w$]*/.exec(src.slice(i));
+        if (!m) throw new Error('객체 키를 읽을 수 없습니다. 계산된 키나 전개 연산자는 지원하지 않습니다.');
+        key = m[0];
+        i += m[0].length;
+      }
+      ws();
+      if (src[i] !== ':') throw new Error(`"${key}" 키 뒤에 콜론이 없습니다.`);
+      i++;
+      obj[key] = value();
+      ws();
+      if (src[i] === ',') { i++; continue; }
+      if (src[i] === '}') { i++; return obj; }
+      throw new Error('객체에서 쉼표나 닫는 중괄호를 찾지 못했습니다.');
+    }
+  };
+  return { ws, value, peek: () => src[i], skip: () => { i++; } };
+}
+
 function fetchToCurl(text) {
-  const m = text.match(/fetch\s*\(\s*(["'`])([^"'`]+)\1\s*(?:,\s*({[\s\S]*}))?\s*\)/);
-  if (!m) throw new Error('fetch(URL, 옵션) 호출을 찾을 수 없습니다. 문자열 URL과 JSON 형태의 옵션을 사용하세요.');
+  const call = text.search(/\bfetch\s*\(/);
+  if (call < 0) throw new Error('fetch(URL, 옵션) 호출을 찾을 수 없습니다. 문자열 URL과 객체 리터럴 옵션을 사용하세요.');
+  const reader = jsLiteralReader(text, text.indexOf('(', call) + 1);
+  reader.ws();
+  if (!['"', "'", '`'].includes(reader.peek()))
+    throw new Error('fetch의 첫 번째 인자는 문자열 URL이어야 합니다. 변수 대신 실제 URL을 넣어주세요.');
+  const url = reader.value();
   let opts = {};
-  if (m[3]) {
-    let raw = m[3].replace(/([{,]\s*)([A-Za-z_$][\w$]*)\s*:/g, '$1"$2":').replace(/'/g, '"');
-    try { opts = JSON.parse(raw); } catch { throw new Error('fetch 옵션은 문자열 키/값으로 된 JSON 형태만 변환할 수 있습니다.'); }
+  reader.ws();
+  if (reader.peek() === ',') {
+    reader.skip();
+    reader.ws();
+    if (reader.peek() !== ')') {
+      opts = reader.value();
+      if (!opts || typeof opts !== 'object' || Array.isArray(opts)) throw new Error('fetch의 두 번째 인자는 옵션 객체여야 합니다.');
+    }
   }
   const q = (s) => "'" + String(s).replace(/'/g, "'\\''") + "'";
   const parts = ['curl'];
-  if (opts.method && opts.method.toUpperCase() !== 'GET') parts.push('-X', opts.method.toUpperCase());
+  if (opts.method && String(opts.method).toUpperCase() !== 'GET') parts.push('-X', String(opts.method).toUpperCase());
   for (const [k, v] of Object.entries(opts.headers || {})) parts.push('-H', q(`${k}: ${v}`));
-  if (opts.body != null) parts.push('--data-raw', q(opts.body));
-  parts.push(q(m[2]));
+  if (opts.body != null) parts.push('--data-raw', q(typeof opts.body === 'object' ? JSON.stringify(opts.body) : opts.body));
+  parts.push(q(url));
   return parts.join(' ');
 }
 

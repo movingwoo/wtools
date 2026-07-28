@@ -3,6 +3,8 @@ import { defineConfig } from '@playwright/test';
 export default defineConfig({
   testDir: '.',
   timeout: 30_000,
+  // CDN 라이브러리를 지연 로드하는 도구가 있어 기본 5초보다 여유를 둔다.
+  expect: { timeout: 10_000 },
   retries: process.env.CI ? 1 : 0,
   reporter: 'list',
   use: {

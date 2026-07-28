@@ -268,8 +268,8 @@ tool({
           let r;
           if (o.unit === 'd') r = new Date(a.getFullYear(), a.getMonth(), a.getDate() + n);
           else if (o.unit === 'w') r = new Date(a.getFullYear(), a.getMonth(), a.getDate() + n * 7);
-          else if (o.unit === 'm') r = new Date(a.getFullYear(), a.getMonth() + n, a.getDate());
-          else r = new Date(a.getFullYear() + n, a.getMonth(), a.getDate());
+          else if (o.unit === 'm') r = addMonthsClamp(a, n);
+          else r = addMonthsClamp(a, n * 12);
           const unitLabel = { d: '일', w: '주', m: '개월', y: '년' }[o.unit];
           return kvTable([
             ['계산', `${fmtDay(a)} ${n >= 0 ? '+' : ''}${n}${unitLabel}`],

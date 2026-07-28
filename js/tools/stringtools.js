@@ -87,7 +87,8 @@ tool({
         { id: 'keepKo', label: '한글 유지', type: 'checkbox', value: true },
       ],
       process(text, o) {
-        let s = text.normalize('NFKD').replace(/[̀-ͯ]/g, '');
+        // NFKD는 한글 음절도 옛 자모로 분해하므로, 악센트 제거 후 NFC로 재결합해야 한글이 유지된다.
+        let s = text.normalize('NFKD').replace(/[̀-ͯ]/g, '').normalize('NFC');
         const keep = o.keepKo ? 'a-z0-9가-힣ㄱ-ㅎㅏ-ㅣ' : 'a-z0-9';
         s = s.toLowerCase()
           .replace(new RegExp(`[^${keep}\\s-_]`, 'g'), '')

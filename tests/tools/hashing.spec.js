@@ -1,6 +1,6 @@
 // 해싱 도구 정밀 테스트 — NIST/RFC 표준 테스트 벡터 사용.
 // MD4는 CDN 라이브러리를 로드하므로 외부 스크립트 지연 로드 경로도 함께 검증된다.
-import { toolCase } from '../helpers.js';
+import { test, expect, toolCase, openTool, uploadFile } from '../helpers.js';
 
 const cases = [
   // 해시 생성 — "abc"의 표준 벡터 (RFC 1319/1320, FIPS 180/202)
@@ -104,3 +104,41 @@ const cases = [
 ];
 
 for (const c of cases) toolCase(c);
+
+/* ---------- 파일 입력 경로 ---------- */
+
+test('checksum-file: 파일 해시는 "abc" 표준 벡터와 일치', async ({ page }) => {
+  await openTool(page, 'checksum-file');
+  const content = page.locator('#content');
+  await uploadFile(content, '파일 선택 (여러 개 가능, 브라우저 밖으로 전송되지 않습니다)',
+    { name: 'abc.txt', mimeType: 'text/plain', buffer: Buffer.from('abc') });
+
+  const row = (key) => content.locator('table.kv tr').filter({ has: page.getByText(key, { exact: true }) });
+  await expect(row('파일')).toContainText('abc.txt (3 bytes)');
+  await expect(row('MD5')).toContainText('900150983cd24fb0d6963f7d28e17f72');
+  await expect(row('SHA-1')).toContainText('a9993e364706816aba3e25717850c26c9cd0d89d');
+  await expect(row('SHA-256')).toContainText('ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad');
+  await expect(row('SHA-512')).toContainText('ddaf35a193617abacc417349ae20413112e6fa4e89a97ea20a9eeee64b55d39a2192992a274fc1a836ba3c23a3feebbd454d4423643ce80e2a9ac94fa54ca49f');
+});
+
+test('checksum-file: 여러 파일을 한 번에 처리', async ({ page }) => {
+  await openTool(page, 'checksum-file');
+  const content = page.locator('#content');
+  await uploadFile(content, '파일 선택 (여러 개 가능, 브라우저 밖으로 전송되지 않습니다)', [
+    { name: 'a.txt', mimeType: 'text/plain', buffer: Buffer.from('abc') },
+    { name: 'b.txt', mimeType: 'text/plain', buffer: Buffer.from('') },
+  ]);
+  await expect(content).toContainText('a.txt (3 bytes)');
+  await expect(content).toContainText('b.txt (0 bytes)');
+  // 빈 파일의 MD5
+  await expect(content).toContainText('d41d8cd98f00b204e9800998ecf8427e');
+});
+
+test('checksum-crc: 파일 체크섬도 표준 check value', async ({ page }) => {
+  await openTool(page, 'checksum-crc');
+  const content = page.locator('#content');
+  await uploadFile(content, '또는 파일 선택 (브라우저 밖으로 전송되지 않습니다)',
+    { name: 'check.bin', mimeType: 'application/octet-stream', buffer: Buffer.from('123456789') });
+  await expect(content).toContainText('check.bin (9 bytes)');
+  await expect(content.locator('.io').last()).toContainText('0xCBF43926');
+});

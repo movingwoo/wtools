@@ -1,5 +1,6 @@
 // 코드/문서 포맷터 정밀 테스트. sql-formatter·js-beautify·marked 등 CDN 라이브러리 경로도 함께 검증한다.
-import { test, expect, toolCase, openTool, ioSection, runIO } from '../helpers.js';
+import { test, expect, toolCase, openTool, ioSection, runIO, uploadFile } from '../helpers.js';
+import { makePng } from '../fixtures.js';
 
 const cases = [
   /* ---------- json-format ---------- */
@@ -133,4 +134,38 @@ test('code-format: XML 압축 → 포맷 왕복 보존', async ({ page }) => {
   expect(min).toBe('<root><a x="1">t</a><b/></root>');
   const back = await runIO(io, { inputs: min, action: '포맷' });
   expect(back).toBe(xml);
+});
+
+/* ---------- hex-viewer (파일 / 직접 입력) ---------- */
+
+test('hex-viewer: 파일 업로드 시 크기와 매직 넘버 판별', async ({ page }) => {
+  await openTool(page, 'hex-viewer');
+  const content = page.locator('#content');
+  const png = makePng(8, 8, () => [255, 0, 0]);
+  await uploadFile(content, '파일 선택 (브라우저 밖으로 전송되지 않습니다)', { name: 'red.png', mimeType: 'image/png', buffer: png });
+
+  const row = (key) => content.locator('table.kv tr').filter({ has: page.getByText(key, { exact: true }) });
+  await expect(row('입력')).toContainText('red.png');
+  await expect(row('크기')).toContainText(`${png.length} bytes`);
+  await expect(row('형식 추정 (매직 넘버)')).toContainText('PNG 이미지');
+  await expect(content.locator('textarea.out')).toHaveValue(
+    /^00000000 {2}89 50 4e 47 0d 0a 1a 0a 00 00 00 0d 49 48 44 52 {2}\|\.PNG\.{8}IHDR\|/);
+});
+
+test('hex-viewer: 직접 입력한 텍스트를 xxd 형식으로 덤프', async ({ page }) => {
+  await openTool(page, 'hex-viewer');
+  const content = page.locator('#content');
+  await content.getByLabel('또는 직접 입력').fill('abc');
+  // 오프셋 + 16바이트 자리(47칸)에 맞춘 hex + ASCII 열
+  await expect(content.locator('textarea.out')).toHaveValue('00000000  61 62 63' + ' '.repeat(39) + '  |abc|');
+  await expect(content.locator('table.kv')).toContainText('알려진 시그니처 없음');
+});
+
+test('hex-viewer: Hex 입력으로 다른 포맷 판별', async ({ page }) => {
+  await openTool(page, 'hex-viewer');
+  const content = page.locator('#content');
+  await content.getByLabel('입력 형식').selectOption('hex');
+  await content.getByLabel('또는 직접 입력').fill('1f8b0800');
+  await expect(content.locator('table.kv')).toContainText('Gzip 압축');
+  await expect(content.locator('table.kv')).toContainText('직접 입력 (hex)');
 });

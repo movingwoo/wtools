@@ -5,6 +5,8 @@ const CAT = '이미지 / 미디어 / QR';
 
 async function makeQR(text, ecl, size) {
   await loadScript(LIB.qrcode);
+  // 기본 인코더는 문자 코드의 하위 1바이트만 써서 한글·이모지가 깨진다. UTF-8로 바꾼다.
+  qrcode.stringToBytes = qrcode.stringToBytesFuncs['UTF-8'];
   const qr = qrcode(0, ecl);
   qr.addData(text);
   qr.make();
@@ -825,15 +827,21 @@ function extractPalette(imageData, n) {
         if (mx - mn > best) { best = mx - mn; bi = i; bc = c; }
       }
     });
-    if (bi < 0) break;
+    // 색이 하나뿐인 버킷만 남으면 더 나눠도 같은 색이 중복될 뿐이므로 멈춘다
+    if (bi < 0 || best <= 0) break;
     const b = buckets[bi].sort((x, y) => x[bc] - y[bc]);
     const mid = b.length >> 1;
     buckets.splice(bi, 1, b.slice(0, mid), b.slice(mid));
   }
-  return buckets.map((b) => {
+  // 서로 다른 버킷이 같은 대표색을 내면 한 항목으로 합친다 (같은 색이 여러 번 나오지 않도록)
+  const merged = new Map();
+  for (const b of buckets) {
     const avg = [0, 1, 2].map((c) => Math.round(b.reduce((a, p) => a + p[c], 0) / b.length));
-    return { hex: '#' + avg.map((v) => v.toString(16).padStart(2, '0')).join(''), share: b.length / px.length };
-  }).sort((a, b) => b.share - a.share);
+    const hex = '#' + avg.map((v) => v.toString(16).padStart(2, '0')).join('');
+    merged.set(hex, (merged.get(hex) || 0) + b.length);
+  }
+  return [...merged].map(([hex, count]) => ({ hex, share: count / px.length }))
+    .sort((a, b) => b.share - a.share);
 }
 
 tool({

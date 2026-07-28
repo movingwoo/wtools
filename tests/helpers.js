@@ -64,17 +64,33 @@ export function kvValue(io, key) {
   }, key);
 }
 
+// 파일 선택 input에 메모리 버퍼를 올린다. label은 input의 aria-label.
+export function uploadFile(scope, label, files) {
+  return scope.getByLabel(label).setInputFiles(files);
+}
+
+// 다운로드를 일으키는 동작을 실행하고 파일명과 내용을 돌려준다.
+export async function grabDownload(page, action) {
+  const [download] = await Promise.all([page.waitForEvent('download'), action()]);
+  const stream = await download.createReadStream();
+  const chunks = [];
+  for await (const chunk of stream) chunks.push(chunk);
+  return { name: download.suggestedFilename(), bytes: Buffer.concat(chunks) };
+}
+
 /* 옵션·입력·액션을 적용하고 출력 문자열을 돌려준다. 왕복(round-trip) 변환 검증용.
-   이전 결과를 다시 읽는 일이 없도록 입력을 비워 출력을 초기화한 뒤 실행한다. */
+   이전 결과를 그대로 다시 읽지 않도록, 입력을 비워 출력을 초기화한 뒤 실행한다.
+   빈 입력에 에러를 내는 도구도 있으므로 초기화 상태는 빈 문자열 또는 에러 메시지로 본다. */
 export async function runIO(io, { options, inputs, action } = {}) {
   for (const [label, value] of Object.entries(options ?? {})) await setOption(io, label, value);
   const out = io.locator('textarea.out');
   await fillInputs(io, Array.isArray(inputs) ? inputs.map(() => '') : '');
   if (action) await clickAction(io, action);
-  await expect(out).toHaveValue('');
+  await expect.poll(() => out.inputValue(), { message: '빈 입력 후 출력 초기화' }).toMatch(/^(?:$|⚠)/);
+  const reset = await out.inputValue();
   await fillInputs(io, inputs);
   if (action) await clickAction(io, action);
-  await expect(out).not.toHaveValue('');
+  await expect.poll(() => out.inputValue(), { message: '새 입력의 결과' }).not.toBe(reset);
   return out.inputValue();
 }
 

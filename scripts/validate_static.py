@@ -67,11 +67,26 @@ def validate_tools(validation: Validation) -> None:
     for ref in re.findall(r"""import ['"](\./tools/[^'"]+\.js)['"];""", main)
   }
   tool_modules = set((ROOT / 'js/tools').glob('*.js'))
+  tool_specs = set((ROOT / 'tests/tools').glob('*.spec.js'))
+  expected_specs = {
+    ROOT / 'tests/tools' / f'{path.stem}.spec.js'
+    for path in tool_modules
+  }
 
   for missing in sorted(tool_modules - imported_modules):
     validation.error(f'js/main.js: tool module is not imported: {missing.relative_to(ROOT)}')
   for extra in sorted(imported_modules - tool_modules):
     validation.error(f'js/main.js: imported tool module is missing: {extra.relative_to(ROOT)}')
+  for missing in sorted(expected_specs - tool_specs):
+    module = ROOT / 'js/tools' / f'{missing.name.removesuffix(".spec.js")}.js'
+    validation.error(
+      f'{module.relative_to(ROOT)}: missing test spec: {missing.relative_to(ROOT)}'
+    )
+  for extra in sorted(tool_specs - expected_specs):
+    validation.error(
+      f'{extra.relative_to(ROOT)}: no matching tool module; '
+      f'spec filename must match js/tools/<module>.js'
+    )
 
   ids: list[str] = []
   for path in sorted(tool_modules):
@@ -93,7 +108,10 @@ def validate_tools(validation: Validation) -> None:
   for tool_id, count in Counter(ids).items():
     if count > 1:
       validation.error(f'duplicate tool ID: {tool_id} ({count} registrations)')
-  print(f'Validated {len(ids)} unique tool registrations across {len(tool_modules)} modules.')
+  print(
+    f'Validated {len(ids)} unique tool registrations and '
+    f'{len(tool_specs)} matching specs across {len(tool_modules)} modules.'
+  )
 
 
 def validate_imports(validation: Validation) -> None:

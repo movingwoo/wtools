@@ -253,7 +253,7 @@ export const LIB = {
   jsqr: { url: 'https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js', integrity: 'sha384-b5Ya4Bq3qCyz39m2ISh+4DxjAIljdeFwK/BsXLuj9gugaNwAcj/ia15fxNZL9Nlx' },
   jsonpath: { url: 'https://unpkg.com/jsonpath-plus@10.3.0/dist/index-browser-umd.min.cjs', integrity: 'sha384-hGQPqOxTPM4foQNgrQgUmEiH4XmDBHG/JM6hBfraI4LJ9LA9V/tDGADiGRXeC9/c' },
   jmespath: { url: 'https://cdn.jsdelivr.net/npm/jmespath@0.16.0/jmespath.min.js', integrity: 'sha384-gWcKrbXrrv/Qu9WrcJK8aDvaUwv8LMxpzdBtpRCNn3eoq7D6uOySOdo2YFvhaYrx' },
-  ajv: { url: 'https://cdn.jsdelivr.net/npm/ajv@6.12.6/dist/ajv.bundle.js', integrity: 'sha384-FhxE5wb1R5PH1FNHJnhnZA5Th28cz8eOE7DjUCzNuwImYzw3t4Zl1wiWJhbuf+De' },
+  zSchema: { url: 'https://cdn.jsdelivr.net/npm/z-schema@12.4.0/umd/ZSchema.min.js', integrity: 'sha384-uwH59hDi0evUZU9ySSP5KjCl0MAXZiFlA4eWOswSbiuGdLZKBmE7iztFuOFv42Gt' },
   bcrypt: { url: 'https://cdn.jsdelivr.net/npm/bcryptjs@2.4.3/dist/bcrypt.min.js', integrity: 'sha384-qGFE4FIJLgCFuYs3nzg39XpCtvT5AZUhaBdjB3e1+vpKQa03AkyWOyBSFb9OcQ/g' },
 };
 

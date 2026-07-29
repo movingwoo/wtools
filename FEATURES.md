@@ -31,7 +31,7 @@
 
 - JSON ↔ YAML ↔ XML ↔ CSV ↔ TOML ↔ ENV(.env) 상호 변환
 - JSONPath / JMESPath 테스터
-- JSON Schema 검증 및 샘플 생성
+- JSON Schema 검증(Draft 4/6/7/2019-09/2020-12) 및 샘플 생성
 - 리스트 변환기 (구분자 변경, 정렬, 중복 제거 등)
 - To/From 테이블 (구분자 기반 표 변환)
 - 색상 변환기 (RGB / HSL / HEX / CMYK)

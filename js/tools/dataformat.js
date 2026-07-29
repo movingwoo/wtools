@@ -56,15 +56,57 @@ function schemaExample(schema, seen = new Set()) {
   return value;
 }
 
+function schemaDraft(schema) {
+  if (typeof schema.$schema !== 'string') return 'draft2020-12';
+  const uri = schema.$schema.toLowerCase();
+  if (uri.includes('draft-04')) return 'draft-04';
+  if (uri.includes('draft-06')) return 'draft-06';
+  if (uri.includes('draft-07')) return 'draft-07';
+  if (uri.includes('2019-09')) return 'draft2019-09';
+  if (uri.includes('2020-12')) return 'draft2020-12';
+  throw new Error('지원하지 않는 JSON Schema 버전입니다. Draft 4, 6, 7, 2019-09 또는 2020-12를 사용하세요.');
+}
+
+function schemaErrorMessage(error) {
+  const p = error?.params || [];
+  switch (error?.code) {
+    case 'INVALID_TYPE': return `예상 타입은 ${p[0]}이지만 실제 타입은 ${p[1]}입니다.`;
+    case 'OBJECT_MISSING_REQUIRED_PROPERTY': return `필수 속성 "${p[0]}"이(가) 없습니다.`;
+    case 'OBJECT_ADDITIONAL_PROPERTIES': return `허용되지 않은 속성 "${p[0]}"이(가) 있습니다.`;
+    case 'MINIMUM': return `값 ${p[0]}은(는) 최솟값 ${p[1]}보다 작습니다.`;
+    case 'MINIMUM_EXCLUSIVE': return `값 ${p[0]}은(는) ${p[1]}보다 커야 합니다.`;
+    case 'MAXIMUM': return `값 ${p[0]}은(는) 최댓값 ${p[1]}보다 큽니다.`;
+    case 'MAXIMUM_EXCLUSIVE': return `값 ${p[0]}은(는) ${p[1]}보다 작아야 합니다.`;
+    case 'MIN_LENGTH': return `문자열 길이는 최소 ${p[1]}자여야 합니다.`;
+    case 'MAX_LENGTH': return `문자열 길이는 최대 ${p[1]}자여야 합니다.`;
+    case 'ARRAY_LENGTH_SHORT': return `배열 항목은 최소 ${p[1]}개여야 합니다.`;
+    case 'ARRAY_LENGTH_LONG': return `배열 항목은 최대 ${p[1]}개여야 합니다.`;
+    case 'ARRAY_UNIQUE': return '배열 항목은 서로 달라야 합니다.';
+    case 'ENUM_MISMATCH': return '허용된 enum 값과 일치하지 않습니다.';
+    case 'CONST': return 'const에 지정된 값과 일치하지 않습니다.';
+    case 'PATTERN': return `문자열이 지정된 패턴과 일치하지 않습니다: ${p[0]}`;
+    case 'INVALID_FORMAT': return `문자열이 ${p[0]} 형식에 맞지 않습니다.`;
+    case 'MULTIPLE_OF': return `값 ${p[0]}은(는) ${p[1]}의 배수가 아닙니다.`;
+    case 'ANY_OF_MISSING': return 'anyOf의 어떤 스키마와도 일치하지 않습니다.';
+    case 'ONE_OF_MISSING': return 'oneOf의 어떤 스키마와도 일치하지 않습니다.';
+    case 'ONE_OF_MULTIPLE': return 'oneOf의 여러 스키마와 동시에 일치합니다.';
+    case 'NOT_PASSED': return 'not 스키마와 일치하는 값은 허용되지 않습니다.';
+    case 'CONTAINS': return 'contains 스키마와 일치하는 배열 항목이 없습니다.';
+    case 'SCHEMA_IS_FALSE': return '허용되지 않은 값입니다.';
+    case 'KEYWORD_TYPE_EXPECTED': return `키워드 "${p[0]}"에 올바른 형식의 값이 필요합니다: ${p[1]}`;
+    default: return `검증에 실패했습니다 (${error?.keyword || error?.code || '알 수 없는 오류'}).`;
+  }
+}
+
 tool({
   id: 'json-schema', cat: CAT, name: 'JSON Schema 검증 / 샘플 생성',
   desc: 'JSON Schema로 데이터를 검증하고 스키마 기반 예제 JSON을 생성합니다.',
-  keywords: 'json schema validate ajv draft sample mock 검증 샘플',
+  keywords: 'json schema validate draft 2020 2019 sample mock 검증 샘플',
   render(root) {
     makeIO(root, {
       inputs: [
         { id: 'json', label: '검증할 JSON', rows: 8, value: '{"name":"홍길동","age":20}' },
-        { id: 'schema', label: 'JSON Schema (Draft-07)', rows: 12, value: '{\n  "$schema": "http://json-schema.org/draft-07/schema#",\n  "type": "object",\n  "required": ["name", "age"],\n  "properties": {\n    "name": {"type": "string", "example": "홍길동"},\n    "age": {"type": "integer", "minimum": 0}\n  }\n}' },
+        { id: 'schema', label: 'JSON Schema', rows: 12, value: '{\n  "$schema": "https://json-schema.org/draft/2020-12/schema",\n  "type": "object",\n  "required": ["name", "age"],\n  "properties": {\n    "name": {"type": "string", "example": "홍길동"},\n    "age": {"type": "integer", "minimum": 0}\n  }\n}' },
       ],
       actions: [{ id: 'validate', label: '검증' }, { id: 'sample', label: '샘플 생성' }],
       autorun: false, outputRows: 12,
@@ -73,14 +115,22 @@ tool({
         const schema = JSON.parse(v.schema);
         if (action === 'sample') return JSON.stringify(schemaExample(schema), null, 2);
         if (!v.json.trim()) throw new Error('검증할 JSON을 입력하세요.');
-        await loadScript(LIB.ajv);
-        const ajv = new Ajv({ allErrors: true, jsonPointers: true, schemaId: 'auto' });
-        const validate = ajv.compile(schema);
-        const valid = validate(JSON.parse(v.json));
-        if (valid) return '✔ JSON 데이터가 스키마에 맞습니다.';
-        return validate.errors.map((e, i) => `${i + 1}. ${e.dataPath || '/'}: ${e.message}`).join('\n');
+        await loadScript(LIB.zSchema);
+        const validator = ZSchema.ZSchema.create({ version: schemaDraft(schema), safe: true });
+        const schemaResult = validator.validateSchema(schema);
+        if (!schemaResult.valid) {
+          const details = schemaResult.err?.details || [];
+          const detail = details[details.length - 1];
+          throw new Error(`JSON Schema 오류: ${schemaErrorMessage(detail)}`);
+        }
+        const result = validator.validate(JSON.parse(v.json), schema);
+        if (result.valid) return '✔ JSON 데이터가 스키마에 맞습니다.';
+        return result.err.details.map((e, i) => {
+          const path = e.path?.replace(/^#/, '') || '/';
+          return `${i + 1}. ${path}: ${schemaErrorMessage(e)}`;
+        }).join('\n');
       },
-      note: '검증은 JSON Schema Draft-07을 지원합니다. 샘플은 properties, items, example, default, enum 등 기본 키워드를 사용합니다.',
+      note: '검증은 JSON Schema Draft 4, 6, 7, 2019-09, 2020-12를 지원합니다. $schema를 생략하면 2020-12로 처리합니다. 샘플은 properties, items, example, default, enum 등 기본 키워드를 사용합니다.',
     });
   },
 });

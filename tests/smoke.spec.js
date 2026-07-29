@@ -26,6 +26,13 @@ test('홈 화면이 렌더링된다', async ({ page, pageErrors }) => {
   expect(await page.locator('#nav a[data-id]').count()).toBeGreaterThan(30);
 });
 
+test('CSP가 \'unsafe-eval\' 없이 적용된다', async ({ page }) => {
+  await page.goto('/');
+  const policy = await page.locator('meta[http-equiv="Content-Security-Policy"]').getAttribute('content');
+  expect(policy).toBeTruthy();
+  expect(policy).not.toContain("'unsafe-eval'");
+});
+
 test('모바일의 닫힌 사이드바를 건너뛰고 본문으로 이동한다', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto('/#/tool/base64');

@@ -28,7 +28,8 @@ const updateNotice = document.getElementById('update-notice');
 const updateApply = document.getElementById('update-apply');
 const mobileSidebarMedia = matchMedia('(max-width: 800px)');
 const MAX_DETECT_LENGTH = 64 * 1024;
-let pastedDetectionPending = false;
+const DETECT_DEBOUNCE_MS = 250;
+let detectionTimer = null;
 let cleanupCurrentTool = null;
 let searchResultIndex = -1;
 let navLinkId = 0;
@@ -41,6 +42,7 @@ function decodeB64UrlJson(part) {
 }
 
 function detectValue(raw) {
+  if (raw.length > MAX_DETECT_LENGTH) return null;
   const value = raw.trim();
   if (value.length < 8 || value.length > MAX_DETECT_LENGTH) return null;
 
@@ -85,6 +87,19 @@ function detectValue(raw) {
   return null;
 }
 
+function scheduleDetection(raw) {
+  if (detectionTimer !== null) {
+    clearTimeout(detectionTimer);
+    detectionTimer = null;
+  }
+  showDetection('');
+  if (raw.length < 8 || raw.length > MAX_DETECT_LENGTH) return;
+  detectionTimer = setTimeout(() => {
+    detectionTimer = null;
+    showDetection(raw);
+  }, DETECT_DEBOUNCE_MS);
+}
+
 function showDetection(raw) {
   const detected = detectValue(raw);
   detectResult.innerHTML = '';
@@ -95,8 +110,7 @@ function showDetection(raw) {
   }, '×');
   close.addEventListener('click', () => {
     search.value = '';
-    detectResult.innerHTML = '';
-    detectResult.classList.add('hidden');
+    scheduleDetection('');
     applyFilter();
     search.focus();
   });
@@ -255,17 +269,9 @@ function applyFilter() {
   search.setAttribute('aria-expanded', String(!!terms.length && visibleSearchResults().length > 0));
   setCurrentSearchResult(null);
 }
-search.addEventListener('input', (e) => {
+search.addEventListener('input', () => {
   applyFilter();
-  if (pastedDetectionPending) pastedDetectionPending = false;
-  else {
-    detectResult.innerHTML = '';
-    detectResult.classList.add('hidden');
-  }
-});
-search.addEventListener('paste', (e) => {
-  pastedDetectionPending = true;
-  showDetection(e.clipboardData?.getData('text') || '');
+  scheduleDetection(search.value);
 });
 search.addEventListener('keydown', (e) => {
   if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
@@ -289,7 +295,7 @@ document.addEventListener('keydown', (e) => {
   } else if (e.key === 'Escape') {
     if (search.value) {
       search.value = '';
-      showDetection('');
+      scheduleDetection('');
       applyFilter();
       search.focus();
     } else if (sidebar.classList.contains('open')) {

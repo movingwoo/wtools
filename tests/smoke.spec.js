@@ -143,6 +143,30 @@ test('검색이 도구를 필터링한다', async ({ page }) => {
   await expect(page.locator('#nav a[data-id="url-parser"]')).toBeHidden();
 });
 
+test('검색 입력과 드롭 값을 디바운스해 형식을 자동 감지한다', async ({ page }) => {
+  await page.goto('/');
+  const search = page.locator('#search');
+  const detection = page.locator('#detect-result');
+
+  await search.pressSequentially('https://example.com/path');
+  await expect(detection.locator('strong')).toHaveText('URL');
+  await expect(detection.getByRole('link', { name: 'URL 파서로 열기' })).toBeVisible();
+
+  await search.evaluate((input) => {
+    input.value = '{"source":"drop"}';
+    input.dispatchEvent(new InputEvent('input', {
+      bubbles: true,
+      data: input.value,
+      inputType: 'insertFromDrop',
+    }));
+  });
+  await expect(detection.locator('strong')).toHaveText('JSON');
+
+  await search.fill('A'.repeat(64 * 1024 + 1));
+  await page.waitForTimeout(300);
+  await expect(detection).toBeHidden();
+});
+
 test('해시 라우팅 직접 진입과 새로고침이 동작한다', async ({ page }) => {
   await page.goto('/#/tool/url-encode');
   await expect(page.locator('.tool-header h1')).toHaveText('URL 인코딩/디코딩');

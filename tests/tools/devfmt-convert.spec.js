@@ -72,8 +72,8 @@ const cases = [
     output: 'INSERT INTO "users" ("id", "name", "active") VALUES\n  (1, \'홍길동\', TRUE),\n  (2, \'김서연\', FALSE);',
   },
   {
-    name: 'sql-insert-convert: MySQL 방언은 백틱, 값의 따옴표는 두 번', tool: 'sql-insert-convert',
-    options: { 'SQL 방언': 'mysql' }, inputs: '[{"id":1,"name":"O\'Brien"}]', action: 'JSON → SQL',
+    name: 'sql-insert-convert: MySQL은 백틱, 값의 따옴표는 두 번', tool: 'sql-insert-convert',
+    options: { '대상 DB': 'mysql' }, inputs: '[{"id":1,"name":"O\'Brien"}]', action: 'JSON → SQL',
     output: "INSERT INTO `users` (`id`, `name`) VALUES\n  (1, 'O''Brien');",
   },
   {

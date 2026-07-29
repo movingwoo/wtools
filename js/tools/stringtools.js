@@ -418,7 +418,7 @@ tool({
   keywords: 'hangul korean 한영 오타 변환 초성 로마자 romanize jamo dkssud',
   render(root) {
     makeIO(root, {
-      inputs: [{ id: 'input', label: '입력', rows: 5, value: 'dkssudgktpdy! dhksdurgkstlfEo rlvnszlfmf RjwdjTsp dy' }],
+      inputs: [{ id: 'input', label: '입력', rows: 5, value: 'dkssudgktpdy! dhsmfeh gksdudzlfmf RkaQkrgoTspdy' }],
       options: [{ id: 'mode', label: '변환', type: 'select', values: [['en2ko', '영타 → 한글'], ['ko2en', '한글 → 영타'], ['cho', '초성 추출'], ['rom', '로마자 표기'], ['jamo', '자모 분해']] }],
       runOnLoad: true,
       note: '로마자 표기는 국어의 로마자 표기법 기준의 단순 변환으로, 자음동화·구개음화 등 일부 음운 변동은 반영되지 않습니다.',

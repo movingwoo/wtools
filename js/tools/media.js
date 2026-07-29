@@ -31,7 +31,7 @@ tool({
   keywords: 'qr code generate url png',
   render(root) {
     makeIO(root, {
-      inputs: [{ id: 'input', label: '텍스트 / URL', rows: 3, value: 'https://github.com' }],
+      inputs: [{ id: 'input', label: '텍스트 / URL', rows: 3, value: 'https://wtools.movingwoo.com' }],
       options: [
         { id: 'ecl', label: '오류 복원 레벨', type: 'select', values: [['M', 'M (15%)'], ['L', 'L (7%)'], ['Q', 'Q (25%)'], ['H', 'H (30%)']] },
         { id: 'size', label: '크기(px)', type: 'number', value: 320, size: 80 },

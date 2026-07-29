@@ -1,5 +1,11 @@
 import { defineConfig } from '@playwright/test';
 
+const crossBrowserTests = [
+  '**/smoke.spec.js',
+  '**/tools-render.spec.js',
+  '**/tools/media.spec.js',
+];
+
 export default defineConfig({
   testDir: '.',
   timeout: 30_000,
@@ -9,8 +15,12 @@ export default defineConfig({
   reporter: 'list',
   use: {
     baseURL: 'http://127.0.0.1:8917',
-    browserName: 'chromium',
   },
+  projects: [
+    { name: 'chromium', use: { browserName: 'chromium' } },
+    { name: 'firefox', testMatch: crossBrowserTests, use: { browserName: 'firefox' } },
+    { name: 'webkit', testMatch: crossBrowserTests, use: { browserName: 'webkit' } },
+  ],
   webServer: {
     // 저장소 루트를 그대로 서빙한다. ES 모듈은 file:// 로 동작하지 않기 때문.
     command: 'python3 -m http.server 8917 --directory ..',

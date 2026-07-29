@@ -57,23 +57,26 @@ a { color: var(--accent); text-decoration: none; }
 a:hover { text-decoration: underline; }
 .skip-link {
   position: fixed;
-  top: 8px;
-  left: 8px;
+  top: 10px;
+  left: 50%;
   z-index: 100;
-  padding: 8px 12px;
-  border: 2px solid var(--accent);
-  border-radius: 8px;
-  background: var(--panel);
-  color: var(--text);
-  font-weight: 700;
-  box-shadow: var(--shadow);
-  transform: translateY(calc(-100% - 12px));
-  transition: transform .15s;
+  padding: 7px 14px;
+  border: 1px solid rgba(255,255,255,.45);
+  border-radius: 999px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  box-shadow: 0 4px 14px rgba(0,0,0,.2);
+  opacity: 0;
+  transform: translate(-50%, calc(-100% - 16px));
+  transition: opacity .15s, transform .15s;
 }
 .skip-link:focus {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--text);
   outline-offset: 2px;
-  transform: none;
+  opacity: 1;
+  transform: translate(-50%, 0);
   text-decoration: none;
 }
 .sr-only {

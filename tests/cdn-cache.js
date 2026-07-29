@@ -57,12 +57,29 @@ async function handle(route) {
   await route.fulfill({ response, body });
 }
 
+// sw.js는 cdn.jsdelivr.net 등을 자체 캐시로 가로챈다. 서비스워커가 처리한 요청은
+// page.route에 잡히지 않아 위 캐시가 무력화되고, 워커가 제어권을 잡는 시점에 따라
+// 결과도 달라진다. 그래서 등록만 막는다.
+//
+// Playwright의 serviceWorkers:'block'은 쓸 수 없다. 그 옵션은 모든 문서에
+// `navigator.serviceWorker.register = ...` init 스크립트를 주입하는데,
+// markdown-html 미리보기처럼 sandbox 속성이 빈 iframe에서는 navigator.serviceWorker를
+// 읽는 것 자체가 SecurityError라 pageerror가 난다. 같은 일을 예외에 안전하게 한다.
+const blockServiceWorker = () => {
+  try {
+    if (navigator.serviceWorker) navigator.serviceWorker.register = () => new Promise(() => {});
+  } catch {
+    // 샌드박스 프레임에서는 navigator.serviceWorker 접근 자체가 막혀 있다. 그러면 등록도 불가능하다.
+  }
+};
+
 // 다른 spec의 test 객체에 그대로 펼쳐 넣는다: base.extend({ ...cdnCache, ... })
 export const cdnCache = {
   _cdnCache: [async ({ page, baseURL }, use) => {
     if (!LIVE) {
       const origin = new URL(baseURL).origin;
       const external = (url) => (url.protocol === 'http:' || url.protocol === 'https:') && !url.href.startsWith(origin);
+      await page.addInitScript(blockServiceWorker);
       await page.route(external, handle);
     }
     await use();

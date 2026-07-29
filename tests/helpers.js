@@ -87,14 +87,16 @@ export async function grabDownload(page, action) {
 }
 
 /* 옵션·입력·액션을 적용하고 출력 문자열을 돌려준다. 왕복(round-trip) 변환 검증용.
-   이전 결과를 그대로 다시 읽지 않도록, 입력을 비워 출력을 초기화한 뒤 실행한다.
-   빈 입력에 에러를 내는 도구도 있으므로 초기화 상태는 빈 문자열 또는 에러 메시지로 본다. */
+   이전 결과를 그대로 다시 읽지 않도록, 입력을 비워 한 번 실행한 뒤 그 결과를 기준값으로 잡는다.
+   빈 입력이라고 출력이 비는 것은 아니다. gzip은 빈 데이터를 압축한 20바이트를 내놓고,
+   에러를 내는 도구도 있다. 그래서 값을 단정하지 말고 실행이 끝나기만 기다린다.
+   makeIO는 비동기 process가 도는 동안 .io에 aria-busy="true"를 걸어둔다. */
 export async function runIO(io, { options, inputs, action } = {}) {
   for (const [label, value] of Object.entries(options ?? {})) await setOption(io, label, value);
   const out = io.locator('textarea.out');
   await fillInputs(io, Array.isArray(inputs) ? inputs.map(() => '') : '');
   if (action) await clickAction(io, action);
-  await expect.poll(() => out.inputValue(), { message: '빈 입력 후 출력 초기화' }).toMatch(/^(?:$|⚠)/);
+  await expect(io, '빈 입력 실행 완료').toHaveAttribute('aria-busy', 'false');
   const reset = await out.inputValue();
   await fillInputs(io, inputs);
   if (action) await clickAction(io, action);

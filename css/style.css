@@ -1,4 +1,5 @@
 :root {
+  color-scheme: light;
   --bg: #f6f7f9;
   --panel: #ffffff;
   --border: #dde1e6;
@@ -12,8 +13,23 @@
   --shadow: 0 1px 3px rgba(0,0,0,.08);
   --radius: 10px;
 }
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --bg: #0e1116;
+  --panel: #161b22;
+  --border: #2d333b;
+  --text: #e6e8eb;
+  --muted: #9099a3;
+  --accent: #4c8dff;
+  --accent-weak: #12263f;
+  --danger: #f87171;
+  --ok: #4ade80;
+  --code-bg: #0d1420;
+  --shadow: 0 1px 3px rgba(0,0,0,.4);
+}
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme]) {
+    color-scheme: dark;
     --bg: #0e1116;
     --panel: #161b22;
     --border: #2d333b;
@@ -69,8 +85,9 @@ a:hover { text-decoration: underline; }
   text-align: center;
 }
 .update-notice span { margin-right: 8px; }
+:root[data-theme='dark'] .external-warning { background: #422006; color: #fde68a; }
 @media (prefers-color-scheme: dark) {
-  .external-warning { background: #422006; color: #fde68a; }
+  :root:not([data-theme]) .external-warning { background: #422006; color: #fde68a; }
 }
 
 /* ---------- 사이드바 ---------- */
@@ -85,14 +102,38 @@ a:hover { text-decoration: underline; }
   height: 100vh;
   overflow-y: auto;
 }
+.brand-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 4px 8px 14px;
+}
 .brand {
   display: block;
   font-size: 20px;
   font-weight: 700;
   color: var(--text) !important;
-  margin: 4px 8px 14px;
 }
 .brand:hover { text-decoration: none; }
+.theme-toggle {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  min-width: 78px;
+  padding: 4px 7px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  line-height: 1.4;
+  cursor: pointer;
+}
+.theme-toggle:hover { border-color: var(--accent); color: var(--accent); }
+.theme-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 #search {
   width: 100%;
   padding: 8px 10px;
@@ -133,8 +174,6 @@ a:hover { text-decoration: underline; }
 }
 .detect-close:hover { background: var(--panel); color: var(--text); }
 .detect-close:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
-/* 하단 고정 '맨 위로' 버튼(#sidebar-top)이 끝까지 스크롤한 마지막 항목의 별 버튼을 가리지 않도록 여백 확보 */
-#nav { padding-bottom: 60px; }
 #nav .cat { margin-bottom: 4px; }
 #nav .cat-title {
   font-size: 12px;
@@ -189,48 +228,6 @@ a:hover { text-decoration: underline; }
 }
 .star-btn:hover { background: var(--accent-weak); }
 .star-btn.active { color: #f5a623; }
-
-#sidebar-top {
-  position: fixed;
-  left: 222px;
-  bottom: 18px;
-  z-index: 45;
-  width: 32px;
-  height: 28px;
-  padding: 0;
-  border: 1px solid var(--accent);
-  border-radius: 7px;
-  background: transparent;
-  color: var(--accent);
-  cursor: pointer;
-  opacity: 0;
-  visibility: hidden;
-  transform: translateY(8px);
-  transition: opacity .16s, transform .16s, visibility .16s;
-}
-#sidebar-top::before {
-  content: '';
-  position: absolute;
-  left: 11px;
-  top: 8px;
-  width: 8px;
-  height: 8px;
-  border-top: 1.5px solid currentColor;
-  border-left: 1.5px solid currentColor;
-  transform: rotate(45deg);
-}
-#sidebar-top::after {
-  content: '';
-  position: absolute;
-  left: 15px;
-  top: 8px;
-  width: 1.5px;
-  height: 12px;
-  background: currentColor;
-}
-#sidebar-top.visible { opacity: .92; visibility: visible; transform: none; }
-#sidebar-top:hover { opacity: 1; background: var(--accent-weak); }
-#sidebar-top:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 #menu-btn {
   display: none;
@@ -407,7 +404,6 @@ mark.rx { background: var(--accent-weak); color: var(--accent); border-radius: 3
     width: 280px;
   }
   #sidebar.open { transform: none; box-shadow: 0 0 40px rgba(0,0,0,.4); }
-  #sidebar-top { left: 232px; }
   #menu-btn { display: block; }
   #content { padding: 20px 16px 90px; }
 }

@@ -21,7 +21,6 @@ const content = document.getElementById('content');
 const search = document.getElementById('search');
 const sidebar = document.getElementById('sidebar');
 const menuBtn = document.getElementById('menu-btn');
-const sidebarTop = document.getElementById('sidebar-top');
 const detectResult = document.getElementById('detect-result');
 const externalWarning = document.getElementById('external-resource-warning');
 const updateNotice = document.getElementById('update-notice');
@@ -247,7 +246,6 @@ function applyFilter() {
   }
   search.setAttribute('aria-expanded', String(!!terms.length && visibleSearchResults().length > 0));
   setCurrentSearchResult(null);
-  updateSidebarTop();
 }
 search.addEventListener('input', (e) => {
   applyFilter();
@@ -309,18 +307,6 @@ document.addEventListener('pointerdown', (e) => {
   if (sidebar.classList.contains('open') && !sidebar.contains(e.target) && !menuBtn.contains(e.target))
     setSidebarOpen(false);
 });
-function updateSidebarTop() {
-  const visible = sidebar.scrollTop > 240;
-  sidebarTop.classList.toggle('visible', visible);
-  sidebarTop.setAttribute('aria-hidden', String(!visible));
-  sidebarTop.tabIndex = visible ? 0 : -1;
-}
-sidebar.addEventListener('scroll', updateSidebarTop, { passive: true });
-sidebarTop.addEventListener('click', () => {
-  const behavior = matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth';
-  sidebar.scrollTo({ top: 0, behavior });
-});
-updateSidebarTop();
 
 /* ---------- 라우팅 ---------- */
 function card(t) {

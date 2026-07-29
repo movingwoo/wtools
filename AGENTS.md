@@ -23,11 +23,14 @@ js/main.js          Tool imports, hash router, sidebar, search, and generated ho
 js/tools/*.js       Category modules; each module registers multiple related tools
 assets/             Static images and icons
 manifest.json       PWA manifest (installability, icons, theme color)
-sw.js               Service worker; network-first caching for offline support
+sw.js               Service worker; precaches the app shell, then network-first for offline support
 tests/              Playwright browser tests (CI-only; own package.json, not part of the site)
 tests/tools/        Per-tool input/output cases, one spec per `js/tools/` module
 tests/helpers.js    Shared UI driver and the table-driven `toolCases` runner
 tests/fixtures.js   Test material built at run time (images, certificates, keys)
+tests/cdn-cache.js  Fixture that serves lazily loaded CDN libraries from a local cache
+scripts/            Dependency-free repository and static-site validation scripts
+.github/workflows/  validate.yml on every PR and main push; nightly.yml once a day
 FEATURES.md         Feature inventory grouped by category
 README.md           User-facing project documentation
 ```
@@ -42,7 +45,7 @@ python3 -m http.server 8000
 
 Then open `http://localhost:8000` and validate changes manually.
 
-CI (`.github/workflows/validate.yml`) checks JavaScript syntax, validates registrations and static assets, and runs Playwright browser smoke tests. To run the browser tests locally (requires Node.js 18+):
+CI (`.github/workflows/validate.yml`) checks JavaScript syntax, validates registrations and static assets, and runs the Playwright browser suite on every PR and every push to `main`. A second workflow, `.github/workflows/nightly.yml`, re-runs the suite once a day against the real CDN. To run the browser tests locally (requires Node.js 18+):
 
 ```bash
 cd tests
@@ -69,7 +72,7 @@ Follow these conventions when adding cases:
 - Stub external network calls with `page.route` so a case never depends on a live service.
 - Console errors fail every test. Allow an expected one with `test.use({ allowConsoleErrors: ['...'] })` and explain why in a comment.
 
-CDN libraries loaded lazily by tools are cached on disk by `tests/cdn-cache.js`, so a CDN hiccup does not fail a run and repeat runs stay offline. The cache lives in `tests/.lib-cache` (gitignored; CI restores it with `actions/cache`), and the browser still validates every cached response against the SRI hash pinned in `js/core.js`. Service workers are blocked in the test context because `sw.js` would otherwise intercept those same requests, which `page.route` cannot see. Because PR runs no longer touch the real CDN, `.github/workflows/nightly.yml` re-runs the suite once a day with `WTOOLS_LIVE_CDN=1` to catch a dead pin or a withdrawn package. A new test entry point must spread `cdnCache` into its `test.extend({ ... })`.
+CDN libraries loaded lazily by tools are cached on disk by `tests/cdn-cache.js`, so a CDN hiccup does not fail a run and repeat runs stay offline. The cache lives in `tests/.lib-cache` (gitignored; CI restores it with `actions/cache`), and the browser still validates every cached response against the SRI hash pinned in `js/core.js`. The same fixture disables service worker registration with an init script, because `sw.js` caches those same external hosts and a request a service worker handles is invisible to `page.route`. Do not replace this with Playwright's `serviceWorkers: 'block'` — that option injects an init script that reads `navigator.serviceWorker`, which is a `SecurityError` inside the empty-sandbox preview iframe the markdown tool builds, and the resulting `pageerror` fails the console guard. Because PR runs no longer touch the real CDN, `.github/workflows/nightly.yml` re-runs the suite once a day with `WTOOLS_LIVE_CDN=1` to catch a dead pin or a withdrawn package. A new test entry point must spread `cdnCache` into its `test.extend({ ... })`.
 
 For a quick JavaScript syntax/module check on macOS, use:
 
@@ -116,13 +119,13 @@ Prefer shared APIs from `js/core.js` instead of duplicating them:
 - `h(tag, attrs, ...kids)` for custom DOM construction. Use it for file-oriented or otherwise nonstandard interfaces.
 - `strToBytes`, `bytesToStr`, `bytesToHex`, `hexToBytes`, `bytesToB64`, `b64ToBytes`, `decodeInput`, and `encodeOutput` for byte conversions.
 - `kvTable`, `copyBtn`, `download`, and `downloadZip` for common result actions.
-- `loadScript`, `loadCss`, and `LIB` for lazy-loaded third-party dependencies.
+- `loadScript`, `loadCss`, and `LIB` for lazy-loaded third-party dependencies; `loadModule(url)` for a dependency published only as an ES module.
 
 `makeIO` has an important input convention:
 
 - With one input, `process` receives the input string directly: `process(text, opts, actionId)`.
 - With multiple inputs, `process` receives an object keyed by input ID: `process(inputs, opts, actionId)`.
-- Thrown errors are displayed in the output area, and `process` may return a Promise.
+- Thrown errors are displayed in the output area, and `process` may return a Promise. With `cancelable: true`, `process` receives an `AbortSignal` as its fourth argument and the UI gains a cancel button.
 - Input changes run automatically by default. Use `autorun: false` for expensive or explicitly triggered work, and `runOnLoad: true` only when an initial result is useful.
 - Use `outputHTML: true` only when returning trusted DOM nodes built by the application. Do not insert untrusted input with `innerHTML`.
 

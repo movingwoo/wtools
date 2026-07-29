@@ -174,6 +174,121 @@ tool({
   },
 });
 
+/* ---------- Brotli ----------
+   해제기(decompress.js)는 순수 JavaScript라 그대로 쓸 수 있지만, 인코더는 Emscripten
+   빌드뿐이라 브라우저에서 동작하지 않는다. Bzip2·Zstd와 같이 해제만 제공한다. */
+let brotliDecompress = null;
+async function loadBrotli() {
+  const mod = await loadModule('https://cdn.jsdelivr.net/npm/brotli@1.3.3/decompress.js/+esm');
+  brotliDecompress ??= mod.default ?? mod.decompress ?? mod;
+  return brotliDecompress;
+}
+function brotliRun(decompress, bytes) {
+  const res = decompress(bytes);
+  if (!res) throw new Error('해제하지 못했습니다. Brotli 데이터가 맞는지 확인하세요.');
+  return new Uint8Array(res);
+}
+
+tool({
+  id: 'brotli', cat: CAT, name: 'Brotli 해제',
+  desc: 'Brotli(.br)로 압축된 데이터를 해제합니다. (파일 업로드 또는 Base64/Hex)',
+  keywords: 'brotli br decompress 해제 web content-encoding 압축',
+  render(root) {
+    root.append(h('h3', null, '파일 해제'));
+    const fileOut = h('div');
+    const picker = h('input', { type: 'file', accept: '.br', 'aria-label': '해제할 Brotli 파일 선택' });
+    picker.addEventListener('change', async () => {
+      const file = picker.files[0];
+      if (!file) return;
+      fileOut.innerHTML = '해제 중...';
+      try {
+        const decompress = await loadBrotli();
+        const res = brotliRun(decompress, new Uint8Array(await file.arrayBuffer()));
+        fileOut.innerHTML = '';
+        fileOut.append(h('p', null, `${file.name} → ${res.length.toLocaleString()} bytes `,
+          h('button', {
+            class: 'btn small', type: 'button',
+            onclick: () => download(file.name.replace(/\.br$/i, '') || 'output', new Blob([res])),
+          }, '다운로드')));
+        fileOut.append(h('div', { class: 'out-head' }, h('span', { class: 'io-label' }, '미리보기 (최대 2KB)')),
+          h('pre', { class: 'out-html', style: { whiteSpace: 'pre-wrap' } }, bytesToStr(res.slice(0, 2000))));
+      } catch (e) {
+        fileOut.innerHTML = '';
+        fileOut.append(h('span', { class: 'error' }, '해제 실패: ' + e.message));
+      }
+    });
+    root.append(picker, fileOut);
+
+    root.append(h('h3', { style: { marginTop: '26px' } }, 'Base64 / Hex 해제'));
+    makeIO(root, {
+      inputs: [{ id: 'input', label: 'Brotli 데이터', rows: 5, placeholder: 'Base64 또는 Hex' }],
+      options: [
+        { id: 'ifmt', label: '입력 형식', type: 'select', values: [['base64', 'Base64'], ['hex', 'Hex']] },
+        { id: 'ofmt', label: '출력 형식', type: 'select', values: [['text', '텍스트'], ['base64', 'Base64'], ['hex', 'Hex']] },
+      ],
+      actions: [{ id: 'decomp', label: '해제' }],
+      autorun: false,
+      async process(text, o) {
+        if (!text.trim()) return '';
+        const decompress = await loadBrotli();
+        return outBytes(brotliRun(decompress, decodeInput(text, o.ifmt)), o.ofmt);
+      },
+      note: 'Brotli 압축은 브라우저에서 쓸 만한 순수 JavaScript 인코더가 없어 해제만 제공합니다. 압축이 필요하면 Gzip 또는 Zip을 사용하세요.',
+    });
+  },
+});
+
+/* ---------- Zstandard ---------- */
+let fzstd = null;
+tool({
+  id: 'zstd', cat: CAT, name: 'Zstandard 해제',
+  desc: 'Zstandard(.zst)로 압축된 데이터를 해제합니다. (파일 업로드 또는 Base64/Hex)',
+  keywords: 'zstd zstandard zst decompress 해제 압축',
+  render(root) {
+    root.append(h('h3', null, '파일 해제'));
+    const fileOut = h('div');
+    const picker = h('input', { type: 'file', accept: '.zst', 'aria-label': '해제할 Zstandard 파일 선택' });
+    picker.addEventListener('change', async () => {
+      const file = picker.files[0];
+      if (!file) return;
+      fileOut.innerHTML = '해제 중...';
+      try {
+        fzstd ??= await loadModule('https://cdn.jsdelivr.net/npm/fzstd@0.1.1/+esm');
+        const res = fzstd.decompress(new Uint8Array(await file.arrayBuffer()));
+        fileOut.innerHTML = '';
+        fileOut.append(h('p', null, `${file.name} → ${res.length.toLocaleString()} bytes `,
+          h('button', {
+            class: 'btn small', type: 'button',
+            onclick: () => download(file.name.replace(/\.zst$/i, '') || 'output', new Blob([res])),
+          }, '다운로드')));
+        fileOut.append(h('div', { class: 'out-head' }, h('span', { class: 'io-label' }, '미리보기 (최대 2KB)')),
+          h('pre', { class: 'out-html', style: { whiteSpace: 'pre-wrap' } }, bytesToStr(res.slice(0, 2000))));
+      } catch (e) {
+        fileOut.innerHTML = '';
+        fileOut.append(h('span', { class: 'error' }, '해제 실패: ' + e.message));
+      }
+    });
+    root.append(picker, fileOut);
+
+    root.append(h('h3', { style: { marginTop: '26px' } }, 'Base64 / Hex 해제'));
+    makeIO(root, {
+      inputs: [{ id: 'input', label: 'Zstandard 데이터', rows: 5, placeholder: 'Base64 또는 Hex' }],
+      options: [
+        { id: 'ifmt', label: '입력 형식', type: 'select', values: [['base64', 'Base64'], ['hex', 'Hex']] },
+        { id: 'ofmt', label: '출력 형식', type: 'select', values: [['text', '텍스트'], ['base64', 'Base64'], ['hex', 'Hex']] },
+      ],
+      actions: [{ id: 'decomp', label: '해제' }],
+      autorun: false,
+      async process(text, o) {
+        if (!text.trim()) return '';
+        fzstd ??= await loadModule('https://cdn.jsdelivr.net/npm/fzstd@0.1.1/+esm');
+        return outBytes(fzstd.decompress(decodeInput(text, o.ifmt)), o.ofmt);
+      },
+      note: 'Zstandard 압축은 브라우저에서 쓸 만한 순수 JavaScript 구현이 없어 해제만 제공합니다. 압축이 필요하면 Brotli 또는 Gzip을 사용하세요.',
+    });
+  },
+});
+
 tool({
   id: 'lz4', cat: CAT, name: 'LZ4 압축/해제',
   desc: 'LZ4 블록 포맷으로 압축하거나 해제합니다.',

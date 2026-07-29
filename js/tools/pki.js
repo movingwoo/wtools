@@ -1,5 +1,5 @@
 // 공개키 / 인증서
-import { tool, makeIO, h, kvTable, bytesToHex, hexToBytes, bytesToStr, loadScript, LIB } from '../core.js';
+import { tool, makeIO, h, kvTable, strToBytes, bytesToHex, hexToBytes, bytesToStr, bytesToB64, b64ToBytes, concatBytes, loadScript, LIB } from '../core.js';
 
 const CAT = '공개키 / 인증서';
 
@@ -96,6 +96,146 @@ tool({
         }
         return pemtohex(text.trim());
       },
+    });
+  },
+});
+
+/* ---------- JWK ↔ PEM ----------
+   변환은 WebCrypto의 import/export로 하고, Ed25519(OKP)만 직접 처리한다.
+   Ed25519 WebCrypto는 이 프로젝트의 브라우저 기준선보다 한참 최신에야 들어왔는데,
+   키 DER은 길이가 고정이라 접두사를 붙였다 떼는 것으로 충분하다 (RFC 8410). */
+const ED_SPKI_PREFIX = hexToBytes('302a300506032b6570032100');
+const ED_PKCS8_PREFIX = hexToBytes('302e020100300506032b657004220420');
+
+// core.js의 b64ToBytes는 -_ 를 +/ 로 바꿔 주므로 base64url을 그대로 넘겨도 된다.
+const bytesToB64url = (bytes) => bytesToB64(bytes).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+const pemWrap = (label, bytes) =>
+  `-----BEGIN ${label}-----\n${bytesToB64(bytes).replace(/.{64}/g, '$&\n').replace(/\n$/, '')}\n-----END ${label}-----`;
+
+// PEM → 어떤 알고리즘인지 모르므로 후보를 차례로 시도한다. 첫 성공이 답이다.
+const IMPORT_CANDIDATES = [
+  { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' },
+  { name: 'RSA-PSS', hash: 'SHA-256' },
+  { name: 'RSA-OAEP', hash: 'SHA-256' },
+  { name: 'ECDSA', namedCurve: 'P-256' },
+  { name: 'ECDSA', namedCurve: 'P-384' },
+  { name: 'ECDSA', namedCurve: 'P-521' },
+];
+const USAGES = {
+  'RSASSA-PKCS1-v1_5': { spki: ['verify'], pkcs8: ['sign'] },
+  'RSA-PSS': { spki: ['verify'], pkcs8: ['sign'] },
+  'RSA-OAEP': { spki: ['encrypt'], pkcs8: ['decrypt'] },
+  ECDSA: { spki: ['verify'], pkcs8: ['sign'] },
+};
+
+// RFC 7638: 필수 항목만 사전순으로 담은 JSON의 SHA-256을 base64url로 적은 값
+async function jwkThumbprint(jwk) {
+  const required = {
+    RSA: ['e', 'kty', 'n'], EC: ['crv', 'kty', 'x', 'y'], OKP: ['crv', 'kty', 'x'], oct: ['k', 'kty'],
+  }[jwk.kty];
+  if (!required) throw new Error('지문을 계산할 수 없는 키 종류입니다: ' + jwk.kty);
+  const canonical = JSON.stringify(Object.fromEntries(required.map((key) => {
+    if (jwk[key] == null) throw new Error(`지문 계산에 필요한 "${key}" 항목이 없습니다.`);
+    return [key, jwk[key]];
+  })));
+  return bytesToB64url(new Uint8Array(await crypto.subtle.digest('SHA-256', strToBytes(canonical))));
+}
+
+function okpToPem(jwk) {
+  if (jwk.crv !== 'Ed25519') throw new Error(`지원하지 않는 OKP 곡선입니다: ${jwk.crv} (Ed25519만 지원)`);
+  if (jwk.d) {
+    const seed = b64ToBytes(jwk.d);
+    if (seed.length !== 32) throw new Error('Ed25519 개인키(d)는 32바이트여야 합니다.');
+    return { label: 'PRIVATE KEY', pem: pemWrap('PRIVATE KEY', concatBytes(ED_PKCS8_PREFIX, seed)) };
+  }
+  const pub = b64ToBytes(jwk.x || '');
+  if (pub.length !== 32) throw new Error('Ed25519 공개키(x)는 32바이트여야 합니다.');
+  return { label: 'PUBLIC KEY', pem: pemWrap('PUBLIC KEY', concatBytes(ED_SPKI_PREFIX, pub)) };
+}
+function pemToOkp(der, isPrivate) {
+  const prefix = isPrivate ? ED_PKCS8_PREFIX : ED_SPKI_PREFIX;
+  if (der.length !== prefix.length + 32 || prefix.some((b, i) => der[i] !== b)) return null;
+  const raw = der.slice(prefix.length);
+  return isPrivate
+    ? { kty: 'OKP', crv: 'Ed25519', d: bytesToB64url(raw), x: null }
+    : { kty: 'OKP', crv: 'Ed25519', x: bytesToB64url(raw) };
+}
+
+tool({
+  id: 'jwk-pem', cat: CAT, name: 'JWK ↔ PEM 변환',
+  desc: 'JWK(JSON Web Key)와 PEM(SPKI/PKCS#8)을 서로 변환하고 RFC 7638 지문(kid)을 계산합니다.',
+  keywords: 'jwk pem spki pkcs8 jwt jose kid thumbprint rfc7638 rsa ec ed25519 키 변환',
+  render(root) {
+    makeIO(root, {
+      inputs: [{ id: 'input', label: 'JWK(JSON) 또는 PEM', rows: 12, placeholder: '{"kty":"EC","crv":"P-256",...} 또는 -----BEGIN PUBLIC KEY-----' }],
+      actions: [{ id: 'toPem', label: 'JWK → PEM' }, { id: 'toJwk', label: 'PEM → JWK' }],
+      autorun: false, outputHTML: true,
+      async process(text, o, action) {
+        const trimmed = text.trim();
+        if (!trimmed) return '';
+
+        if (action === 'toPem') {
+          let jwk;
+          try { jwk = JSON.parse(trimmed); } catch { throw new Error('JWK는 올바른 JSON이어야 합니다.'); }
+          if (jwk.keys) throw new Error('JWK Set(keys 배열)이 아니라 키 하나를 입력하세요.');
+          if (!jwk.kty) throw new Error('JWK에 "kty" 항목이 없습니다.');
+          let label, pem;
+          if (jwk.kty === 'OKP') ({ label, pem } = okpToPem(jwk));
+          else {
+            const isPrivate = jwk.d != null;
+            const format = isPrivate ? 'pkcs8' : 'spki';
+            label = isPrivate ? 'PRIVATE KEY' : 'PUBLIC KEY';
+            const algorithm = jwk.kty === 'EC'
+              ? { name: 'ECDSA', namedCurve: jwk.crv }
+              : { name: jwk.alg === 'RSA-OAEP' ? 'RSA-OAEP' : jwk.alg?.startsWith('PS') ? 'RSA-PSS' : 'RSASSA-PKCS1-v1_5', hash: `SHA-${jwk.alg?.slice(2) || '256'}` };
+            const key = await crypto.subtle.importKey('jwk', jwk, algorithm, true, USAGES[algorithm.name][format]);
+            pem = pemWrap(label, new Uint8Array(await crypto.subtle.exportKey(format, key)));
+          }
+          return h('div', null,
+            kvTable([['키 종류', `${jwk.kty}${jwk.crv ? ' / ' + jwk.crv : ''}`], ['PEM 종류', label], ['지문 (kid)', await jwkThumbprint(jwk)]]),
+            h('h3', null, 'PEM'), h('pre', { class: 'out-html' }, pem));
+        }
+
+        const isPrivate = /-----BEGIN [\w ]*PRIVATE KEY-----/.test(trimmed);
+        if (!isPrivate && !/-----BEGIN [\w ]*PUBLIC KEY-----/.test(trimmed))
+          throw new Error('PUBLIC KEY 또는 PRIVATE KEY PEM 블록을 찾을 수 없습니다.');
+        // WebCrypto는 PKCS#8과 SPKI만 읽는다. 예전 형식은 이유를 밝히고 변환 명령을 알려준다.
+        const legacy = trimmed.match(/-----BEGIN (RSA|EC) (?:PUBLIC|PRIVATE) KEY-----/);
+        if (legacy)
+          throw new Error(`${legacy[1] === 'RSA' ? 'PKCS#1' : 'SEC1'} 형식은 지원하지 않습니다. `
+            + `"openssl pkcs8 -topk8 -nocrypt -in key.pem -out pkcs8.pem"으로 PKCS#8로 바꿔 주세요.`);
+        const format = isPrivate ? 'pkcs8' : 'spki';
+        const der = b64ToBytes(trimmed.replace(/-----[^-]+-----/g, ''));
+
+        const okp = pemToOkp(der, isPrivate);
+        let jwk = null;
+        if (okp) {
+          jwk = okp;
+          // PKCS#8에는 공개키가 없다. 시드에서 다시 계산해야 x를 채울 수 있다.
+          if (isPrivate) {
+            await loadScript(LIB.tweetnacl);
+            jwk.x = bytesToB64url(nacl.sign.keyPair.fromSeed(b64ToBytes(jwk.d)).publicKey);
+          }
+        } else {
+          const errors = [];
+          for (const algorithm of IMPORT_CANDIDATES) {
+            try {
+              const key = await crypto.subtle.importKey(format, der, algorithm, true, USAGES[algorithm.name][format]);
+              jwk = await crypto.subtle.exportKey('jwk', key);
+              break;
+            } catch (e) { errors.push(`${algorithm.name}${algorithm.namedCurve ? '/' + algorithm.namedCurve : ''}`); }
+          }
+          if (!jwk) throw new Error(`키를 해석하지 못했습니다. 시도한 알고리즘: ${errors.join(', ')}`);
+        }
+        // 알고리즘 후보를 돌려 맞춘 값이라 원본 키에 없던 용도 정보가 섞이면 오해를 부른다.
+        delete jwk.key_ops;
+        delete jwk.ext;
+        jwk.kid = await jwkThumbprint(jwk);
+        return h('div', null,
+          kvTable([['키 종류', `${jwk.kty}${jwk.crv ? ' / ' + jwk.crv : ''}`], ['PEM 종류', isPrivate ? 'PRIVATE KEY' : 'PUBLIC KEY'], ['지문 (kid)', jwk.kid]]),
+          h('h3', null, 'JWK'), h('pre', { class: 'out-html' }, JSON.stringify(jwk, null, 2)));
+      },
+      note: 'PEM에는 알고리즘 정보가 충분하지 않아 RSA와 EC(P-256/384/521), Ed25519를 차례로 시도합니다. "alg" 항목은 원본 JWK에 있을 때만 유지됩니다.',
     });
   },
 });

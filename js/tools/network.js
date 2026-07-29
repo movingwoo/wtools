@@ -131,6 +131,115 @@ tool({
   },
 });
 
+/* ---------- IPv6 유틸 ----------
+   128비트라 Number로는 다룰 수 없어 전 구간을 BigInt로 계산한다. */
+function ipv6ToBig(addr) {
+  let text = addr.trim();
+  if (!text) throw new Error('IPv6 주소를 입력하세요.');
+  // 꼬리에 붙은 IPv4 표기(::ffff:192.0.2.1)를 16진 그룹 두 개로 바꿔 일반 경로로 넘긴다.
+  const mapped = text.match(/:(\d+\.\d+\.\d+\.\d+)$/);
+  if (mapped) {
+    const n = ipToInt(mapped[1]);
+    text = text.slice(0, -mapped[1].length) + `${((n >>> 16) & 0xffff).toString(16)}:${(n & 0xffff).toString(16)}`;
+  }
+  const halves = text.split('::');
+  if (halves.length > 2) throw new Error('"::"는 주소에 한 번만 쓸 수 있습니다.');
+  const head = halves[0] ? halves[0].split(':') : [];
+  const tail = halves.length === 2 && halves[1] ? halves[1].split(':') : [];
+  const missing = 8 - head.length - tail.length;
+  if (halves.length === 1 && head.length !== 8) throw new Error(`그룹이 8개여야 합니다 (현재 ${head.length}개).`);
+  if (missing < 0) throw new Error('그룹이 8개를 넘습니다.');
+  const groups = [...head, ...new Array(halves.length === 2 ? missing : 0).fill('0'), ...tail];
+  let value = 0n;
+  for (const group of groups) {
+    if (!/^[0-9a-f]{1,4}$/i.test(group)) throw new Error(`올바른 16진 그룹이 아닙니다: "${group}"`);
+    value = (value << 16n) | BigInt(parseInt(group, 16));
+  }
+  return value;
+}
+function bigToGroups(value) {
+  const groups = [];
+  for (let i = 7; i >= 0; i--) groups.push(Number((value >> BigInt(i * 16)) & 0xffffn));
+  return groups;
+}
+const expandIpv6 = (value) => bigToGroups(value).map((g) => g.toString(16).padStart(4, '0')).join(':');
+function compressIpv6(value) {
+  const groups = bigToGroups(value).map((g) => g.toString(16));
+  // RFC 5952: 0이 가장 길게 이어지는 구간 하나만 ::로 줄이고, 길이가 1이면 줄이지 않는다.
+  let best = { start: -1, len: 0 }, run = { start: -1, len: 0 };
+  groups.forEach((g, i) => {
+    if (g !== '0') { run = { start: -1, len: 0 }; return; }
+    run = run.start < 0 ? { start: i, len: 1 } : { start: run.start, len: run.len + 1 };
+    if (run.len > best.len) best = { ...run };
+  });
+  if (best.len < 2) return groups.join(':');
+  return `${groups.slice(0, best.start).join(':')}::${groups.slice(best.start + best.len).join(':')}`;
+}
+// 앞에서부터 프리픽스가 겹치는 첫 항목이 답이 되도록 좁은 대역을 먼저 적는다.
+const IPV6_TYPES = [
+  ['::/128', 128, '미지정 주소'],
+  ['::1/128', 128, '루프백'],
+  ['::ffff:0:0/96', 96, 'IPv4-mapped'],
+  ['64:ff9b::/96', 96, 'NAT64 (RFC 6052)'],
+  ['100::/64', 64, 'Discard-Only (RFC 6666)'],
+  ['2001:db8::/32', 32, '문서화용 예약 (RFC 3849)'],
+  ['2001::/32', 32, 'Teredo'],
+  ['2002::/16', 16, '6to4'],
+  ['fe80::/10', 10, '링크 로컬 (Link-Local)'],
+  ['fc00::/7', 7, '고유 로컬 (ULA)'],
+  ['ff00::/8', 8, '멀티캐스트'],
+  ['2000::/3', 3, '글로벌 유니캐스트'],
+];
+function ipv6Type(value) {
+  for (const [cidr, prefix, label] of IPV6_TYPES) {
+    const base = ipv6ToBig(cidr.split('/')[0]);
+    const mask = prefix === 0 ? 0n : ((1n << BigInt(prefix)) - 1n) << BigInt(128 - prefix);
+    if ((value & mask) === (base & mask)) return label;
+  }
+  return '예약/미할당';
+}
+const ip6Arpa = (value) => expandIpv6(value).replace(/:/g, '').split('').reverse().join('.') + '.ip6.arpa';
+
+tool({
+  id: 'subnet6', cat: CAT, name: 'IPv6 서브넷 계산기',
+  desc: 'IPv6 CIDR의 네트워크 주소, 주소 범위, 개수, 주소 종류, 역방향 DNS를 계산합니다.',
+  keywords: 'ipv6 subnet cidr prefix network range ip6.arpa reverse dns 서브넷',
+  render(root) {
+    makeIO(root, {
+      inputs: [{ id: 'input', label: 'IPv6/CIDR', rows: 1, value: '2001:db8:abcd:12::1/64' }],
+      outputHTML: true, runOnLoad: true,
+      process(text) {
+        const trimmed = text.trim();
+        if (!trimmed) return '';
+        const slash = trimmed.lastIndexOf('/');
+        const address = slash < 0 ? trimmed : trimmed.slice(0, slash);
+        const prefix = slash < 0 ? 64 : Number(trimmed.slice(slash + 1));
+        if (!Number.isInteger(prefix) || prefix < 0 || prefix > 128)
+          throw new Error('프리픽스는 0~128 범위의 정수여야 합니다.');
+        const value = ipv6ToBig(address);
+        const mask = prefix === 0 ? 0n : ((1n << BigInt(prefix)) - 1n) << BigInt(128 - prefix);
+        const network = value & mask;
+        const last = network | (~mask & ((1n << 128n) - 1n));
+        const total = 1n << BigInt(128 - prefix);
+        const interfaceId = value & ((1n << 64n) - 1n);
+        return kvTable([
+          ['입력 주소', compressIpv6(value)],
+          ['확장 표기', expandIpv6(value)],
+          ['프리픽스 길이', '/' + prefix],
+          ['네트워크 주소', `${compressIpv6(network)}/${prefix}`],
+          ['첫 주소', compressIpv6(network)],
+          ['마지막 주소', compressIpv6(last)],
+          ['전체 주소 수', `2^${128 - prefix}` + (128 - prefix <= 64 ? ` (${total.toLocaleString()})` : '')],
+          ['주소 종류', ipv6Type(value)],
+          ['인터페이스 ID (하위 64비트)', expandIpv6(interfaceId).split(':').slice(4).join(':')],
+          ['역방향 DNS', ip6Arpa(value)],
+        ]);
+      },
+      note: 'IPv6에는 브로드캐스트가 없어 첫 주소와 마지막 주소가 모두 호스트에 쓰일 수 있습니다.',
+    });
+  },
+});
+
 tool({
   id: 'ipv6-ula', cat: CAT, name: 'IPv6 ULA 생성기',
   desc: 'RFC 4193에 따라 고유 로컬 IPv6 주소(ULA) 프리픽스를 생성합니다.',

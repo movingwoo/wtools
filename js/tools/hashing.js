@@ -201,6 +201,57 @@ tool({
   },
 });
 
+/* ---------- BLAKE / xxHash ----------
+   위 '해시 생성'은 CryptoJS만 써서 즉시 계산되는 도구라, WASM(약 280KB)을 받아야 하는
+   최신 알고리즘은 별도 도구로 떼어 둔다. 여기서만 hash-wasm을 지연 로드한다. */
+// [표시 이름, 키 지원 여부, 계산 함수]. hashwasm 전역은 loadScript 이후에만 존재한다.
+const MODERN_ALGS = [
+  ['BLAKE2b-512', true, (bytes, key) => hashwasm.blake2b(bytes, 512, key)],
+  ['BLAKE2b-256', true, (bytes, key) => hashwasm.blake2b(bytes, 256, key)],
+  ['BLAKE2s-256', true, (bytes, key) => hashwasm.blake2s(bytes, 256, key)],
+  ['BLAKE3-256', true, (bytes, key) => hashwasm.blake3(bytes, 256, key)],
+  ['BLAKE3-512', true, (bytes, key) => hashwasm.blake3(bytes, 512, key)],
+  ['xxHash64', false, (bytes) => hashwasm.xxhash64(bytes)],
+  ['xxHash3 (64bit)', false, (bytes) => hashwasm.xxhash3(bytes)],
+  ['xxHash128', false, (bytes) => hashwasm.xxhash128(bytes)],
+];
+
+tool({
+  id: 'hash-modern', cat: CAT, name: 'BLAKE2 / BLAKE3 / xxHash 생성',
+  desc: 'BLAKE2b, BLAKE2s, BLAKE3, xxHash를 한 번에 계산합니다. 키(keyed hash)를 지원합니다.',
+  keywords: 'blake blake2 blake2b blake2s blake3 xxhash xxh64 xxh3 keyed hash digest 해시',
+  render(root) {
+    makeIO(root, {
+      inputs: [
+        { id: 'input', label: '입력', rows: 5, value: 'Hello, World!' },
+        { id: 'key', label: '키 (선택, BLAKE 계열만)', rows: 1, placeholder: '비우면 키 없이 계산합니다.' },
+      ],
+      options: [
+        { id: 'ifmt', label: '입력 형식', type: 'select', values: FMT_IN },
+        { id: 'upper', label: '대문자', type: 'checkbox' },
+      ],
+      outputHTML: true, runOnLoad: true,
+      async process(v, o) {
+        await loadScript(LIB.hashWasm);
+        const bytes = decodeInput(v.input, o.ifmt);
+        const key = v.key ? strToBytes(v.key) : null;
+        const rows = [];
+        for (const [label, keyable, compute] of MODERN_ALGS) {
+          if (key && !keyable) { rows.push([label, '(키를 지원하지 않는 알고리즘)']); continue; }
+          try {
+            const value = await compute(bytes, key);
+            rows.push([label, o.upper ? value.toUpperCase() : value]);
+          } catch (e) {
+            rows.push([label, '(오류: ' + e.message + ')']);
+          }
+        }
+        return kvTable(rows);
+      },
+      note: 'BLAKE3의 키는 정확히 32바이트여야 합니다. BLAKE2는 최대 64바이트(2s는 32바이트)까지 받습니다.',
+    });
+  },
+});
+
 tool({
   id: 'hmac', cat: CAT, name: 'HMAC 생성',
   desc: '비밀 키를 사용한 HMAC 메시지 인증 코드를 생성합니다.',

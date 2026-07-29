@@ -93,7 +93,23 @@ const cases = [
   {
     name: 'json-schema: 필수 항목 누락과 최솟값 위반', tool: 'json-schema',
     inputs: ['{"age":-1}', null], action: '검증',
-    output: "1. /: should have required property 'name'\n2. /age: should be >= 0",
+    output: '1. /: 필수 속성 "name"이(가) 없습니다.\n2. /age: 값 -1은(는) 최솟값 0보다 작습니다.',
+  },
+  {
+    name: 'json-schema: Draft 2019-09 dependentRequired 검증', tool: 'json-schema',
+    inputs: [
+      '{"creditCard":"1234"}',
+      '{"$schema":"https://json-schema.org/draft/2019-09/schema","type":"object","dependentRequired":{"creditCard":["billingAddress"]}}',
+    ],
+    action: '검증', output: '1. /: 검증에 실패했습니다 (dependentRequired).',
+  },
+  {
+    name: 'json-schema: Draft 2020-12 prefixItems 검증', tool: 'json-schema',
+    inputs: [
+      '["첫째",2]',
+      '{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"array","prefixItems":[{"type":"string"}],"items":false}',
+    ],
+    action: '검증', output: '1. /1: 허용되지 않은 값입니다.',
   },
   {
     name: 'json-schema: 스키마 기반 샘플 생성', tool: 'json-schema',
@@ -103,6 +119,11 @@ const cases = [
   {
     name: 'json-schema: 스키마가 비면 에러', tool: 'json-schema',
     inputs: ['{}', ' '], action: '검증', error: 'JSON Schema를 입력하세요.',
+  },
+  {
+    name: 'json-schema: 잘못된 스키마는 에러', tool: 'json-schema',
+    inputs: ['{}', '{"type":"unknown"}'], action: '검증',
+    error: 'JSON Schema 오류: 키워드 "type"에 올바른 형식의 값이 필요합니다: array,boolean,integer,number,null,object,string',
   },
 
   /* ---------- table-convert ---------- */

@@ -51,7 +51,9 @@ CI (`.github/workflows/validate.yml`) checks JavaScript syntax, validates regist
 cd tests
 npm install
 npx playwright install chromium
-npx playwright test
+npx playwright test --project=chromium
+npx playwright install firefox webkit        # optional: full cross-browser suite
+npx playwright test                          # Chromium full + Firefox/WebKit smoke
 npx playwright test tools/network.spec.js   # one module
 npx playwright test -g "subnet"             # by case name
 ```
@@ -62,6 +64,7 @@ The suite has two layers:
 
 - `smoke.spec.js` and `tools-render.spec.js` cover the app shell, routing, search, and that every registered tool renders without console errors.
 - `tests/tools/<module>.spec.js` covers the output each tool produces, one spec per `js/tools/` module.
+- Chromium runs the entire suite. Firefox and WebKit run `smoke.spec.js`, `tools-render.spec.js`, and `tools/media.spec.js` in parallel CI jobs. Use `--project=chromium` for the normal local fast path.
 
 Follow these conventions when adding cases:
 

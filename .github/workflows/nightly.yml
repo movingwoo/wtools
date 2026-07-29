@@ -39,4 +39,4 @@ jobs:
         working-directory: tests
         env:
           WTOOLS_LIVE_CDN: '1'
-        run: npx playwright test
+        run: npx playwright test --project=chromium

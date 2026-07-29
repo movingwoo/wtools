@@ -58,10 +58,10 @@ python3 scripts/validate_static.py
 cd tests
 npm install
 npx playwright install chromium
-npx playwright test
+npx playwright test --project=chromium
 ```
 
-GitHub Actions는 모든 PR과 `main` 브랜치 push에서 위 검사, JavaScript 구문 검사, 공백 오류 검사, HTTP 앱 셸 스모크 테스트, Playwright 브라우저 테스트(전체 도구 렌더링 + 도구별 입출력 정확성)를 실행. 도구가 지연 로드하는 CDN 라이브러리는 캐시에서 공급하므로 CDN 장애가 PR을 막지 않고, 실제 CDN 검증은 하루 한 번 도는 nightly 워크플로가 담당.
+전체 크로스브라우저 검사는 `npx playwright install chromium firefox webkit`으로 브라우저를 설치한 뒤 `npx playwright test`로 실행. GitHub Actions는 모든 PR과 `main` 브랜치 push에서 위 검사, JavaScript 구문 검사, 공백 오류 검사, HTTP 앱 셸 스모크 테스트, Chromium 전체 Playwright 테스트와 Firefox/WebKit 핵심 스모크 테스트를 병렬 실행. 도구가 지연 로드하는 CDN 라이브러리는 캐시에서 공급하므로 CDN 장애가 PR을 막지 않고, 실제 CDN 검증은 하루 한 번 Chromium으로 도는 nightly 워크플로가 담당.
 
 ## 구조
 

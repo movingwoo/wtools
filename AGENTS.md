@@ -109,6 +109,7 @@ Prefer shared APIs from `js/core.js` instead of duplicating them:
 - Make focused changes. Do not add a framework, build tooling, or package dependency for a small feature.
 - Prefer Web APIs and existing helpers. If a substantial library is necessary, load it lazily only when the relevant tool opens; pin its version and add it to `LIB` when it is reusable.
 - Keep only `CryptoJS` and `jsyaml` as eagerly loaded globals unless the site architecture is intentionally revised.
+- Stay within the browser baseline documented in `README.md` (Chrome/Edge 93, Firefox 92, Safari 15.4; `Object.hasOwn` is the newest API in use). Syntax that an older engine cannot parse — regex lookbehind, for example — fails at parse time and takes down the entire site, because `js/main.js` imports every tool module statically.
 - Validate input and throw `Error` objects with clear Korean messages. Avoid silent failures and unexplained coercion.
 - Preserve responsiveness, keyboard access, semantic labels, and the existing automatic light/dark theme.
 - Revoke object URLs and stop timers or workers when their lifetime ends. Avoid blocking the main thread for large inputs when a chunked or asynchronous approach is practical.

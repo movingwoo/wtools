@@ -269,8 +269,23 @@ tool({
 /* ---------- IPv6 추출 ----------
    축약(::) 표기까지 정규식 하나로 정확히 잡으려면 식이 지나치게 길어지고, 느슨하게 쓰면
    std::vector 같은 문자열까지 잡힌다. 후보를 넉넉히 뽑은 뒤 RFC 4291 규칙으로 걸러낸다. */
-const IPV6_CANDIDATE = /(?<![0-9a-fA-F:.])(?:[0-9a-fA-F]{0,4}:){2,7}(?:[0-9a-fA-F]{1,4}|(?:\d{1,3}\.){3}\d{1,3})?(?![0-9a-fA-F:.])/g;
+const IPV6_CANDIDATE = /(?:[0-9a-fA-F]{0,4}:){2,7}(?:[0-9a-fA-F]{1,4}|(?:\d{1,3}\.){3}\d{1,3})?(?![0-9a-fA-F:.])/g;
+const IPV6_BOUNDARY = /[0-9a-fA-F:.]/;
 const IPV4_TAIL = /^(?:(?:25[0-5]|2[0-4]\d|1?\d?\d)\.){3}(?:25[0-5]|2[0-4]\d|1?\d?\d)$/;
+
+// 앞쪽 경계는 후방 탐색 대신 직접 확인한다. 후방 탐색은 Safari 16.4 미만에서 파싱 자체가
+// 실패하고, 이 파일은 main.js가 정적 import하므로 사이트 전체가 뜨지 않는다.
+function extractIpv6(text) {
+  const out = [];
+  IPV6_CANDIDATE.lastIndex = 0;
+  let m;
+  while ((m = IPV6_CANDIDATE.exec(text))) {
+    // 앞 문자가 경계가 아니면 후방 탐색과 똑같이 한 칸만 물러서서 다시 찾는다.
+    if (m.index > 0 && IPV6_BOUNDARY.test(text[m.index - 1])) { IPV6_CANDIDATE.lastIndex = m.index + 1; continue; }
+    if (isIpv6(m[0])) out.push(m[0]);
+  }
+  return out;
+}
 
 function isIpv6(text) {
   const halves = text.split('::');
@@ -313,7 +328,7 @@ tool({
           ipv4: /\b(?:(?:25[0-5]|2[0-4]\d|1?\d?\d)\.){3}(?:25[0-5]|2[0-4]\d|1?\d?\d)\b/g,
         };
         let matches = o.type === 'ipv6'
-          ? (text.match(IPV6_CANDIDATE) || []).filter(isIpv6)
+          ? extractIpv6(text)
           : (text.match(patterns[o.type]) || []);
         if (o.unique) matches = [...new Set(matches)];
         if (o.sort) matches.sort();

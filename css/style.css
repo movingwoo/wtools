@@ -200,13 +200,25 @@ a:hover { text-decoration: underline; }
 .detect-close:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 #nav .cat { margin-bottom: 4px; }
 #nav .cat-title {
+  display: block;
+  width: 100%;
+  border: 0;
+  background: transparent;
   font-size: 12px;
+  font-family: inherit;
   font-weight: 700;
+  line-height: inherit;
   color: var(--muted);
   text-transform: uppercase;
+  text-align: left;
   padding: 8px 8px 4px;
   cursor: pointer;
   user-select: none;
+}
+#nav button.cat-title:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+  border-radius: 6px;
 }
 #nav .cat-title::before {
   content: '▾';

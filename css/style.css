@@ -55,6 +55,27 @@ body {
 }
 a { color: var(--accent); text-decoration: none; }
 a:hover { text-decoration: underline; }
+.skip-link {
+  position: fixed;
+  top: 8px;
+  left: 8px;
+  z-index: 100;
+  padding: 8px 12px;
+  border: 2px solid var(--accent);
+  border-radius: 8px;
+  background: var(--panel);
+  color: var(--text);
+  font-weight: 700;
+  box-shadow: var(--shadow);
+  transform: translateY(calc(-100% - 12px));
+  transition: transform .15s;
+}
+.skip-link:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  transform: none;
+  text-decoration: none;
+}
 .sr-only {
   position: absolute;
   width: 1px;
@@ -67,7 +88,7 @@ a:hover { text-decoration: underline; }
   border: 0;
 }
 
-#app { display: flex; min-height: 100vh; }
+#app { display: flex; width: 100%; min-height: 100vh; }
 .external-warning {
   padding: 10px 16px;
   border-bottom: 1px solid #f59e0b;
@@ -249,14 +270,18 @@ a:hover { text-decoration: underline; }
 /* ---------- 메인 ---------- */
 #content {
   flex: 1;
+  width: 100%;
   min-width: 0;
   padding: 28px 32px 80px;
   max-width: 1100px;
 }
+#content:focus { outline: none; }
+.home, .tool-body { min-width: 0; max-width: 100%; }
 .tool-header h1 { margin: 0; font-size: 24px; }
 .tool-header .desc { color: var(--muted); margin: 0 0 20px; }
 .crumb { font-size: 13px; color: var(--muted); margin-bottom: 6px; }
 .tool-title-row { display: flex; align-items: center; gap: 8px; margin: 0 0 4px; }
+.tool-title-row h1 { min-width: 0; overflow-wrap: anywhere; }
 .tool-title-row .star-btn { font-size: 20px; }
 
 /* 홈 카드 */
@@ -270,6 +295,7 @@ a:hover { text-decoration: underline; }
 }
 .card {
   position: relative;
+  min-width: 0;
   display: block;
   background: var(--panel);
   border: 1px solid var(--border);
@@ -294,6 +320,7 @@ textarea, input[type=text], input[type=number], input[type=password], input[type
   background: var(--panel);
   color: var(--text);
   width: 100%;
+  max-width: 100%;
 }
 textarea { resize: vertical; line-height: 1.5; }
 textarea:focus, input:focus, select:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
@@ -302,7 +329,15 @@ select { width: auto; }
 input[type=text], input[type=number], input[type=password] { width: auto; min-width: 120px; }
 
 .opt-row { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; }
-.opt-item { display: flex; align-items: center; gap: 6px; font-size: 13.5px; }
+.opt-item {
+  display: flex;
+  min-width: 0;
+  max-width: 100%;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  font-size: 13.5px;
+}
 .opt-item label { color: var(--muted); white-space: nowrap; }
 
 .btn-row { display: flex; flex-wrap: wrap; gap: 8px; }
@@ -330,7 +365,7 @@ button.btn:disabled { cursor: wait; opacity: .6; }
 .io-status.active { display: block; }
 .io-status.error { color: var(--danger); }
 .out-wrap { position: relative; }
-.out-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
+.out-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 4px; }
 .out-html {
   background: var(--code-bg);
   border: 1px solid var(--border);
@@ -354,6 +389,7 @@ table.kv td .copy-mini { float: right; margin-left: 8px; }
 table.grid { border-collapse: collapse; width: 100%; font-size: 13.5px; }
 table.grid th, table.grid td { border: 1px solid var(--border); padding: 6px 10px; text-align: left; }
 table.grid th { background: var(--code-bg); }
+table.grid th, table.grid td { overflow-wrap: anywhere; word-break: break-word; }
 
 .copy-mini {
   border: 1px solid var(--border);
@@ -391,21 +427,46 @@ mark.rx { background: var(--accent-weak); color: var(--accent); border-radius: 3
 
 /* 이미지 미리보기 */
 .img-preview { max-width: 100%; border: 1px solid var(--border); border-radius: 8px; background: #fff; }
+canvas, iframe, video { max-width: 100%; }
 
 .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+@media (min-width: 801px) and (max-width: 1100px) {
+  #content { padding-right: 24px; padding-left: 24px; }
+}
 @media (max-width: 800px) {
   .two-col { grid-template-columns: 1fr; }
   #sidebar {
     position: fixed;
     left: 0; top: 0;
     z-index: 40;
+    visibility: hidden;
     transform: translateX(-100%);
-    transition: transform .2s;
-    width: 280px;
+    transition: transform .2s, visibility 0s linear .2s;
+    width: min(280px, calc(100vw - 56px));
+    overscroll-behavior: contain;
   }
-  #sidebar.open { transform: none; box-shadow: 0 0 40px rgba(0,0,0,.4); }
+  #sidebar.open {
+    visibility: visible;
+    transform: none;
+    transition-delay: 0s;
+    box-shadow: 0 0 40px rgba(0,0,0,.4);
+  }
   #menu-btn { display: block; }
   #content { padding: 20px 16px 90px; }
+}
+@media (max-width: 480px) {
+  #content { padding: 16px 12px 84px; }
+  .home h1 { font-size: 24px; }
+  .tool-header h1 { font-size: 21px; line-height: 1.35; }
+  .home .sub { margin-bottom: 18px; }
+  .cat-section h2 { margin-top: 22px; }
+  .card-grid { grid-template-columns: 1fr; }
+  .opt-row { align-items: stretch; gap: 8px; }
+  .opt-item { flex: 1 1 100%; align-items: flex-start; }
+  .opt-item input:not([type=checkbox]), .opt-item select { width: 100% !important; }
+  .btn-row > .btn { flex: 1 1 120px; min-height: 44px; }
+  table.kv th { white-space: normal; }
+  table.kv th, table.kv td, table.grid th, table.grid td { padding: 6px 8px; }
 }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {

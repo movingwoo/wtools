@@ -13,6 +13,9 @@ HTML과 Vanilla JavaScript ES 모듈로 구성되어 있습니다.
 
 링크: [https://wtools.movingwoo.com](https://wtools.movingwoo.com)
 
+운영 환경의 클릭재킹 방지, Referrer·Permissions Policy 등 HTTP 응답 헤더는
+[보안 응답 헤더 설정](SECURITY_HEADERS.md)에 정리된 Cloudflare Transform Rules로 관리합니다.
+
 ## 기능 카테고리
 
 | 카테고리 | 예시 |

@@ -1,6 +1,6 @@
 // 날짜 / 시간 도구 정밀 테스트.
 // 로컬 시간 의존 결과가 결정적이 되도록 시간대를 서울로 고정한다.
-import { test, toolCases } from '../helpers.js';
+import { test, expect, toolCases, openTool } from '../helpers.js';
 
 test.use({ timezoneId: 'Asia/Seoul' });
 
@@ -81,3 +81,47 @@ const cases = [
 ];
 
 toolCases('datetime', cases);
+
+test('stopwatch: 시작·정지·랩·리셋과 라우트 이탈 정리', async ({ page }) => {
+  await page.addInitScript(() => {
+    const nativeSetInterval = window.setInterval;
+    const nativeClearInterval = window.clearInterval;
+    const active = new Set();
+    window.__wtoolsTestIntervals = active;
+    window.setInterval = (handler, timeout, ...args) => {
+      const id = nativeSetInterval(handler, timeout, ...args);
+      active.add(id);
+      return id;
+    };
+    window.clearInterval = (id) => {
+      active.delete(id);
+      nativeClearInterval(id);
+    };
+  });
+  await openTool(page, 'stopwatch');
+
+  const body = page.locator('#content .tool-body');
+  const display = body.locator('.big-time').first();
+  const actions = body.locator('.btn-row').first();
+
+  await actions.getByRole('button', { name: '시작', exact: true }).click();
+  await expect(actions.getByRole('button', { name: '정지', exact: true })).toBeVisible();
+  await expect.poll(() => display.textContent()).not.toBe('00:00:00.00');
+  expect(await page.evaluate(() => window.__wtoolsTestIntervals.size)).toBe(1);
+
+  await actions.getByRole('button', { name: '정지', exact: true }).click();
+  const paused = await display.textContent();
+  await page.waitForTimeout(100);
+  await expect(display).toHaveText(paused);
+
+  await actions.getByRole('button', { name: '랩', exact: true }).click();
+  await expect(body.locator('.mono')).toHaveText(`랩 1: ${paused}`);
+  await actions.getByRole('button', { name: '리셋', exact: true }).click();
+  await expect(display).toHaveText('00:00:00.00');
+  await expect(body.locator('.mono')).toHaveCount(0);
+
+  await actions.getByRole('button', { name: '시작', exact: true }).click();
+  expect(await page.evaluate(() => window.__wtoolsTestIntervals.size)).toBe(1);
+  await openTool(page, 'base64');
+  await expect.poll(() => page.evaluate(() => window.__wtoolsTestIntervals.size)).toBe(0);
+});

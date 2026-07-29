@@ -69,6 +69,15 @@ jobs:
         working-directory: tests
         run: npm install --no-audit --no-fund
 
+      # 도구가 지연 로드하는 CDN 라이브러리를 실행 간에 재사용한다.
+      # CDN이 잠깐 안 잡혀도 테스트가 죽지 않고, 캐시가 맞으면 네트워크를 아예 타지 않는다.
+      - name: Restore CDN library cache
+        uses: actions/cache@v4
+        with:
+          path: tests/.lib-cache
+          key: cdn-libs-${{ hashFiles('js/**/*.js', 'index.html') }}
+          restore-keys: cdn-libs-
+
       - name: Install Playwright Chromium
         working-directory: tests
         run: npx playwright install --with-deps chromium

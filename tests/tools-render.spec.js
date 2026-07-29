@@ -1,4 +1,7 @@
-import { test, expect } from '@playwright/test';
+import { test as base, expect } from '@playwright/test';
+import { cdnCache } from './cdn-cache.js';
+
+const test = base.extend(cdnCache);
 
 // 사이드바에 등록된 모든 도구 페이지를 순회하며
 // 렌더링 실패, 처리되지 않은 예외, 콘솔 에러를 전수 검사한다.

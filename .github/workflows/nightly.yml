@@ -1,0 +1,42 @@
+name: Nightly live-CDN check
+
+# PR CI는 CDN 라이브러리를 캐시에서 읽는다(tests/cdn-cache.js). 덕분에 CDN이 잠깐
+# 안 잡혀도 PR이 막히지 않지만, 대신 핀이 죽었거나 패키지가 내려간 경우를 못 잡는다.
+# 그 검증을 하루 한 번으로 옮긴다. 실패는 PR을 막지 않고 여기서만 드러난다.
+
+on:
+  schedule:
+    # 매일 03:00 KST (18:00 UTC)
+    - cron: '0 18 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  live-cdn:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install test dependencies
+        working-directory: tests
+        run: npm install --no-audit --no-fund
+
+      - name: Install Playwright Chromium
+        working-directory: tests
+        run: npx playwright install --with-deps chromium
+
+      - name: Run browser tests against the real CDN
+        working-directory: tests
+        env:
+          WTOOLS_LIVE_CDN: '1'
+        run: npx playwright test

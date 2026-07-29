@@ -69,6 +69,8 @@ Follow these conventions when adding cases:
 - Stub external network calls with `page.route` so a case never depends on a live service.
 - Console errors fail every test. Allow an expected one with `test.use({ allowConsoleErrors: ['...'] })` and explain why in a comment.
 
+CDN libraries loaded lazily by tools are cached on disk by `tests/cdn-cache.js`, so a CDN hiccup does not fail a run and repeat runs stay offline. The cache lives in `tests/.lib-cache` (gitignored; CI restores it with `actions/cache`), and the browser still validates every cached response against the SRI hash pinned in `js/core.js`. Service workers are blocked in the test context because `sw.js` would otherwise intercept those same requests, which `page.route` cannot see. Because PR runs no longer touch the real CDN, `.github/workflows/nightly.yml` re-runs the suite once a day with `WTOOLS_LIVE_CDN=1` to catch a dead pin or a withdrawn package. A new test entry point must spread `cdnCache` into its `test.extend({ ... })`.
+
 For a quick JavaScript syntax/module check on macOS, use:
 
 ```bash

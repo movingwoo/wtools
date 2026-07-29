@@ -1,7 +1,9 @@
 import { test as base, expect } from '@playwright/test';
+import { cdnCache } from './cdn-cache.js';
 
 // 모든 테스트에서 콘솔 에러와 처리되지 않은 예외를 수집하고, 테스트 끝에 0건임을 확인한다.
 const test = base.extend({
+  ...cdnCache,
   pageErrors: async ({ page }, use) => {
     const errors = [];
     page.on('pageerror', (err) => errors.push(`pageerror: ${err.message}`));

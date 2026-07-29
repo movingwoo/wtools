@@ -1,6 +1,6 @@
 # W-Tools
 
-브라우저에서 바로 실행되는 개발자 유틸리티 모음. 대부분의 처리는 클라이언트(브라우저)에서 이루어지며, 입력 데이터는 서버로 전송되지 않음.
+브라우저에서 바로 실행되는 개발자 유틸리티 모음. 처리는 클라이언트(브라우저)에서 이루어지고 입력 데이터는 서버로 전송되지 않음. 예외는 네트워크 조회가 기능의 본질인 도구뿐이며(예: `DNS over HTTPS 조회`는 입력한 도메인을 Cloudflare DoH로 질의), 그런 도구는 이름과 설명에 그 사실을 밝힘.
 
 빌드 과정이 없는 순수 정적 사이트(HTML + Vanilla JS ES 모듈). 서비스워커로 오프라인 지원, PWA로 설치 가능.
 
@@ -52,7 +52,16 @@ python3 -m http.server 8000
 python3 scripts/validate_static.py
 ```
 
-GitHub Actions는 모든 PR과 `main` 브랜치 push에서 위 검사, JavaScript 구문 검사, 공백 오류 검사, HTTP 앱 셸 스모크 테스트, Playwright 브라우저 테스트(전체 도구 렌더링 + 도구별 입출력 정확성)를 실행.
+브라우저 테스트는 별도 패키지로 분리되어 있음 (Node.js 18+ 필요):
+
+```bash
+cd tests
+npm install
+npx playwright install chromium
+npx playwright test
+```
+
+GitHub Actions는 모든 PR과 `main` 브랜치 push에서 위 검사, JavaScript 구문 검사, 공백 오류 검사, HTTP 앱 셸 스모크 테스트, Playwright 브라우저 테스트(전체 도구 렌더링 + 도구별 입출력 정확성)를 실행. 도구가 지연 로드하는 CDN 라이브러리는 캐시에서 공급하므로 CDN 장애가 PR을 막지 않고, 실제 CDN 검증은 하루 한 번 도는 nightly 워크플로가 담당.
 
 ## 구조
 
@@ -62,10 +71,12 @@ css/style.css       스타일 (라이트/다크 자동)
 js/core.js          도구 등록 프레임워크 + 공통 UI 빌더 + 유틸
 js/main.js          해시 기반 라우터 / 사이드바 / 홈 화면
 js/tools/*.js       카테고리별 도구 구현 (모듈별로 분리)
+assets/             아이콘·이미지
 manifest.json       PWA 매니페스트 (설치, 아이콘, 테마 색상)
 sw.js               서비스워커; 앱 셸 사전 캐시 + network-first 갱신으로 오프라인 지원
-scripts/             의존성 없는 저장소·정적 사이트 검증 스크립트
-.github/workflows/   PR 및 main push 자동 검사
+tests/              Playwright 브라우저 테스트 (CI 전용, 자체 package.json — 사이트 배포와 무관)
+scripts/            의존성 없는 저장소·정적 사이트 검증 스크립트
+.github/workflows/  PR·main push 검사(validate)와 하루 한 번 실제 CDN 검증(nightly)
 ```
 
 무거운 라이브러리(jsrsasign, openpgp, pako, figlet 등)는 해당 도구를 열 때 CDN에서 **지연 로드**되어 빠른 초기 로딩. 핵심 라이브러리(crypto-js, js-yaml)만 초기에 로드.

@@ -32,6 +32,40 @@ const cases = [
   { name: 'percentage: 증감률', tool: 'percentage', options: { '계산': 'change', '값 1': 100, '값 2': 150 }, kv: { '100 → 150 증감률': '+50 %' } },
   { name: 'percentage: A는 B의 몇 %', tool: 'percentage', options: { '계산': 'isWhat', '값 1': 30, '값 2': 120 }, kv: { '30는 120의': '25 %' } },
 
+  // 범용 단위 변환
+  {
+    name: 'unit-converter: 인치 → 센티미터', tool: 'unit-converter',
+    options: { '변환 전 단위': 'in', '변환 후 단위': 'cm' }, inputs: '1',
+    kv: { '변환 결과 (in → cm)': '2.54 cm' },
+  },
+  {
+    name: 'unit-converter: 평 → 제곱미터', tool: 'unit-converter',
+    options: { '분류': 'area', '변환 전 단위': 'pyeong', '변환 후 단위': 'm2' }, inputs: '1',
+    kv: { '변환 결과 (평 → m²)': '3.30578512397 m²' },
+  },
+  {
+    name: 'unit-converter: 섭씨 → 화씨와 전체 환산표', tool: 'unit-converter',
+    options: { '분류': 'temperature', '변환 전 단위': 'c', '변환 후 단위': 'f' }, inputs: '0',
+    kv: { '변환 결과 (°C → °F)': '32 °F', '켈빈 (K)': '273.15 K' },
+  },
+  {
+    name: 'unit-converter: 킬로그램 → 파운드', tool: 'unit-converter',
+    options: { '분류': 'weight', '변환 전 단위': 'kg', '변환 후 단위': 'lb' }, inputs: '1',
+    kv: { '변환 결과 (kg → lb)': '2.20462262185 lb' },
+  },
+  {
+    name: 'unit-converter: 미국 갤런 → 리터', tool: 'unit-converter',
+    options: { '분류': 'volume', '변환 전 단위': 'gal-us', '변환 후 단위': 'l' }, inputs: '1',
+    kv: { '변환 결과 (US gal → L)': '3.785411784 L' },
+  },
+  {
+    name: 'unit-converter: 킬로미터/시 → 미터/초', tool: 'unit-converter',
+    options: { '분류': 'speed', '변환 전 단위': 'kmh', '변환 후 단위': 'ms' }, inputs: '100',
+    kv: { '변환 결과 (km/h → m/s)': '27.7777777778 m/s' },
+  },
+  { name: 'unit-converter: 빈 입력', tool: 'unit-converter', inputs: '', htmlError: '변환할 값을 입력하세요.' },
+  { name: 'unit-converter: 잘못된 숫자', tool: 'unit-converter', inputs: '숫자 아님', htmlError: '올바른 숫자를 입력하세요.' },
+
   // 랜덤 숫자 — 형식 검증
   {
     name: 'random-number: 정수 3개 형식', tool: 'random-number',
@@ -73,6 +107,16 @@ const cases = [
 ];
 
 toolCases('math', cases);
+
+test('unit-converter: 이름·ID·설명·키워드로 검색', async ({ page }) => {
+  await page.goto('/');
+  const search = page.locator('#search');
+  const link = page.locator('#nav a[data-id="unit-converter"]');
+  for (const query of ['범용 단위', 'unit-converter', '전체 환산표', '화씨']) {
+    await search.fill(query);
+    await expect(link, `"${query}" 검색 결과`).toBeVisible();
+  }
+});
 
 // UUID v4 생성 — 무작위이므로 형식만 검증
 test('uuid: v4 생성 형식', async ({ page }) => {

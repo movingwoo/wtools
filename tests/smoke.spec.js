@@ -26,6 +26,32 @@ test('홈 화면이 렌더링된다', async ({ page, pageErrors }) => {
   expect(await page.locator('#nav a[data-id]').count()).toBeGreaterThan(30);
 });
 
+test('검색 및 공유 메타데이터와 크롤러 문서를 제공한다', async ({ page, request }) => {
+  await page.goto('/');
+  await expect(page.locator('meta[name="description"]')).toHaveAttribute(
+    'content',
+    '브라우저에서 바로 실행되는 개발자 유틸리티 모음',
+  );
+  await expect(page.locator('link[rel="canonical"]')).toHaveAttribute('href', 'https://wtools.movingwoo.com/');
+  await expect(page.locator('meta[property="og:image"]')).toHaveAttribute(
+    'content',
+    'https://wtools.movingwoo.com/assets/favicon-512.png',
+  );
+  await expect(page.locator('meta[name="twitter:card"]')).toHaveAttribute('content', 'summary');
+
+  const robots = await request.get('/robots.txt');
+  expect(robots.ok()).toBe(true);
+  expect(await robots.text()).toContain('Sitemap: https://wtools.movingwoo.com/sitemap.xml');
+
+  const sitemap = await request.get('/sitemap.xml');
+  expect(sitemap.ok()).toBe(true);
+  expect(await sitemap.text()).toContain('<loc>https://wtools.movingwoo.com/</loc>');
+
+  const notFound = await request.get('/404.html');
+  expect(notFound.ok()).toBe(true);
+  expect(await notFound.text()).toContain('페이지를 찾을 수 없습니다');
+});
+
 test('CSP가 \'unsafe-eval\' 없이 적용된다', async ({ page }) => {
   await page.goto('/');
   const policy = await page.locator('meta[http-equiv="Content-Security-Policy"]').getAttribute('content');

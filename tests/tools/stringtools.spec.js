@@ -86,3 +86,41 @@ test('dummy-data: CSV 헤더와 행 수', async ({ page }) => {
   const lines = (await out.inputValue()).trim().split('\n');
   expect(lines).toHaveLength(3); // 헤더 + 2행
 });
+
+test('emoji-picker: 전체 데이터에서 검색하고 복사한다', async ({ page, context }) => {
+  await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+  await openTool(page, 'emoji-picker');
+
+  const body = page.locator('#content .tool-body');
+  const info = body.locator('.note[role="status"]');
+  await expect(info).toContainText(/[\d,]+개/);
+
+  await body.getByPlaceholder('검색 (예: 하트, fire, 웃음)').fill('로켓');
+  const rocket = body.locator('button[title="로켓"]');
+  await expect(rocket).toBeVisible();
+  await rocket.click();
+  await expect(info).toContainText('🚀 복사됨!');
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe('🚀');
+});
+
+test('emoji-picker: 전체 데이터가 손상되면 기본 목록으로 대체한다', async ({ page }) => {
+  await page.route('https://cdn.jsdelivr.net/npm/emojibase-data@16.0.3/**', (route) =>
+    route.fulfill({ status: 200, contentType: 'application/json', body: 'invalid json' }));
+  await openTool(page, 'emoji-picker');
+
+  const body = page.locator('#content .tool-body');
+  const info = body.locator('.note[role="status"]');
+  await expect(info).toContainText('전체 목록 로드 실패');
+  await body.getByPlaceholder('검색 (예: 하트, fire, 웃음)').fill('로켓');
+  await expect(body.locator('button[title="로켓 발사 rocket launch"]')).toBeVisible();
+});
+
+test('ascii-art: figlet로 실제 배너를 생성한다', async ({ page }) => {
+  await openTool(page, 'ascii-art');
+
+  const io = page.locator('#content .io');
+  await io.locator('textarea.mono:not(.out)').fill('HI');
+  await expect(io.locator('textarea.out')).toHaveValue(
+    '  _   _ ___ \n | | | |_ _|\n | |_| || | \n |  _  || | \n |_| |_|___|\n            ',
+  );
+});

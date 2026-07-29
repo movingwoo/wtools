@@ -153,6 +153,38 @@ const cases = [
   { name: 'extract: 결과가 없으면 안내', tool: 'extract', inputs: '이메일이 없는 텍스트', output: '결과 없음' },
 
   /* ---------- http-status / mime-types 는 검색 UI라 별도 테스트 ---------- */
+
+  // IPv6 서브넷 계산기
+  {
+    name: 'subnet6: /64 네트워크와 범위', tool: 'subnet6', inputs: '2001:db8:abcd:12::1/64',
+    kv: {
+      '입력 주소': '2001:db8:abcd:12::1',
+      '확장 표기': '2001:0db8:abcd:0012:0000:0000:0000:0001',
+      '프리픽스 길이': '/64',
+      '네트워크 주소': '2001:db8:abcd:12::/64',
+      '첫 주소': '2001:db8:abcd:12::',
+      '마지막 주소': '2001:db8:abcd:12:ffff:ffff:ffff:ffff',
+      '전체 주소 수': /^2\^64 \(18[,.\s]?446[,.\s]?744[,.\s]?073[,.\s]?709[,.\s]?551[,.\s]?616\)$/,
+      '주소 종류': '문서화용 예약 (RFC 3849)',
+      '인터페이스 ID (하위 64비트)': '0000:0000:0000:0001',
+    },
+  },
+  {
+    name: 'subnet6: 링크 로컬과 역방향 DNS', tool: 'subnet6', inputs: 'fe80::1',
+    kv: {
+      '주소 종류': '링크 로컬 (Link-Local)',
+      '역방향 DNS': '1.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.8.e.f.ip6.arpa',
+    },
+  },
+  { name: 'subnet6: ULA 판정', tool: 'subnet6', inputs: 'fd12:3456:789a::1/48', kv: { '주소 종류': '고유 로컬 (ULA)', '네트워크 주소': 'fd12:3456:789a::/48' } },
+  { name: 'subnet6: 루프백', tool: 'subnet6', inputs: '::1/128', kv: { '주소 종류': '루프백', '전체 주소 수': '2^0 (1)' } },
+  {
+    name: 'subnet6: IPv4-mapped 표기', tool: 'subnet6', inputs: '::ffff:192.0.2.128/96',
+    kv: { '주소 종류': 'IPv4-mapped', '확장 표기': '0000:0000:0000:0000:0000:ffff:c000:0280' },
+  },
+  { name: 'subnet6: "::"는 한 번만', tool: 'subnet6', inputs: '2001::db8::1', htmlError: '"::"는 주소에 한 번만 쓸 수 있습니다.' },
+  { name: 'subnet6: 프리픽스 범위 검사', tool: 'subnet6', inputs: '2001:db8::1/200', htmlError: '프리픽스는 0~128 범위의 정수여야 합니다.' },
+
 ];
 
 toolCases('network', cases);

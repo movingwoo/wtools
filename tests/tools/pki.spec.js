@@ -163,3 +163,78 @@ test('privkey-info: 뽑아낸 공개키 PEM이 X.509 공개키와 같다', async
   const spkiHex = await pemIo.locator('textarea.out').inputValue();
   expect(CERT_HEX).toContain(spkiHex);
 });
+
+/* ---------- jwk-pem: PEM ↔ JWK 왕복 ----------
+   변환이 정확한지는 "돌아온 PEM이 원본과 바이트 단위로 같은가"로 본다. */
+
+const jwkText = (io) => io.locator('.out-html pre').textContent();
+
+for (const [label, pem, kind] of [['EC P-256', 'ecPkcs8Key', 'EC / P-256'], ['RSA 2048', 'rsaKey', 'RSA']]) {
+  test(`jwk-pem: ${label} 개인키 PEM → JWK → PEM 왕복`, async ({ page }) => {
+    await openTool(page, 'jwk-pem');
+    const io = ioSection(page);
+
+    await fillInputs(io, pki[pem]);
+    await clickAction(io, 'PEM → JWK');
+    await expect.poll(() => kvValue(io, '키 종류')).toBe(kind);
+    expect(await kvValue(io, 'PEM 종류')).toBe('PRIVATE KEY');
+    expect(await kvValue(io, '지문 (kid)')).toMatch(/^[\w-]{43}$/);
+
+    const jwk = JSON.parse(await jwkText(io));
+    expect(jwk.d).toBeTruthy();
+    expect(jwk.key_ops).toBeUndefined();
+
+    await fillInputs(io, JSON.stringify(jwk));
+    await clickAction(io, 'JWK → PEM');
+    await expect.poll(() => kvValue(io, 'PEM 종류')).toBe('PRIVATE KEY');
+    expect((await jwkText(io)).replace(/\s/g, '')).toBe(pki[pem].replace(/\s/g, ''));
+  });
+}
+
+test('jwk-pem: 지문(kid)은 RFC 7638 벡터와 일치한다', async ({ page }) => {
+  await openTool(page, 'jwk-pem');
+  const io = ioSection(page);
+  // RFC 7638 §3.1의 예시 키. 지문은 규격에 값까지 명시되어 있다.
+  const rfcJwk = {
+    kty: 'RSA',
+    n: '0vx7agoebGcQSuuPiLJXZptN9nndrQmbXEps2aiAFbWhM78LhWx4cbbfAAtVT86zwu1RK7aPFFxuhDR1L6tSoc_BJECPebWKRXjBZCiFV4n3okn'
+      + 'jhMstn64tZ_2W-5JsGY4Hc5n9yBXArwl93lqt7_RN5w6Cf0h4QyQ5v-65YGjQR0_FDW2QvzqY368QQMicAtaSqzs8KJZgnYb9c7d0zgdAZHzu6qM'
+      + 'QvRL5hajrn1n91CbOpbISD08qNLyrdkt-bFTWhAI4vMQFh6WeZu0fM4lFd2NcRwr3XPksINHaQ-G_xBniIqbw0Ls1jF44-csFCur-kEgU8awapJz'
+      + 'KnqDKgw',
+    e: 'AQAB', alg: 'RS256', kid: '2011-04-29',
+  };
+  await fillInputs(io, JSON.stringify(rfcJwk));
+  await clickAction(io, 'JWK → PEM');
+  await expect.poll(() => kvValue(io, '지문 (kid)')).toBe('NzbLsXh8uDCcd-6MNwXF4W_7noWXFZAfHkxZsRGC9Xs');
+  expect(await jwkText(io)).toMatch(/^-----BEGIN PUBLIC KEY-----[\s\S]+-----END PUBLIC KEY-----$/);
+});
+
+test('jwk-pem: Ed25519 JWK → PEM (RFC 8037 벡터)', async ({ page }) => {
+  await openTool(page, 'jwk-pem');
+  const io = ioSection(page);
+  await fillInputs(io, JSON.stringify({ kty: 'OKP', crv: 'Ed25519', x: '11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaaPcHURo' }));
+  await clickAction(io, 'JWK → PEM');
+  await expect.poll(() => kvValue(io, '키 종류')).toBe('OKP / Ed25519');
+  expect(await kvValue(io, '지문 (kid)')).toBe('kPrK_qmxVWaYVA9wwBF6Iuo3vVzz7TxHCTwXBygrS4k');
+  // Ed25519 SPKI는 12바이트 접두사 + 32바이트 공개키로 길이가 고정이다.
+  const der = pemToDer(await jwkText(io));
+  expect(der.length).toBe(44);
+  expect(der.subarray(0, 12).toString('hex')).toBe('302a300506032b6570032100');
+});
+
+test('jwk-pem: SEC1 EC 개인키는 변환 방법을 안내한다', async ({ page }) => {
+  await openTool(page, 'jwk-pem');
+  const io = ioSection(page);
+  await fillInputs(io, pki.ecKey); // ecparam이 만든 BEGIN EC PRIVATE KEY
+  await clickAction(io, 'PEM → JWK');
+  await expect(io.locator('.out-html .error')).toContainText('SEC1 형식은 지원하지 않습니다');
+  await expect(io.locator('.out-html .error')).toContainText('openssl pkcs8 -topk8');
+});
+
+test('jwk-pem: JWK Set을 넣으면 안내한다', async ({ page }) => {
+  await openTool(page, 'jwk-pem');
+  const io = ioSection(page);
+  await fillInputs(io, '{"keys":[]}');
+  await clickAction(io, 'JWK → PEM');
+  await expect(io.locator('.out-html .error')).toHaveText('JWK Set(keys 배열)이 아니라 키 하나를 입력하세요.');
+});

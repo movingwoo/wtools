@@ -1,5 +1,5 @@
 // 인코딩 / 디코딩
-import { tool, makeIO, h, kvTable, strToBytes, bytesToStr, bytesToB64, b64ToBytes, loadScript, LIB } from '../core.js';
+import { tool, makeIO, h, kvTable, strToBytes, bytesToStr, bytesToHex, hexToBytes, bytesToB64, b64ToBytes, decodeInput, encodeOutput, FMT_IN, loadScript, LIB } from '../core.js';
 
 const CAT = '인코딩 / 디코딩';
 const STD_B64 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
@@ -128,6 +128,154 @@ tool({
   },
 });
 
+/* ---------- Base58 ----------
+   Base64/Base32와 달리 비트를 그대로 잘라 쓸 수 없다(58이 2의 거듭제곱이 아니다).
+   전체를 하나의 큰 정수로 보고 58로 나누므로 BigInt를 쓰고, 앞쪽 0바이트는
+   정수로 만들면 사라지기 때문에 알파벳의 0번 문자로 따로 채워 넣는다. */
+const B58_ALPHA = {
+  btc: '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz',
+  ripple: 'rpshnaf39wBUDNEGHJKLM4PQRST7VWXYZ2bcdeCg65jkm8oFqi1tuvAxyz',
+  flickr: '123456789abcdefghijkmnopqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ',
+};
+
+function b58Encode(bytes, alphabet) {
+  let n = 0n;
+  for (const b of bytes) n = (n << 8n) | BigInt(b);
+  let out = '';
+  while (n > 0n) { out = alphabet[Number(n % 58n)] + out; n /= 58n; }
+  let zeros = 0;
+  while (zeros < bytes.length && bytes[zeros] === 0) zeros++;
+  return alphabet[0].repeat(zeros) + out;
+}
+function b58Decode(str, alphabet) {
+  const clean = str.trim();
+  if (!clean) return new Uint8Array();
+  let n = 0n;
+  for (const c of clean) {
+    const d = alphabet.indexOf(c);
+    if (d < 0) throw new Error(`Base58 알파벳에 없는 문자: "${c}"`);
+    n = n * 58n + BigInt(d);
+  }
+  const digits = [];
+  while (n > 0n) { digits.unshift(Number(n & 255n)); n >>= 8n; }
+  let zeros = 0;
+  while (zeros < clean.length && clean[zeros] === alphabet[0]) zeros++;
+  return new Uint8Array([...new Array(zeros).fill(0), ...digits]);
+}
+// Base58Check 체크섬: SHA-256을 두 번 건 값의 앞 4바이트
+function sha256d(bytes) {
+  const once = CryptoJS.SHA256(CryptoJS.lib.WordArray.create(bytes));
+  return hexToBytes(CryptoJS.SHA256(once).toString());
+}
+
+tool({
+  id: 'base58', cat: CAT, name: 'Base58 인코딩/디코딩',
+  desc: 'Base58(비트코인/리플/플리커 알파벳)로 변환하거나 복원합니다. Base58Check 체크섬을 지원합니다.',
+  keywords: 'base58 b58 bitcoin btc address wif ripple flickr ipfs check checksum',
+  render(root) {
+    makeIO(root, {
+      inputs: [{ id: 'input', label: '입력', placeholder: 'Hello, World!' }],
+      options: [
+        { id: 'alpha', label: '알파벳', type: 'select', values: [['btc', '비트코인(기본)'], ['ripple', '리플'], ['flickr', '플리커']] },
+        { id: 'ifmt', label: '입력 형식(인코딩)', type: 'select', values: FMT_IN },
+        { id: 'ofmt', label: '출력 형식(디코딩)', type: 'select', values: [['text', '텍스트'], ['hex', 'Hex'], ['base64', 'Base64']] },
+        { id: 'check', label: 'Base58Check', type: 'checkbox' },
+      ],
+      actions: [{ id: 'enc', label: '인코딩' }, { id: 'dec', label: '디코딩' }],
+      process(text, o, action) {
+        const alphabet = B58_ALPHA[o.alpha];
+        if (action === 'dec') {
+          let bytes = b58Decode(text, alphabet);
+          if (o.check) {
+            if (bytes.length < 5) throw new Error('Base58Check 데이터가 체크섬(4바이트)보다 짧습니다.');
+            const payload = bytes.slice(0, -4), expected = sha256d(payload).slice(0, 4);
+            const actual = bytes.slice(-4);
+            if (expected.some((b, i) => b !== actual[i]))
+              throw new Error(`체크섬이 일치하지 않습니다 (기대 ${bytesToHex(expected)}, 실제 ${bytesToHex(actual)}).`);
+            bytes = payload;
+          }
+          return encodeOutput(bytes, o.ofmt);
+        }
+        const bytes = decodeInput(text, o.ifmt);
+        if (!o.check) return b58Encode(bytes, alphabet);
+        const withSum = new Uint8Array(bytes.length + 4);
+        withSum.set(bytes);
+        withSum.set(sha256d(bytes).slice(0, 4), bytes.length);
+        return b58Encode(withSum, alphabet);
+      },
+      note: 'Base58Check는 페이로드 뒤에 SHA-256을 두 번 건 값의 앞 4바이트를 붙입니다. 비트코인 주소·WIF 키가 이 형식입니다.',
+    });
+  },
+});
+
+/* ---------- Base85 ---------- */
+// Ascii85는 '!'(0x21)부터 85자를 순서대로 쓴다. Z85는 URL·소스코드에 넣기 좋은 별도 배열을 쓴다.
+const A85_ALPHA = Array.from({ length: 85 }, (_, i) => String.fromCharCode(33 + i)).join('');
+const Z85_ALPHA = '0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ.-:+=^!/*?&<>()[]{}@%$#';
+
+function b85Encode(bytes, alphabet, zeroShortcut) {
+  let out = '';
+  for (let i = 0; i < bytes.length; i += 4) {
+    const rem = Math.min(4, bytes.length - i);
+    let n = 0;
+    for (let j = 0; j < 4; j++) n = n * 256 + (bytes[i + j] ?? 0);
+    if (zeroShortcut && n === 0 && rem === 4) { out += 'z'; continue; }
+    const group = [];
+    for (let j = 0; j < 5; j++) { group.unshift(alphabet[n % 85]); n = Math.floor(n / 85); }
+    out += group.slice(0, rem + 1).join('');
+  }
+  return out;
+}
+function b85Decode(str, alphabet, zeroShortcut) {
+  const clean = str.replace(/\s/g, '').replace(/^<~/, '').replace(/~>$/, '');
+  const bytes = [];
+  let group = [];
+  const flush = () => {
+    const rem = group.length;
+    if (rem === 1) throw new Error('Base85 그룹이 1글자만 남아 복원할 수 없습니다.');
+    let n = 0;
+    for (let j = 0; j < 5; j++) n = n * 85 + (j < rem ? group[j] : 84);
+    for (let j = 3; j >= 0; j--) { if (3 - j < rem - 1) bytes.push(Math.floor(n / 256 ** j) % 256); }
+    group = [];
+  };
+  for (const c of clean) {
+    if (zeroShortcut && c === 'z' && group.length === 0) { bytes.push(0, 0, 0, 0); continue; }
+    const d = alphabet.indexOf(c);
+    if (d < 0) throw new Error(`Base85 알파벳에 없는 문자: "${c}"`);
+    group.push(d);
+    if (group.length === 5) flush();
+  }
+  if (group.length) flush();
+  return new Uint8Array(bytes);
+}
+
+tool({
+  id: 'base85', cat: CAT, name: 'Base85 인코딩/디코딩',
+  desc: 'Ascii85(btoa), Adobe(<~ ~>), Z85 형식으로 변환하거나 복원합니다.',
+  keywords: 'base85 b85 ascii85 a85 adobe z85 zeromq btoa git binary patch',
+  render(root) {
+    makeIO(root, {
+      inputs: [{ id: 'input', label: '입력', placeholder: 'Hello, World!' }],
+      options: [
+        { id: 'variant', label: '형식', type: 'select', values: [['ascii85', 'Ascii85 (btoa)'], ['adobe', 'Adobe (<~ ~>)'], ['z85', 'Z85 (ZeroMQ)']] },
+        { id: 'ifmt', label: '입력 형식(인코딩)', type: 'select', values: FMT_IN },
+        { id: 'ofmt', label: '출력 형식(디코딩)', type: 'select', values: [['text', '텍스트'], ['hex', 'Hex'], ['base64', 'Base64']] },
+      ],
+      actions: [{ id: 'enc', label: '인코딩' }, { id: 'dec', label: '디코딩' }],
+      process(text, o, action) {
+        const z85 = o.variant === 'z85';
+        const alphabet = z85 ? Z85_ALPHA : A85_ALPHA;
+        // Z85는 4바이트 단위 입력만 정의되어 있고 'z' 축약도 쓰지 않는다.
+        if (action === 'dec') return encodeOutput(b85Decode(text, alphabet, !z85), o.ofmt);
+        const bytes = decodeInput(text, o.ifmt);
+        if (z85 && bytes.length % 4) throw new Error(`Z85는 입력이 4바이트의 배수여야 합니다 (현재 ${bytes.length}바이트).`);
+        const body = b85Encode(bytes, alphabet, !z85);
+        return o.variant === 'adobe' ? `<~${body}~>` : body;
+      },
+    });
+  },
+});
+
 tool({
   id: 'url-encode', cat: CAT, name: 'URL 인코딩/디코딩',
   desc: 'URL 퍼센트 인코딩(%XX)을 적용하거나 해제합니다.',
@@ -176,6 +324,151 @@ tool({
   },
 });
 
+/* ---------- Punycode / IDN (RFC 3492) ----------
+   유니코드 도메인을 ASCII로 옮기는 가변 길이 정수 인코딩이다. 기본(ASCII) 문자를 먼저
+   적고, 나머지 코드포인트를 "얼마나 건너뛰었는지"의 델타 값으로만 이어 붙인다. */
+const PUNY = { base: 36, tmin: 1, tmax: 26, skew: 38, damp: 700, initialBias: 72, initialN: 128, delimiter: '-' };
+
+function punyAdapt(delta, numPoints, firstTime) {
+  delta = firstTime ? Math.floor(delta / PUNY.damp) : delta >> 1;
+  delta += Math.floor(delta / numPoints);
+  let k = 0;
+  while (delta > ((PUNY.base - PUNY.tmin) * PUNY.tmax) >> 1) {
+    delta = Math.floor(delta / (PUNY.base - PUNY.tmin));
+    k += PUNY.base;
+  }
+  return k + Math.floor(((PUNY.base - PUNY.tmin + 1) * delta) / (delta + PUNY.skew));
+}
+const punyDigitToChar = (d) => String.fromCharCode(d < 26 ? d + 97 : d + 22); // 0~25 → a~z, 26~35 → 0~9
+function punyCharToDigit(c) {
+  const code = c.charCodeAt(0);
+  if (code >= 48 && code <= 57) return code - 22;
+  if (code >= 65 && code <= 90) return code - 65;
+  if (code >= 97 && code <= 122) return code - 97;
+  throw new Error(`Punycode에 올 수 없는 문자: "${c}"`);
+}
+function punyThreshold(k, bias) {
+  return k <= bias ? PUNY.tmin : k >= bias + PUNY.tmax ? PUNY.tmax : k - bias;
+}
+
+function punyEncode(label) {
+  const cps = [...label].map((c) => c.codePointAt(0));
+  const basic = cps.filter((cp) => cp < 0x80);
+  let out = String.fromCodePoint(...basic);
+  const basicLength = basic.length;
+  let handled = basicLength;
+  if (basicLength) out += PUNY.delimiter;
+  let n = PUNY.initialN, delta = 0, bias = PUNY.initialBias;
+  while (handled < cps.length) {
+    let m = Infinity;
+    for (const cp of cps) if (cp >= n && cp < m) m = cp;
+    delta += (m - n) * (handled + 1);
+    n = m;
+    for (const cp of cps) {
+      if (cp < n) delta++;
+      else if (cp === n) {
+        let q = delta;
+        for (let k = PUNY.base; ; k += PUNY.base) {
+          const t = punyThreshold(k, bias);
+          if (q < t) break;
+          out += punyDigitToChar(t + ((q - t) % (PUNY.base - t)));
+          q = Math.floor((q - t) / (PUNY.base - t));
+        }
+        out += punyDigitToChar(q);
+        bias = punyAdapt(delta, handled + 1, handled === basicLength);
+        delta = 0;
+        handled++;
+      }
+    }
+    delta++;
+    n++;
+  }
+  return out;
+}
+
+function punyDecode(encoded) {
+  const output = [];
+  let n = PUNY.initialN, i = 0, bias = PUNY.initialBias;
+  const lastDelim = encoded.lastIndexOf(PUNY.delimiter);
+  let pos = 0;
+  if (lastDelim > 0) {
+    for (const c of encoded.slice(0, lastDelim)) {
+      if (c.charCodeAt(0) >= 0x80) throw new Error('Punycode의 기본 문자열에 ASCII가 아닌 문자가 있습니다.');
+      output.push(c.charCodeAt(0));
+    }
+    pos = lastDelim + 1;
+  }
+  while (pos < encoded.length) {
+    const oldi = i;
+    let w = 1;
+    for (let k = PUNY.base; ; k += PUNY.base) {
+      if (pos >= encoded.length) throw new Error('Punycode 문자열이 중간에 끊겼습니다.');
+      const digit = punyCharToDigit(encoded[pos++]);
+      i += digit * w;
+      const t = punyThreshold(k, bias);
+      if (digit < t) break;
+      w *= PUNY.base - t;
+    }
+    bias = punyAdapt(i - oldi, output.length + 1, oldi === 0);
+    n += Math.floor(i / (output.length + 1));
+    i %= output.length + 1;
+    if (n > 0x10ffff) throw new Error('복원한 코드포인트가 유니코드 범위를 벗어납니다.');
+    output.splice(i++, 0, n);
+  }
+  return String.fromCodePoint(...output);
+}
+
+// IDN에서 마침표로 인정하는 문자들(전각 마침표, 한중일 마침표 등)까지 라벨 구분자로 본다.
+const IDN_DOT = /[.。．｡]/;
+const toAsciiLabel = (label) => (/^[\x00-\x7f]*$/.test(label) ? label : 'xn--' + punyEncode(label));
+const toUnicodeLabel = (label) => (/^xn--/i.test(label) ? punyDecode(label.slice(4).toLowerCase()) : label);
+
+tool({
+  id: 'punycode', cat: CAT, name: 'Punycode / IDN 변환',
+  desc: '한글·유니코드 도메인과 ASCII(xn--) 표기를 상호 변환합니다.',
+  keywords: 'punycode idn idna xn-- 국제화 도메인 한글도메인 한국 domain unicode rfc3492',
+  render(root) {
+    makeIO(root, {
+      inputs: [{ id: 'input', label: '도메인 또는 URL', rows: 2, value: '한글.한국' }],
+      outputHTML: true, runOnLoad: true,
+      process(text) {
+        const trimmed = text.trim();
+        if (!trimmed) return '';
+        // URL이면 호스트만 바꾸고 나머지 구조는 그대로 둔다.
+        const urlMatch = trimmed.match(/^([a-z][\w+.-]*:\/\/)?([^/?#]+)(.*)$/i);
+        const [, scheme = '', authority, rest = ''] = urlMatch;
+        const hostMatch = authority.match(/^(?:([^@]*)@)?([^:]+)(:\d+)?$/);
+        if (!hostMatch) throw new Error('도메인을 해석할 수 없습니다.');
+        const [, userinfo, host, port = ''] = hostMatch;
+        const labels = host.split(IDN_DOT);
+        if (labels.some((label) => !label) && labels.length > 1)
+          throw new Error('도메인 라벨이 비어 있습니다(마침표가 연속되었는지 확인하세요).');
+
+        const ascii = labels.map(toAsciiLabel);
+        const unicode = labels.map(toUnicodeLabel);
+        const rebuild = (parts) => (scheme ? scheme : '') + (userinfo ? userinfo + '@' : '') + parts.join('.') + port + rest;
+        const box = h('div', null, kvTable([
+          ['ASCII (Punycode)', rebuild(ascii)],
+          ['유니코드', rebuild(unicode)],
+          ['라벨 수', labels.length],
+        ]));
+        box.append(h('h3', null, '라벨별 변환'),
+          h('table', { class: 'grid' },
+            h('tr', null, ['유니코드', 'ASCII', '길이'].map((x) => h('th', null, x))),
+            labels.map((label, idx) => h('tr', null,
+              h('td', null, unicode[idx]),
+              h('td', { class: 'mono' }, ascii[idx]),
+              h('td', null, ascii[idx].length + ' / 63')))));
+        const tooLong = ascii.filter((label) => label.length > 63);
+        if (tooLong.length)
+          box.append(h('p', { class: 'error' }, `ASCII 라벨이 63자를 넘습니다: ${tooLong.join(', ')}`));
+        return box;
+      },
+      note: '대소문자 정규화나 금지 문자 검사(IDNA2008 매핑)까지는 하지 않습니다. 표기 변환만 수행합니다.',
+    });
+  },
+});
+
 const NAMED_ENT = { '&amp;': '&', '&lt;': '<', '&gt;': '>', '&quot;': '"', '&apos;': "'", '&nbsp;': ' ', '&copy;': '©', '&reg;': '®', '&trade;': '™', '&hellip;': '…', '&mdash;': '—', '&ndash;': '–', '&laquo;': '«', '&raquo;': '»', '&times;': '×', '&divide;': '÷', '&deg;': '°', '&plusmn;': '±', '&euro;': '€', '&pound;': '£', '&yen;': '¥', '&cent;': '¢' };
 
 tool({
@@ -198,6 +491,89 @@ tool({
         if (o.all) out = out.replace(/[\u{80}-\u{10ffff}]/gu, (c) => `&#x${c.codePointAt(0).toString(16).toUpperCase()};`);
         return out;
       },
+    });
+  },
+});
+
+/* ---------- Quoted-Printable ---------- */
+function qpEncode(bytes, lineLimit) {
+  let out = '', lineLen = 0;
+  const push = (piece) => {
+    // 소프트 줄바꿈('=')까지 합쳐 한 줄이 제한을 넘지 않게 자른다.
+    if (lineLimit && lineLen + piece.length > lineLimit - 1) { out += '=\r\n'; lineLen = 0; }
+    out += piece;
+    lineLen += piece.length;
+  };
+  for (let i = 0; i < bytes.length; i++) {
+    const b = bytes[i];
+    if (b === 0x0d && bytes[i + 1] === 0x0a) { out += '\r\n'; lineLen = 0; i++; continue; }
+    if (b === 0x0a) { out += '\r\n'; lineLen = 0; continue; }
+    // 줄 끝의 공백·탭은 전송 중 잘려나갈 수 있어 반드시 =XX로 적는다.
+    const atLineEnd = i === bytes.length - 1 || bytes[i + 1] === 0x0a || (bytes[i + 1] === 0x0d && bytes[i + 2] === 0x0a);
+    if ((b === 32 || b === 9) && !atLineEnd) push(String.fromCharCode(b));
+    else if (b >= 33 && b <= 126 && b !== 61) push(String.fromCharCode(b));
+    else push('=' + b.toString(16).toUpperCase().padStart(2, '0'));
+  }
+  return out;
+}
+function qpDecode(text) {
+  const bytes = [];
+  const src = text.replace(/=\r?\n/g, ''); // 소프트 줄바꿈 제거
+  for (let i = 0; i < src.length; i++) {
+    if (src[i] === '=') {
+      const hex = src.substr(i + 1, 2);
+      if (!/^[0-9a-f]{2}$/i.test(hex)) throw new Error(`"=" 뒤에 16진수 2자리가 없습니다: "=${hex}"`);
+      bytes.push(parseInt(hex, 16));
+      i += 2;
+    } else {
+      for (const b of strToBytes(src[i])) bytes.push(b);
+    }
+  }
+  return new Uint8Array(bytes);
+}
+// RFC 2047 encoded-word: 메일 헤더에 비ASCII를 넣는 =?UTF-8?Q?...?= 형식
+function encodedWordEncode(text) {
+  const body = [...strToBytes(text)].map((b) => {
+    if (b === 32) return '_';
+    if ((b >= 48 && b <= 57) || (b >= 65 && b <= 90) || (b >= 97 && b <= 122)) return String.fromCharCode(b);
+    return '=' + b.toString(16).toUpperCase().padStart(2, '0');
+  }).join('');
+  return `=?UTF-8?Q?${body}?=`;
+}
+function encodedWordDecode(text) {
+  const pattern = /=\?([\w-]+)\?([BbQq])\?([^?]*)\?=/g;
+  if (!pattern.test(text)) throw new Error('=?charset?B|Q?...?= 형식의 encoded-word를 찾을 수 없습니다.');
+  pattern.lastIndex = 0;
+  // 인접한 encoded-word 사이의 공백은 규격상 무시한다.
+  return text.replace(/\?=\s+=\?/g, '?==?').replace(pattern, (_, charset, kind, body) => {
+    const bytes = kind.toUpperCase() === 'B' ? b64ToBytes(body) : qpDecode(body.replace(/_/g, ' '));
+    let decoder;
+    try { decoder = new TextDecoder(charset, { fatal: false }); }
+    catch { throw new Error(`지원하지 않는 문자셋입니다: ${charset}`); }
+    return decoder.decode(bytes);
+  });
+}
+
+tool({
+  id: 'quoted-printable', cat: CAT, name: 'Quoted-Printable 인코딩/디코딩',
+  desc: '메일 본문의 Quoted-Printable(=XX)과 헤더의 encoded-word(=?UTF-8?Q?...?=)를 변환합니다.',
+  keywords: 'quoted printable qp mime email rfc2045 rfc2047 encoded word header 메일',
+  render(root) {
+    makeIO(root, {
+      inputs: [{ id: 'input', label: '입력', rows: 6, placeholder: '한글 메일 제목' }],
+      options: [
+        { id: 'mode', label: '형식', type: 'select', values: [['body', '본문 (RFC 2045)'], ['word', '헤더 encoded-word (RFC 2047)']] },
+        { id: 'wrap', label: '76자 줄바꿈', type: 'checkbox', value: true },
+      ],
+      actions: [{ id: 'enc', label: '인코딩' }, { id: 'dec', label: '디코딩' }],
+      outputRows: 10,
+      process(text, o, action) {
+        if (o.mode === 'word')
+          return action === 'dec' ? encodedWordDecode(text.trim()) : encodedWordEncode(text);
+        if (action === 'dec') return bytesToStr(qpDecode(text));
+        return qpEncode(strToBytes(text), o.wrap ? 76 : 0);
+      },
+      note: '인코딩 결과의 줄바꿈은 메일 규격대로 CRLF입니다. encoded-word는 공백을 "_"로 적습니다.',
     });
   },
 });

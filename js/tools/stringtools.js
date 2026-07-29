@@ -1,5 +1,5 @@
 // 문자열 / 텍스트 유틸리티
-import { tool, makeIO, h, kvTable, strToBytes, loadScript, LIB, copyBtn, copyText } from '../core.js';
+import { tool, makeIO, h, kvTable, strToBytes, bytesToHex, loadScript, LIB, copyBtn, copyText } from '../core.js';
 
 const CAT = '문자열 / 텍스트';
 
@@ -131,6 +131,209 @@ tool({
         ]), top.length ? h('div', null, h('h4', null, '최빈 문자 Top 10'),
           h('p', { class: 'mono' }, top.map(([c, n]) => `${c}:${n}`).join('  '))) : null);
       },
+    });
+  },
+});
+
+/* ---------- 유니코드 문자 분석 ----------
+   이름 데이터베이스(UnicodeData.txt)는 통째로 싣기에 너무 커서, 눈에 보이지 않아
+   실제로 문제를 일으키는 문자만 이름을 들고 있고 나머지는 속성으로 분류한다. */
+const SPECIAL_CHARS = {
+  0x0009: ['탭 (TAB)', 'control'],
+  0x000a: ['줄바꿈 (LF)', 'control'],
+  0x000d: ['캐리지 리턴 (CR)', 'control'],
+  0x0020: ['공백 (SPACE)', 'space'],
+  0x00a0: ['줄바꿈 없는 공백 (NBSP)', 'space'],
+  0x00ad: ['소프트 하이픈 (SHY)', 'hidden'],
+  0x061c: ['아랍 문자 표시 (ALM)', 'bidi'],
+  0x1680: ['오검 공백', 'space'],
+  0x180e: ['몽골 모음 구분자', 'hidden'],
+  0x200b: ['제로폭 공백 (ZWSP)', 'hidden'],
+  0x200c: ['제로폭 비접합자 (ZWNJ)', 'hidden'],
+  0x200d: ['제로폭 접합자 (ZWJ)', 'hidden'],
+  0x200e: ['좌우 표시 (LRM)', 'bidi'],
+  0x200f: ['우좌 표시 (RLM)', 'bidi'],
+  0x202a: ['좌우 삽입 (LRE)', 'bidi'],
+  0x202b: ['우좌 삽입 (RLE)', 'bidi'],
+  0x202c: ['서식 종료 (PDF)', 'bidi'],
+  0x202d: ['좌우 강제 (LRO)', 'bidi'],
+  0x202e: ['우좌 강제 (RLO)', 'bidi'],
+  0x202f: ['좁은 NBSP', 'space'],
+  0x205f: ['중간 수학 공백', 'space'],
+  0x2060: ['단어 결합자 (WJ)', 'hidden'],
+  0x2066: ['좌우 격리 (LRI)', 'bidi'],
+  0x2067: ['우좌 격리 (RLI)', 'bidi'],
+  0x2068: ['첫 강한 문자 격리 (FSI)', 'bidi'],
+  0x2069: ['격리 종료 (PDI)', 'bidi'],
+  0x3000: ['전각 공백', 'space'],
+  0xfeff: ['BOM / 제로폭 NBSP', 'hidden'],
+  0xfffc: ['오브젝트 대체 문자', 'hidden'],
+  0xfffd: ['대체 문자 (깨진 인코딩)', 'hidden'],
+};
+// 라틴 문자와 헷갈리는 키릴·그리스 문자. 섞여 있으면 위장 문자열일 가능성이 높다.
+const LOOKALIKES = {
+  'а': 'a', 'в': 'b', 'е': 'e', 'к': 'k', 'м': 'm', 'н': 'h', 'о': 'o', 'р': 'p', 'с': 'c', 'т': 't',
+  'у': 'y', 'х': 'x', 'і': 'i', 'ј': 'j', 'ѕ': 's', 'ԁ': 'd', 'ԛ': 'q', 'ԝ': 'w',
+  'А': 'A', 'В': 'B', 'Е': 'E', 'К': 'K', 'М': 'M', 'Н': 'H', 'О': 'O', 'Р': 'P', 'С': 'C', 'Т': 'T',
+  'У': 'Y', 'Х': 'X', 'І': 'I', 'Ј': 'J', 'Ѕ': 'S',
+  'α': 'a', 'ο': 'o', 'ρ': 'p', 'ν': 'v', 'τ': 't', 'υ': 'u', 'χ': 'x', 'ι': 'i', 'κ': 'k',
+  'Α': 'A', 'Β': 'B', 'Ε': 'E', 'Ζ': 'Z', 'Η': 'H', 'Ι': 'I', 'Κ': 'K', 'Μ': 'M', 'Ν': 'N',
+  'Ο': 'O', 'Ρ': 'P', 'Τ': 'T', 'Υ': 'Y', 'Χ': 'X',
+};
+
+const SCRIPTS = [
+  ['Hangul', '한글'], ['Han', '한자'], ['Hiragana', '히라가나'], ['Katakana', '가타카나'],
+  ['Latin', '라틴'], ['Cyrillic', '키릴'], ['Greek', '그리스'], ['Arabic', '아랍'],
+  ['Hebrew', '히브리'], ['Thai', '태국'], ['Devanagari', '데바나가리'],
+];
+const CATEGORIES = [
+  [/\p{L}/u, '문자'], [/\p{N}/u, '숫자'], [/\p{M}/u, '결합 표시'], [/\p{P}/u, '구두점'],
+  [/\p{S}/u, '기호'], [/\p{Z}/u, '공백'], [/\p{C}/u, '제어/서식'],
+];
+
+function describeChar(ch) {
+  const cp = ch.codePointAt(0);
+  const special = SPECIAL_CHARS[cp];
+  if (special) return special[0];
+  if (/\p{Extended_Pictographic}/u.test(ch)) return '그림문자(이모지)';
+  if (cp >= 0xfe00 && cp <= 0xfe0f) return `변이 선택자 VS${cp - 0xfe00 + 1}`;
+  if (cp >= 0xe0000 && cp <= 0xe007f) return '태그 문자 (숨김)';
+  if (cp < 0x20 || (cp >= 0x7f && cp <= 0x9f)) return '제어 문자';
+  for (const [script, label] of SCRIPTS)
+    if (new RegExp(`\\p{Script=${script}}`, 'u').test(ch)) return label;
+  for (const [re, label] of CATEGORIES) if (re.test(ch)) return label;
+  return '알 수 없음';
+}
+const codePointLabel = (cp) => 'U+' + cp.toString(16).toUpperCase().padStart(4, '0');
+
+tool({
+  id: 'unicode-inspect', cat: CAT, name: '유니코드 문자 분석기',
+  desc: '문자마다 코드포인트, UTF-8/UTF-16 바이트, 종류를 표로 보여줍니다.',
+  keywords: 'unicode codepoint inspect utf8 utf16 character 문자 코드포인트 분석 grapheme',
+  render(root) {
+    makeIO(root, {
+      inputs: [{ id: 'input', label: '텍스트', rows: 4, value: '한A👍🏽' }],
+      options: [{ id: 'limit', label: '최대 표시 문자 수', type: 'number', value: 300, size: 80 }],
+      outputHTML: true, runOnLoad: true,
+      process(text, o) {
+        if (!text) return '';
+        const chars = [...text];
+        const limit = Math.max(1, Math.trunc(+o.limit) || 300);
+        const graphemes = typeof Intl.Segmenter === 'function'
+          ? [...new Intl.Segmenter('ko', { granularity: 'grapheme' }).segment(text)].length
+          : null;
+        const box = h('div', null, kvTable([
+          ['코드포인트 수', chars.length],
+          ['UTF-16 길이 (JS length)', text.length],
+          ['UTF-8 바이트', strToBytes(text).length],
+          ...(graphemes == null ? [] : [['자소(grapheme) 수', graphemes]]),
+        ]));
+        const shown = chars.slice(0, limit);
+        box.append(h('h3', null, '문자별 상세'),
+          h('table', { class: 'grid' },
+            h('tr', null, ['#', '문자', '코드포인트', '종류', 'UTF-8', 'UTF-16'].map((x) => h('th', null, x))),
+            shown.map((ch, idx) => {
+              const cp = ch.codePointAt(0);
+              const printable = !(cp < 0x20 || SPECIAL_CHARS[cp]?.[1] === 'hidden' || SPECIAL_CHARS[cp]?.[1] === 'bidi');
+              const utf16 = [...ch].flatMap((c) => [...Array(c.length)].map((_, i) => c.charCodeAt(i)));
+              return h('tr', null,
+                h('td', null, idx),
+                h('td', { class: 'mono' }, printable ? ch : '·'),
+                h('td', { class: 'mono' }, codePointLabel(cp)),
+                h('td', null, describeChar(ch)),
+                h('td', { class: 'mono' }, bytesToHex(strToBytes(ch)).replace(/..(?=.)/g, '$& ')),
+                h('td', { class: 'mono' }, utf16.map((u) => u.toString(16).toUpperCase().padStart(4, '0')).join(' ')));
+            })));
+        if (chars.length > shown.length)
+          box.append(h('p', { class: 'note' }, `${chars.length - shown.length}자를 더 표시하려면 최대 표시 문자 수를 늘리세요.`));
+        return box;
+      },
+      note: '눈에 보이지 않는 문자는 문자 칸에 · 로 표시합니다.',
+    });
+  },
+});
+
+/* 정리 대상: 지워야 하는 문자와 일반 공백으로 바꿔야 하는 문자를 나눠 둔다.
+   전부 눈에 보이지 않는 문자라 소스에 그대로 적으면 읽을 수 없어 이스케이프로 쓴다.
+   지움: 소프트 하이픈, 몽골 모음 구분자, 제로폭·양방향 서식, BOM, 태그 문자
+   공백화: NBSP, 오검 공백, 유럽 활자 공백, 좁은 NBSP, 중간 수학 공백, 전각 공백 */
+const REMOVE_RE = /[\u00ad\u180e\u200b-\u200f\u2060-\u2064\u2066-\u206f\ufeff\ufffc]|[\u{e0000}-\u{e007f}]/gu;
+const SPACE_RE = /[\u00a0\u1680\u2000-\u200a\u202f\u205f\u3000]/g;
+// 데모 입력: 키릴 "\u0430" + 제로폭 공백 + 소프트 하이픈이 섞인 위장 이메일 주소
+const DEMO_HIDDEN = '\u0430dmin\u200b@exam\u00adple.com';
+
+function findSuspects(text) {
+  const found = [];
+  const chars = [...text];
+  let offset = 0;
+  const hasLatin = /\p{Script=Latin}/u.test(text);
+  for (const ch of chars) {
+    const cp = ch.codePointAt(0);
+    const kind = SPECIAL_CHARS[cp]?.[1];
+    let reason = null;
+    if (kind === 'hidden') reason = '보이지 않는 문자';
+    else if (kind === 'bidi') reason = '양방향 서식 문자';
+    else if (kind === 'space' && cp !== 0x20) reason = '일반 공백이 아닌 공백';
+    else if (cp >= 0xe0000 && cp <= 0xe007f) reason = '태그 문자 (보이지 않음)';
+    else if ((cp < 0x20 || (cp >= 0x7f && cp <= 0x9f)) && cp !== 9 && cp !== 10 && cp !== 13) reason = '제어 문자';
+    else if (hasLatin && LOOKALIKES[ch]) reason = `라틴 문자 "${LOOKALIKES[ch]}"와 혼동되는 문자`;
+    else if (cp >= 0xff01 && cp <= 0xff5e) reason = '전각 ASCII 문자';
+    if (reason) found.push({ offset, ch, cp, reason });
+    offset += ch.length;
+  }
+  return found;
+}
+
+function cleanText(text, { homoglyph, fullwidth }) {
+  let out = text.replace(REMOVE_RE, '').replace(SPACE_RE, ' ');
+  if (homoglyph) out = [...out].map((ch) => LOOKALIKES[ch] ?? ch).join('');
+  if (fullwidth) out = out.replace(/[！-～]/g, (ch) => String.fromCharCode(ch.charCodeAt(0) - 0xfee0));
+  return out;
+}
+
+tool({
+  id: 'invisible-chars', cat: CAT, name: '숨은 문자 탐지 / 정리',
+  desc: '제로폭 문자, BOM, 양방향 서식, 특수 공백, 혼동되는 위장 문자를 찾아내고 제거합니다.',
+  keywords: 'zero width zwsp bom nbsp invisible hidden homoglyph bidi trojan source 제로폭 숨은문자 공백 위장',
+  render(root) {
+    root.append(h('h3', null, '검사'));
+    makeIO(root, {
+      inputs: [{ id: 'input', label: '텍스트', rows: 5, value: DEMO_HIDDEN }],
+      outputHTML: true, runOnLoad: true,
+      process(text) {
+        if (!text) return '';
+        const found = findSuspects(text);
+        if (!found.length)
+          return h('p', { style: { color: 'var(--ok)', fontWeight: '700' } }, '✔ 의심스러운 문자가 없습니다.');
+        const box = h('div', null, h('p', { style: { fontWeight: '700', color: 'var(--danger)' } },
+          `⚠ ${found.length}개의 의심 문자를 찾았습니다.`));
+        box.append(h('table', { class: 'grid' },
+          h('tr', null, ['위치', '코드포인트', '이름', '이유'].map((x) => h('th', null, x))),
+          found.slice(0, 300).map((item) => h('tr', null,
+            h('td', null, item.offset),
+            h('td', { class: 'mono' }, codePointLabel(item.cp)),
+            h('td', null, describeChar(item.ch)),
+            h('td', null, item.reason)))));
+        return box;
+      },
+      note: '위치는 JavaScript 문자열 인덱스(UTF-16) 기준입니다.',
+    });
+
+    root.append(h('h3', { style: { marginTop: '26px' } }, '정리'));
+    makeIO(root, {
+      inputs: [{ id: 'input', label: '텍스트', rows: 5, value: DEMO_HIDDEN }],
+      options: [
+        { id: 'homoglyph', label: '위장 문자를 라틴 문자로', type: 'checkbox', value: true },
+        { id: 'fullwidth', label: '전각 ASCII를 반각으로', type: 'checkbox', value: true },
+      ],
+      outputRows: 6, runOnLoad: true,
+      process(text, o) {
+        if (!text) return '';
+        const cleaned = cleanText(text, o);
+        const removed = [...text].length - [...cleaned].length;
+        return cleaned + `\n\n// ${removed}자 제거, ${text === cleaned ? '변경 없음' : '정리 완료'}`;
+      },
+      note: '보이지 않는 문자는 지우고, 특수 공백은 일반 공백으로 바꿉니다.',
     });
   },
 });

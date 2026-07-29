@@ -137,6 +137,12 @@ export function hexToBytes(hex) {
   for (let i = 0; i < out.length; i++) out[i] = parseInt(clean.substr(i * 2, 2), 16);
   return out;
 }
+export function concatBytes(...parts) {
+  const out = new Uint8Array(parts.reduce((total, part) => total + part.length, 0));
+  let offset = 0;
+  for (const part of parts) { out.set(part, offset); offset += part.length; }
+  return out;
+}
 export function bytesToB64(bytes) {
   let bin = '';
   for (let i = 0; i < bytes.length; i += 0x8000)
@@ -255,6 +261,9 @@ export const LIB = {
   jmespath: { url: 'https://cdn.jsdelivr.net/npm/jmespath@0.16.0/jmespath.min.js', integrity: 'sha384-gWcKrbXrrv/Qu9WrcJK8aDvaUwv8LMxpzdBtpRCNn3eoq7D6uOySOdo2YFvhaYrx' },
   zSchema: { url: 'https://cdn.jsdelivr.net/npm/z-schema@12.4.0/umd/ZSchema.min.js', integrity: 'sha384-uwH59hDi0evUZU9ySSP5KjCl0MAXZiFlA4eWOswSbiuGdLZKBmE7iztFuOFv42Gt' },
   bcrypt: { url: 'https://cdn.jsdelivr.net/npm/bcryptjs@2.4.3/dist/bcrypt.min.js', integrity: 'sha384-qGFE4FIJLgCFuYs3nzg39XpCtvT5AZUhaBdjB3e1+vpKQa03AkyWOyBSFb9OcQ/g' },
+  // WASM을 base64로 품고 있어 별도 .wasm 요청이 없다. SRI 한 줄로 전체가 검증된다.
+  hashWasm: { url: 'https://cdn.jsdelivr.net/npm/hash-wasm@4.12.0/dist/index.umd.js', integrity: 'sha384-xqpAfTvjqeQXohcBXlcJLUDhn4Y4oFz8WBkp7H1Lak1kldyrkEwU8/q0pOfbYVn2' },
+  tweetnacl: { url: 'https://cdn.jsdelivr.net/npm/tweetnacl@1.0.3/nacl-fast.min.js', integrity: 'sha384-05+sicyRJQ56XpL4U9HJ8YbtSzFDvAg7apPKOGV6A0JsAJKFM68jp5oLnUjG5mEp' },
 };
 
 /* ---------- 공통 도구 UI 빌더 ----------

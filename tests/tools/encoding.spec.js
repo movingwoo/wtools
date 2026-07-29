@@ -81,6 +81,71 @@ const cases = [
     action: 'JWT 생성',
     output: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyfQ.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c',
   },
+
+  // Base58 — 비트코인 표준 벡터
+  { name: 'base58: 인코딩', tool: 'base58', inputs: 'Hello World!', action: '인코딩', output: '2NEpo7TZRRrLZSi2U' },
+  { name: 'base58: 디코딩', tool: 'base58', inputs: '2NEpo7TZRRrLZSi2U', action: '디코딩', output: 'Hello World!' },
+  {
+    name: 'base58: 앞쪽 0바이트는 알파벳 첫 글자로', tool: 'base58',
+    options: { '입력 형식(인코딩)': 'hex' }, inputs: '0000287fb4cd', action: '인코딩', output: '11233QC4',
+  },
+  {
+    name: 'base58: Base58Check로 비트코인 주소 해독', tool: 'base58',
+    options: { 'Base58Check': true, '출력 형식(디코딩)': 'hex' },
+    inputs: '1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa', action: '디코딩',
+    output: '0062e907b15cbf27d5425399ebf6f0fb50ebb88f18',
+  },
+  { name: 'base58: 알파벳에 없는 문자는 에러', tool: 'base58', inputs: '0OIl', action: '디코딩', error: 'Base58 알파벳에 없는 문자: "0"' },
+
+  // Base85 — Ascii85 표준 벡터와 ZeroMQ Z85 벡터
+  { name: 'base85: Ascii85 인코딩', tool: 'base85', inputs: 'Man ', action: '인코딩', output: '9jqo^' },
+  { name: 'base85: Ascii85 부분 그룹 디코딩', tool: 'base85', inputs: 'F*2M7/c', action: '디코딩', output: 'sure.' },
+  { name: 'base85: Adobe 구분자', tool: 'base85', options: { '형식': 'adobe' }, inputs: 'Man ', action: '인코딩', output: '<~9jqo^~>' },
+  {
+    name: 'base85: Z85 벡터', tool: 'base85',
+    options: { '형식': 'z85', '입력 형식(인코딩)': 'hex' }, inputs: '864fd26fb559f75b', action: '인코딩', output: 'HelloWorld',
+  },
+  {
+    name: 'base85: Z85는 4바이트 배수만', tool: 'base85', options: { '형식': 'z85' }, inputs: 'abc', action: '인코딩',
+    error: 'Z85는 입력이 4바이트의 배수여야 합니다 (현재 3바이트).',
+  },
+
+  // Quoted-Printable
+  { name: 'quoted-printable: 한글 인코딩', tool: 'quoted-printable', inputs: '안녕', action: '인코딩', output: '=EC=95=88=EB=85=95' },
+  { name: 'quoted-printable: 디코딩', tool: 'quoted-printable', inputs: '=EC=95=88=EB=85=95', action: '디코딩', output: '안녕' },
+  { name: 'quoted-printable: "="는 =3D로', tool: 'quoted-printable', inputs: 'a=b', action: '인코딩', output: 'a=3Db' },
+  {
+    name: 'quoted-printable: encoded-word 인코딩', tool: 'quoted-printable',
+    options: { '형식': 'word' }, inputs: '한글', action: '인코딩', output: '=?UTF-8?Q?=ED=95=9C=EA=B8=80?=',
+  },
+  {
+    name: 'quoted-printable: encoded-word B 디코딩', tool: 'quoted-printable',
+    options: { '형식': 'word' }, inputs: '=?UTF-8?B?7ZWc6riA?=', action: '디코딩', output: '한글',
+  },
+  {
+    name: 'quoted-printable: encoded-word가 없으면 에러', tool: 'quoted-printable',
+    options: { '형식': 'word' }, inputs: 'plain text', action: '디코딩',
+    error: '=?charset?B|Q?...?= 형식의 encoded-word를 찾을 수 없습니다.',
+  },
+
+  // Punycode / IDN
+  {
+    name: 'punycode: 한글 도메인 → ASCII', tool: 'punycode', inputs: '한글.한국',
+    kv: { 'ASCII (Punycode)': 'xn--bj0bj06e.xn--3e0b707e', '유니코드': '한글.한국', '라벨 수': '2' },
+  },
+  {
+    name: 'punycode: xn-- 디코딩', tool: 'punycode', inputs: 'xn--bj0bj06e.xn--3e0b707e',
+    kv: { '유니코드': '한글.한국', 'ASCII (Punycode)': 'xn--bj0bj06e.xn--3e0b707e' },
+  },
+  {
+    name: 'punycode: URL이면 호스트만 바꾼다', tool: 'punycode', inputs: 'https://한글.한국:8080/path?q=1',
+    kv: { 'ASCII (Punycode)': 'https://xn--bj0bj06e.xn--3e0b707e:8080/path?q=1' },
+  },
+  {
+    name: 'punycode: 독일어 라벨 (RFC 3492 방식)', tool: 'punycode', inputs: 'bücher.example',
+    kv: { 'ASCII (Punycode)': 'xn--bcher-kva.example' },
+  },
+
 ];
 
 toolCases('encoding', cases);

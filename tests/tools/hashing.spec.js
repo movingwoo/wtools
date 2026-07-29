@@ -101,6 +101,32 @@ const cases = [
       'Adler-32': /^0x091E01DE /,
     },
   },
+
+  // BLAKE2/BLAKE3/xxHash — BLAKE2 값은 python hashlib과 교차 검증한 벡터
+  {
+    name: 'hash-modern: 키 없이 전체 계산', tool: 'hash-modern', inputs: ['Hello, World!', ''],
+    kv: {
+      'BLAKE2b-512': '7dfdb888af71eae0e6a6b751e8e3413d767ef4fa52a7993daa9ef097f7aa3d949199c113caa37c94f80cf3b22f7d9d6e4f5def4ff927830cffe4857c34be3d89',
+      'BLAKE2b-256': '511bc81dde11180838c562c82bb35f3223f46061ebde4a955c27b3f489cf1e03',
+      'BLAKE2s-256': 'ec9db904d636ef61f1421b2ba47112a4fa6b8964fd4a0a514834455c21df7812',
+      'BLAKE3-256': '288a86a79f20a3d6dccdca7713beaed178798296bdfa7913fa2a62d9727bf8f8',
+      'xxHash64': 'c49aacf8080fe47f',
+      'xxHash128': '531df2844447dd5077db03842cd75395',
+    },
+  },
+  {
+    name: 'hash-modern: 키를 주면 keyed hash', tool: 'hash-modern', inputs: ['Hello, World!', 'secret'],
+    kv: {
+      'BLAKE2b-256': 'c4681a0a08658e336f7ad8acfb667c30607ab0ffabe617406bc90ca4d4fb5fec',
+      'xxHash64': '(키를 지원하지 않는 알고리즘)',
+    },
+  },
+  {
+    name: 'hash-modern: BLAKE3 키는 32바이트여야 한다', tool: 'hash-modern', inputs: ['Hello, World!', 'secret'],
+    kv: { 'BLAKE3-256': /^\(오류: .*32 bytes\)$/ },
+  },
+  { name: 'hash-modern: 대문자 옵션', tool: 'hash-modern', options: { '대문자': true }, inputs: ['Hello, World!', ''], kv: { 'xxHash64': 'C49AACF8080FE47F' } },
+
 ];
 
 toolCases('hashing', cases);

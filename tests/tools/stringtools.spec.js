@@ -51,6 +51,40 @@ const cases = [
     options: { '언어': 'en', '단위': 'sent', '개수': 1 }, action: '생성',
     output: 'Lorem ipsum dolor sit amet, consectetur adipiscing elit.',
   },
+
+  // 유니코드 문자 분석기
+  {
+    name: 'unicode-inspect: 한글과 라틴 문자', tool: 'unicode-inspect', inputs: '한A',
+    kv: { '코드포인트 수': '2', 'UTF-16 길이 (JS length)': '2', 'UTF-8 바이트': '4' },
+    htmlContains: ['U+D55C', 'ed 95 9c', '한글', 'U+0041', '라틴'],
+  },
+  {
+    name: 'unicode-inspect: 서로게이트 쌍 이모지', tool: 'unicode-inspect', inputs: '👍',
+    kv: { '코드포인트 수': '1', 'UTF-16 길이 (JS length)': '2', 'UTF-8 바이트': '4' },
+    htmlContains: ['U+1F44D', '그림문자(이모지)', 'D83D DC4D'],
+  },
+
+  // 숨은 문자 탐지 / 정리 — 기본 입력이 키릴 a + 제로폭 공백 + 소프트 하이픈이다
+  {
+    name: 'invisible-chars: 기본 입력에서 3건 탐지', tool: 'invisible-chars',
+    htmlContains: ['3개의 의심 문자', '제로폭 공백 (ZWSP)', '소프트 하이픈 (SHY)', '라틴 문자 "a"와 혼동되는 문자'],
+  },
+  { name: 'invisible-chars: 깨끗한 텍스트', tool: 'invisible-chars', inputs: 'hello 안녕 123', htmlContains: ['의심스러운 문자가 없습니다'] },
+  {
+    name: 'invisible-chars: 양방향 서식 문자 탐지', tool: 'invisible-chars', inputs: 'file\u202egnp.exe',
+    htmlContains: ['우좌 강제 (RLO)', '양방향 서식 문자'],
+  },
+  {
+    name: 'invisible-chars: 정리하면 원래 문자열', tool: 'invisible-chars', io: 1,
+    inputs: '\u0430dmin\u200b@exam\u00adple.com',
+    output: 'admin@example.com\n\n// 2자 제거, 정리 완료',
+  },
+  {
+    name: 'invisible-chars: 특수 공백은 일반 공백으로', tool: 'invisible-chars', io: 1,
+    inputs: 'a\u00a0b\u3000c',
+    output: 'a b c\n\n// 0자 제거, 정리 완료',
+  },
+
 ];
 
 toolCases('string', cases);

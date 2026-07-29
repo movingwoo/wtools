@@ -2,7 +2,7 @@
 // 결정적 벡터(raw 키 + 0 IV AES, RFC 4226 HOTP, PBKDF2 고정 솔트)와
 // 왕복(암호화→복호화) 검증을 함께 사용한다. bcrypt·jsrsasign·openpgp는
 // CDN 지연 로드 경로까지 함께 검증된다.
-import { test, expect, toolCases, openTool, ioSection, setOption, fillInputs, clickAction } from '../helpers.js';
+import { test, expect, toolCases, openTool, ioSection, setOption, fillInputs, clickAction, kvValue } from '../helpers.js';
 
 // AES-128-CBC, 키 000102..0f, 0 IV, PKCS7 — node crypto로 계산한 기대값
 const AES_KEY = '000102030405060708090a0b0c0d0e0f';
@@ -49,11 +49,13 @@ const cases = [
   // PBKDF2 — 고정 솔트 해시에 대한 검증 (node 교차 검증)
   {
     name: 'password-hash: PBKDF2 검증 성공', tool: 'password-hash',
+    options: { '알고리즘': 'pbkdf2' },
     inputs: ['correct horse battery staple', '$pbkdf2-sha256$10000$c2FsdHNhbHRzYWx0c2FsdA$594SEcFUiZ2QQwYUOUz8-13TozqnAq5v4peDdplb-mg'],
     action: '검증', output: '✔ 비밀번호가 일치합니다.',
   },
   {
     name: 'password-hash: PBKDF2 잘못된 비밀번호', tool: 'password-hash',
+    options: { '알고리즘': 'pbkdf2' },
     inputs: ['wrong password', '$pbkdf2-sha256$10000$c2FsdHNhbHRzYWx0c2FsdA$594SEcFUiZ2QQwYUOUz8-13TozqnAq5v4peDdplb-mg'],
     action: '검증', output: '✘ 비밀번호가 일치하지 않습니다.',
   },
@@ -97,6 +99,45 @@ const cases = [
     options: { '문자 집합': 'custom' }, action: '생성',
     error: '커스텀 문자를 입력하세요.',
   },
+
+  // 고전 암호 — 교과서 표준 벡터
+  { name: 'classic-cipher: ROT13', tool: 'classic-cipher', options: { '방식': 'rot13' }, inputs: ['Hello, World!', ''], action: '암호화', output: 'Uryyb, Jbeyq!' },
+  { name: 'classic-cipher: ROT13은 두 번 하면 원문', tool: 'classic-cipher', options: { '방식': 'rot13' }, inputs: ['Uryyb, Jbeyq!', ''], action: '복호화', output: 'Hello, World!' },
+  { name: 'classic-cipher: 한글은 그대로 통과', tool: 'classic-cipher', options: { '방식': 'rot13' }, inputs: ['한글 abc 123', ''], action: '암호화', output: '한글 nop 123' },
+  { name: 'classic-cipher: ROT47', tool: 'classic-cipher', options: { '방식': 'rot47' }, inputs: ['Hello, World!', ''], action: '암호화', output: 'w6==@[ (@C=5P' },
+  {
+    name: 'classic-cipher: 카이사르 +3', tool: 'classic-cipher',
+    options: { '방식': 'caesar', '카이사르 자리 수': 3 }, inputs: ['ATTACK AT DAWN', ''], action: '암호화', output: 'DWWDFN DW GDZQ',
+  },
+  {
+    name: 'classic-cipher: 카이사르 복호화', tool: 'classic-cipher',
+    options: { '방식': 'caesar', '카이사르 자리 수': 3 }, inputs: ['DWWDFN DW GDZQ', ''], action: '복호화', output: 'ATTACK AT DAWN',
+  },
+  { name: 'classic-cipher: 아트바시', tool: 'classic-cipher', options: { '방식': 'atbash' }, inputs: ['Attack', ''], action: '암호화', output: 'Zggzxp' },
+  {
+    name: 'classic-cipher: 비제네르 (ATTACKATDAWN/LEMON)', tool: 'classic-cipher',
+    options: { '방식': 'vigenere' }, inputs: ['ATTACKATDAWN', 'LEMON'], action: '암호화', output: 'LXFOPVEFRNHR',
+  },
+  {
+    name: 'classic-cipher: 비제네르 복호화', tool: 'classic-cipher',
+    options: { '방식': 'vigenere' }, inputs: ['LXFOPVEFRNHR', 'LEMON'], action: '복호화', output: 'ATTACKATDAWN',
+  },
+  {
+    name: 'classic-cipher: 비제네르 키에 영문자가 없으면 에러', tool: 'classic-cipher',
+    options: { '방식': 'vigenere' }, inputs: ['abc', '123'], action: '암호화', error: 'Vigenère 키에는 영문자가 하나 이상 있어야 합니다.',
+  },
+  {
+    name: 'classic-cipher: 레일 펜스 3레일', tool: 'classic-cipher',
+    options: { '방식': 'rail', '레일 수': 3 }, inputs: ['WEAREDISCOVEREDFLEEATONCE', ''], action: '암호화', output: 'WECRLTEERDSOEEFEAOCAIVDEN',
+  },
+  {
+    name: 'classic-cipher: 레일 펜스 복호화', tool: 'classic-cipher',
+    options: { '방식': 'rail', '레일 수': 3 }, inputs: ['WECRLTEERDSOEEFEAOCAIVDEN', ''], action: '복호화', output: 'WEAREDISCOVEREDFLEEATONCE',
+  },
+  {
+    name: 'classic-cipher: 레일 수는 2 이상', tool: 'classic-cipher',
+    options: { '방식': 'rail', '레일 수': 1 }, inputs: ['abc', ''], action: '암호화', error: '레일 수는 2 이상의 정수여야 합니다.',
+  },
 ];
 
 toolCases('cryptotools', cases);
@@ -123,6 +164,7 @@ for (const toolId of ['aes', 'des', 'tripledes', 'blowfish']) {
 test('password-hash: PBKDF2 생성 후 검증 왕복', async ({ page }) => {
   await openTool(page, 'password-hash');
   const io = ioSection(page);
+  await setOption(io, '알고리즘', 'pbkdf2'); // 기본값은 Argon2id다
   await setOption(io, 'PBKDF2 반복 횟수', 10000);
   await fillInputs(io, ['테스트 비밀번호 1!']);
   await clickAction(io, '해시 생성');
@@ -214,4 +256,102 @@ test('pgp: 키 생성 → 암복호화 왕복', async ({ page }) => {
   await fillInputs(io, [armored, priv]);
   await clickAction(io, '복호화');
   await expect(out).toHaveValue(message, { timeout: 30_000 });
+});
+
+/* ---------- ec-sign: 키 생성 → 서명 → 검증 왕복 ----------
+   ECDSA 서명은 매번 값이 달라지므로 고정 벡터로 비교할 수 없다. 왕복과 변조 탐지로 본다. */
+
+for (const alg of ['P-256', 'P-384', 'P-521', 'Ed25519']) {
+  test(`ec-sign: ${alg} 키 생성 → 서명 → 검증`, async ({ page }) => {
+    await openTool(page, 'ec-sign');
+    const genIo = ioSection(page, 0);
+    await setOption(genIo, '알고리즘', alg);
+    await clickAction(genIo, '키 페어 생성');
+    await expect.poll(() => kvValue(genIo, '알고리즘')).toBe(alg);
+    const privateKey = await kvValue(genIo, '개인키 (PKCS#8 PEM)');
+    const publicKey = await kvValue(genIo, '공개키 (SPKI PEM)');
+    expect(privateKey).toMatch(/^-----BEGIN PRIVATE KEY-----[\s\S]+-----END PRIVATE KEY-----$/);
+    expect(publicKey).toMatch(/^-----BEGIN PUBLIC KEY-----[\s\S]+-----END PUBLIC KEY-----$/);
+
+    const io = ioSection(page, 1);
+    const out = io.locator('textarea.out');
+    await setOption(io, '알고리즘', alg);
+    await fillInputs(io, ['message to sign', privateKey, '']);
+    await clickAction(io, '서명');
+    await expect(out).toHaveValue(/^[A-Za-z0-9+/=]+$/);
+    const signature = await out.inputValue();
+
+    await fillInputs(io, ['message to sign', publicKey, signature]);
+    await clickAction(io, '검증');
+    await expect(out).toHaveValue('✔ 서명이 유효합니다.');
+
+    await fillInputs(io, ['tampered message', publicKey, signature]);
+    await clickAction(io, '검증');
+    await expect(out).toHaveValue('✘ 서명이 올바르지 않습니다.');
+  });
+}
+
+test('ec-sign: DER 서명도 같은 키로 검증된다', async ({ page }) => {
+  await openTool(page, 'ec-sign');
+  const genIo = ioSection(page, 0);
+  await clickAction(genIo, '키 페어 생성');
+  await expect.poll(() => kvValue(genIo, '알고리즘')).toBe('P-256');
+  const privateKey = await kvValue(genIo, '개인키 (PKCS#8 PEM)');
+  const publicKey = await kvValue(genIo, '공개키 (SPKI PEM)');
+
+  const io = ioSection(page, 1);
+  const out = io.locator('textarea.out');
+  await setOption(io, '서명 형식', 'der');
+  await setOption(io, '출력 인코딩', 'hex');
+  await fillInputs(io, ['hello der', privateKey, '']);
+  await clickAction(io, '서명');
+  await expect(out).toHaveValue(/^30[0-9a-f]+$/); // DER SEQUENCE
+  await fillInputs(io, ['hello der', publicKey, await out.inputValue()]);
+  await clickAction(io, '검증');
+  await expect(out).toHaveValue('✔ 서명이 유효합니다.');
+});
+
+test('ec-sign: 길이가 맞지 않는 서명은 에러', async ({ page }) => {
+  await openTool(page, 'ec-sign');
+  const genIo = ioSection(page, 0);
+  await clickAction(genIo, '키 페어 생성');
+  await expect.poll(() => kvValue(genIo, '알고리즘')).toBe('P-256');
+  const publicKey = await kvValue(genIo, '공개키 (SPKI PEM)');
+  const io = ioSection(page, 1);
+  await fillInputs(io, ['x', publicKey, 'AAAA']);
+  await clickAction(io, '검증');
+  await expect(io.locator('textarea.out')).toHaveValue('⚠ P-256 서명은 64바이트여야 합니다 (현재 3바이트).');
+});
+
+/* ---------- password-hash: Argon2 ---------- */
+
+test('password-hash: Argon2id 생성 후 검증', async ({ page }) => {
+  await openTool(page, 'password-hash');
+  const io = ioSection(page);
+  const out = io.locator('textarea.out');
+  // 테스트에서는 메모리를 작게 잡아 빠르게 끝낸다.
+  await setOption(io, 'Argon2 메모리(MiB)', 8);
+  await setOption(io, 'Argon2 반복', 2);
+
+  await fillInputs(io, ['correct horse battery staple', '']);
+  await clickAction(io, '해시 생성');
+  await expect(out).toHaveValue(/^\$argon2id\$v=19\$m=8192,t=2,p=1\$[\w+/]+\$[\w+/]+$/);
+  const hash = await out.inputValue();
+
+  await fillInputs(io, ['correct horse battery staple', hash]);
+  await clickAction(io, '검증');
+  await expect(out).toHaveValue('✔ 비밀번호가 일치합니다.');
+
+  await fillInputs(io, ['wrong password', hash]);
+  await clickAction(io, '검증');
+  await expect(out).toHaveValue('✘ 비밀번호가 일치하지 않습니다.');
+});
+
+test('password-hash: Argon2 메모리 범위 검사', async ({ page }) => {
+  await openTool(page, 'password-hash');
+  const io = ioSection(page);
+  await setOption(io, 'Argon2 메모리(MiB)', 9999);
+  await fillInputs(io, ['pw', '']);
+  await clickAction(io, '해시 생성');
+  await expect(io.locator('textarea.out')).toHaveValue('⚠ Argon2 메모리는 1~1024 MiB로 입력하세요.');
 });

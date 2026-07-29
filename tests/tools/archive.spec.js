@@ -11,6 +11,8 @@ const V = {
   raw: 'y0jNyclXKC/Jz88pVkjOzy0oSi0uzszPUyhJLS7hyqBAFgA=',
   bz2: 'QlpoOTFBWSZTWc+dPa0AAA1RgAAQQAAKZ9yAIABQpgAAr/VKGNTGopTTa6VMMsvW0rWhDTbLimEpshx8h+LuSKcKEhnzp7Wg',
   lzma: 'XQAAgAD//////////wA0GUnujekXifvO8YJ1YBGu5fh8G5dj9UBAJ1xbGXBa+ARSWXJ/+RdsAA==',
+  brotli: 'G1kA+B2pU5+7cF2GRncn2d7mUuGNLgdB555s4ZyA5PTKoat4Ag==',
+  zstd: 'KLUv/SBaLQEA8GhlbGxvIHd0b29scyBjb21wcmVzc2lvbiB0ZXN0CgEAJkjKCQ==',
 };
 // MSG의 raw deflate 스트림 (pako와 node zlib이 동일하게 만든다). 앞뒤로 포맷별 헤더와 체크섬이 붙는다.
 const DEFLATE_HEX = 'cb48cdc9c957282fc9cfcf295648cecf2d284a2d2ececccf5328492d2ee1caa0401600';
@@ -54,6 +56,11 @@ const cases = [
   { name: 'lz4: 매직 넘버가 아니면 에러', tool: 'lz4', options: { '입력 형식': 'base64' }, inputs: 'AAAA', action: '해제', error: 'invalid magic number' },
   { name: 'lzma: 잘린 입력은 에러', tool: 'lzma', options: { '입력 형식': 'base64' }, inputs: 'AAAA', action: '해제', error: '해제 실패: Error: truncated input' },
   { name: 'bzip2: bzip2 데이터가 아니면 에러', tool: 'bzip2', io: 0, options: { '입력 형식': 'base64' }, inputs: 'AAAA', action: '해제', error: 'Not bzip data: bad magic' },
+
+  { name: 'brotli: node zlib 벡터 해제', tool: 'brotli', options: B64, inputs: V.brotli, action: '해제', output: MSG },
+  { name: 'brotli: 잘못된 데이터는 에러', tool: 'brotli', options: { '입력 형식': 'hex' }, inputs: '010203', action: '해제', error: 'Invalid size nibble' },
+  { name: 'zstd: node zlib 벡터 해제', tool: 'zstd', options: B64, inputs: V.zstd, action: '해제', output: MSG },
+  { name: 'zstd: 잘못된 데이터는 에러', tool: 'zstd', options: { '입력 형식': 'hex' }, inputs: '010203', action: '해제', error: 'invalid zstd data' },
 ];
 
 toolCases('archive', cases);

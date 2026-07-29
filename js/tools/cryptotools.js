@@ -1,7 +1,113 @@
 // 암호화 / 복호화
-import { tool, makeIO, h, formLabel, kvTable, strToBytes, bytesToStr, bytesToHex, hexToBytes, bytesToB64, b64ToBytes, decodeInput, loadScript, loadModule, LIB, copyBtn } from '../core.js';
+import { tool, makeIO, h, formLabel, kvTable, strToBytes, bytesToStr, bytesToHex, hexToBytes, bytesToB64, b64ToBytes, concatBytes, decodeInput, encodeOutput, loadScript, loadModule, LIB, copyBtn } from '../core.js';
 
 const CAT = '암호화 / 복호화';
+
+/* ---------- 고전 암호 ----------
+   전부 영문 알파벳만 치환하고 한글·숫자·기호는 그대로 통과시킨다. */
+function caesar(text, shift) {
+  const normalized = ((shift % 26) + 26) % 26;
+  return [...text].map((c) => {
+    const cp = c.charCodeAt(0);
+    if (cp >= 65 && cp <= 90) return String.fromCharCode(((cp - 65 + normalized) % 26) + 65);
+    if (cp >= 97 && cp <= 122) return String.fromCharCode(((cp - 97 + normalized) % 26) + 97);
+    return c;
+  }).join('');
+}
+// ROT47은 출력 가능한 ASCII(!~) 94자를 통째로 47칸 돌린다. 자기 자신이 역연산이다.
+function rot47(text) {
+  return [...text].map((c) => {
+    const cp = c.codePointAt(0);
+    return cp >= 33 && cp <= 126 ? String.fromCharCode(33 + ((cp - 33 + 47) % 94)) : c;
+  }).join('');
+}
+function atbash(text) {
+  return [...text].map((c) => {
+    const cp = c.charCodeAt(0);
+    if (cp >= 65 && cp <= 90) return String.fromCharCode(90 - (cp - 65));
+    if (cp >= 97 && cp <= 122) return String.fromCharCode(122 - (cp - 97));
+    return c;
+  }).join('');
+}
+function vigenere(text, key, decrypt) {
+  const letters = [...key.toLowerCase()].filter((c) => c >= 'a' && c <= 'z');
+  if (!letters.length) throw new Error('Vigenère 키에는 영문자가 하나 이상 있어야 합니다.');
+  let used = 0;
+  return [...text].map((c) => {
+    if (!/[a-z]/i.test(c)) return c; // 알파벳이 아니면 키를 소모하지 않는다
+    const shift = letters[used++ % letters.length].charCodeAt(0) - 97;
+    return caesar(c, decrypt ? -shift : shift);
+  }).join('');
+}
+// 지그재그로 내려갔다 올라오는 레일 번호를 미리 만들어 두고, 암호화·복호화 모두 이걸 쓴다.
+function railPattern(length, rails) {
+  const pattern = [];
+  let rail = 0, step = 1;
+  for (let i = 0; i < length; i++) {
+    pattern.push(rail);
+    if (rail === 0) step = 1;
+    else if (rail === rails - 1) step = -1;
+    rail += step;
+  }
+  return pattern;
+}
+function railFence(text, rails, decrypt) {
+  if (!Number.isInteger(rails) || rails < 2) throw new Error('레일 수는 2 이상의 정수여야 합니다.');
+  const chars = [...text];
+  const pattern = railPattern(chars.length, rails);
+  if (!decrypt) {
+    const rows = Array.from({ length: rails }, () => []);
+    chars.forEach((c, i) => rows[pattern[i]].push(c));
+    return rows.flat().join('');
+  }
+  // 레일 순서대로 읽었던 자리를 되짚어 원래 인덱스에 돌려놓는다.
+  const order = pattern.map((rail, index) => [rail, index]).sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+  const out = new Array(chars.length);
+  order.forEach(([, index], i) => { out[index] = chars[i]; });
+  return out.join('');
+}
+
+tool({
+  id: 'classic-cipher', cat: CAT, name: '고전 암호 (ROT13 / 카이사르 / 비제네르)',
+  desc: 'ROT13, ROT47, 카이사르, 아트바시, 비제네르, 레일 펜스 암호를 적용하거나 해독합니다.',
+  keywords: 'rot13 rot47 caesar shift atbash vigenere railfence classic cipher 시저 카이사르 고전암호 치환',
+  render(root) {
+    makeIO(root, {
+      inputs: [
+        { id: 'text', label: '입력', rows: 5, value: 'Hello, World! 한글은 그대로 둡니다.' },
+        { id: 'key', label: 'Vigenère 키 (비제네르 선택 시)', rows: 1, value: 'wtools' },
+      ],
+      options: [
+        {
+          id: 'mode', label: '방식', type: 'select', values: [
+            ['rot13', 'ROT13'], ['rot47', 'ROT47'], ['caesar', '카이사르 (자리 이동)'],
+            ['atbash', '아트바시 (A↔Z)'], ['vigenere', '비제네르 (키워드)'], ['rail', '레일 펜스'],
+          ],
+        },
+        { id: 'shift', label: '카이사르 자리 수', type: 'number', value: 3, size: 70 },
+        { id: 'rails', label: '레일 수', type: 'number', value: 3, size: 70 },
+      ],
+      actions: [{ id: 'enc', label: '암호화' }, { id: 'dec', label: '복호화' }],
+      runOnLoad: true, outputRows: 5,
+      process(v, o, action) {
+        const decrypt = action === 'dec';
+        switch (o.mode) {
+          case 'rot13': return caesar(v.text, 13); // 13은 26의 절반이라 암·복호가 같다
+          case 'rot47': return rot47(v.text);
+          case 'atbash': return atbash(v.text);
+          case 'caesar': {
+            const shift = Math.trunc(+o.shift);
+            if (!Number.isFinite(shift)) throw new Error('자리 수는 정수로 입력하세요.');
+            return caesar(v.text, decrypt ? -shift : shift);
+          }
+          case 'vigenere': return vigenere(v.text, v.key, decrypt);
+          case 'rail': return railFence(v.text, Math.trunc(+o.rails), decrypt);
+        }
+      },
+      note: 'ROT13·ROT47·아트바시는 같은 연산을 두 번 하면 원문으로 돌아오므로 암호화와 복호화 결과가 같습니다. 어느 것도 실제 기밀 보호에는 쓸 수 없습니다.',
+    });
+  },
+});
 
 /* ---------- 대칭키 (CryptoJS) ---------- */
 function symTool({ id, name, algo, keySizes, desc, keywords }) {
@@ -125,6 +231,150 @@ tool({
   },
 });
 
+/* ---------- ECDSA / Ed25519 ---------- */
+const pemWrap = (label, bytes) =>
+  `-----BEGIN ${label}-----\n${bytesToB64(bytes).replace(/.{64}/g, '$&\n').replace(/\n$/, '')}\n-----END ${label}-----`;
+function pemUnwrap(text, label) {
+  const block = text.match(new RegExp(`-----BEGIN ${label}-----([\\s\\S]*?)-----END ${label}-----`));
+  if (!block) throw new Error(`"${label}" PEM 블록을 찾을 수 없습니다.`);
+  return b64ToBytes(block[1]);
+}
+// Ed25519 키의 DER은 길이가 고정이라 앞부분을 상수로 붙였다 떼면 된다 (RFC 8410).
+const ED_SPKI_PREFIX = hexToBytes('302a300506032b6570032100');
+const ED_PKCS8_PREFIX = hexToBytes('302e020100300506032b657004220420');
+
+const EC_CURVES = { 'P-256': 32, 'P-384': 48, 'P-521': 66 };
+
+/* WebCrypto는 ECDSA 서명을 r‖s를 이어 붙인 raw(IEEE P1363) 형식으로 내놓는데,
+   OpenSSL·JWT 밖의 대부분은 DER(SEQUENCE of INTEGER)을 쓴다. 둘 다 지원한다. */
+function derFromRaw(raw) {
+  const half = raw.length / 2;
+  const toInteger = (bytes) => {
+    let start = 0;
+    while (start < bytes.length - 1 && bytes[start] === 0) start++;
+    let value = bytes.slice(start);
+    if (value[0] & 0x80) value = concatBytes(new Uint8Array([0]), value); // 음수로 읽히지 않게 0을 덧댄다
+    return concatBytes(new Uint8Array([0x02, value.length]), value);
+  };
+  const body = concatBytes(toInteger(raw.slice(0, half)), toInteger(raw.slice(half)));
+  const header = body.length < 0x80 ? [0x30, body.length] : [0x30, 0x81, body.length];
+  return concatBytes(new Uint8Array(header), body);
+}
+function rawFromDer(der, half) {
+  if (der[0] !== 0x30) throw new Error('DER 서명(SEQUENCE)이 아닙니다.');
+  let pos = der[1] & 0x80 ? 2 + (der[1] & 0x7f) : 2;
+  const readInteger = () => {
+    if (der[pos] !== 0x02) throw new Error('DER 서명의 INTEGER 태그를 찾을 수 없습니다.');
+    let value = der.slice(pos + 2, pos + 2 + der[pos + 1]);
+    pos += 2 + der[pos + 1];
+    while (value.length > half && value[0] === 0) value = value.slice(1);
+    if (value.length > half) throw new Error('DER 서명의 값이 곡선 크기보다 큽니다.');
+    const padded = new Uint8Array(half);
+    padded.set(value, half - value.length);
+    return padded;
+  };
+  return concatBytes(readInteger(), readInteger());
+}
+
+async function ecKeyPair(curve) {
+  const pair = await crypto.subtle.generateKey({ name: 'ECDSA', namedCurve: curve }, true, ['sign', 'verify']);
+  return {
+    privatePem: pemWrap('PRIVATE KEY', new Uint8Array(await crypto.subtle.exportKey('pkcs8', pair.privateKey))),
+    publicPem: pemWrap('PUBLIC KEY', new Uint8Array(await crypto.subtle.exportKey('spki', pair.publicKey))),
+  };
+}
+async function edKeyPair() {
+  await loadScript(LIB.tweetnacl);
+  const pair = nacl.sign.keyPair();
+  const seed = pair.secretKey.slice(0, 32); // tweetnacl의 secretKey는 seed(32) + 공개키(32)
+  return {
+    privatePem: pemWrap('PRIVATE KEY', concatBytes(ED_PKCS8_PREFIX, seed)),
+    publicPem: pemWrap('PUBLIC KEY', concatBytes(ED_SPKI_PREFIX, pair.publicKey)),
+    publicHex: bytesToHex(pair.publicKey),
+  };
+}
+
+tool({
+  id: 'ec-sign', cat: CAT, name: 'ECDSA / Ed25519 서명·검증',
+  desc: '타원곡선 키를 만들고 메시지에 서명하거나 서명을 검증합니다. P-256/384/521과 Ed25519를 지원합니다.',
+  keywords: 'ecdsa ed25519 elliptic curve sign verify keypair p256 p384 p521 eddsa 타원곡선 서명 검증',
+  render(root) {
+    const ALGS = [['P-256', 'ECDSA P-256'], ['P-384', 'ECDSA P-384'], ['P-521', 'ECDSA P-521'], ['Ed25519', 'Ed25519']];
+
+    root.append(h('h3', null, '키 생성'));
+    makeIO(root, {
+      inputs: null,
+      options: [{ id: 'alg', label: '알고리즘', type: 'select', values: ALGS }],
+      actions: [{ id: 'gen', label: '키 페어 생성' }],
+      outputHTML: true,
+      async process(_, o) {
+        const keys = o.alg === 'Ed25519' ? await edKeyPair() : await ecKeyPair(o.alg);
+        return kvTable([
+          ['알고리즘', o.alg],
+          ['개인키 (PKCS#8 PEM)', keys.privatePem],
+          ['공개키 (SPKI PEM)', keys.publicPem],
+          ...(keys.publicHex ? [['공개키 (raw hex)', keys.publicHex]] : []),
+        ]);
+      },
+      note: '키는 브라우저에서만 생성되며 어디로도 전송되지 않습니다.',
+    });
+
+    root.append(h('h3', { style: { marginTop: '30px' } }, '서명 / 검증'));
+    makeIO(root, {
+      inputs: [
+        { id: 'message', label: '메시지', rows: 4, value: 'Hello, World!' },
+        { id: 'key', label: '키 (서명: 개인키 PEM / 검증: 공개키 PEM)', rows: 5, placeholder: '-----BEGIN PRIVATE KEY-----' },
+        { id: 'signature', label: '서명 (검증 시)', rows: 3, placeholder: 'Base64 또는 Hex' },
+      ],
+      options: [
+        { id: 'alg', label: '알고리즘', type: 'select', values: ALGS },
+        { id: 'hash', label: '해시 (ECDSA)', type: 'select', values: ['SHA-256', 'SHA-384', 'SHA-512'] },
+        { id: 'sigfmt', label: '서명 형식', type: 'select', values: [['raw', 'raw (r‖s, P1363)'], ['der', 'DER (OpenSSL)']] },
+        { id: 'ofmt', label: '출력 인코딩', type: 'select', values: [['base64', 'Base64'], ['hex', 'Hex']] },
+      ],
+      actions: [{ id: 'sign', label: '서명' }, { id: 'verify', label: '검증' }],
+      autorun: false, outputRows: 4,
+      async process(v, o, action) {
+        const message = strToBytes(v.message);
+        if (!v.key.trim()) throw new Error('키 PEM을 입력하세요.');
+
+        if (o.alg === 'Ed25519') {
+          await loadScript(LIB.tweetnacl);
+          if (action === 'sign') {
+            const pkcs8 = pemUnwrap(v.key, 'PRIVATE KEY');
+            if (pkcs8.length !== ED_PKCS8_PREFIX.length + 32) throw new Error('Ed25519 개인키 PEM이 아닙니다.');
+            const pair = nacl.sign.keyPair.fromSeed(pkcs8.slice(ED_PKCS8_PREFIX.length));
+            return encodeOutput(nacl.sign.detached(message, pair.secretKey), o.ofmt);
+          }
+          const spki = pemUnwrap(v.key, 'PUBLIC KEY');
+          if (spki.length !== ED_SPKI_PREFIX.length + 32) throw new Error('Ed25519 공개키 PEM이 아닙니다.');
+          const signature = decodeInput(v.signature.trim(), o.ofmt);
+          return nacl.sign.detached.verify(message, signature, spki.slice(ED_SPKI_PREFIX.length))
+            ? '✔ 서명이 유효합니다.' : '✘ 서명이 올바르지 않습니다.';
+        }
+
+        const half = EC_CURVES[o.alg];
+        const params = { name: 'ECDSA', hash: o.hash };
+        if (action === 'sign') {
+          const key = await crypto.subtle.importKey('pkcs8', pemUnwrap(v.key, 'PRIVATE KEY'),
+            { name: 'ECDSA', namedCurve: o.alg }, false, ['sign']);
+          const raw = new Uint8Array(await crypto.subtle.sign(params, key, message));
+          return encodeOutput(o.sigfmt === 'der' ? derFromRaw(raw) : raw, o.ofmt);
+        }
+        if (!v.signature.trim()) throw new Error('검증할 서명을 입력하세요.');
+        const key = await crypto.subtle.importKey('spki', pemUnwrap(v.key, 'PUBLIC KEY'),
+          { name: 'ECDSA', namedCurve: o.alg }, false, ['verify']);
+        const given = decodeInput(v.signature.trim(), o.ofmt);
+        const raw = o.sigfmt === 'der' ? rawFromDer(given, half) : given;
+        if (raw.length !== half * 2) throw new Error(`${o.alg} 서명은 ${half * 2}바이트여야 합니다 (현재 ${raw.length}바이트).`);
+        return await crypto.subtle.verify(params, key, raw, message)
+          ? '✔ 서명이 유효합니다.' : '✘ 서명이 올바르지 않습니다.';
+      },
+      note: 'Ed25519는 해시·서명 형식 옵션을 쓰지 않습니다(항상 64바이트 raw 서명). ECDSA는 같은 키로 서명해도 매번 값이 달라지는 것이 정상입니다.',
+    });
+  },
+});
+
 async function pbkdf2(password, salt, iterations, hash, length) {
   const key = await crypto.subtle.importKey('raw', strToBytes(password), 'PBKDF2', false, ['deriveBits']);
   const bits = await crypto.subtle.deriveBits({ name: 'PBKDF2', salt, iterations, hash }, key, length * 8);
@@ -133,23 +383,48 @@ async function pbkdf2(password, salt, iterations, hash, length) {
 
 tool({
   id: 'password-hash', cat: CAT, name: '비밀번호 해시 생성 / 검증',
-  desc: 'PBKDF2 또는 bcrypt로 비밀번호 해시를 생성하고 검증합니다.',
-  keywords: 'password hash pbkdf2 bcrypt salt verify 비밀번호 해시 검증',
+  desc: 'Argon2, PBKDF2, bcrypt로 비밀번호 해시를 생성하고 검증합니다.',
+  keywords: 'password hash pbkdf2 bcrypt argon2 argon2id salt verify 비밀번호 해시 검증',
   render(root) {
     makeIO(root, {
       inputs: [
         { id: 'password', label: '비밀번호', rows: 2, value: 'correct horse battery staple' },
-        { id: 'encoded', label: '검증할 해시 (검증 시)', rows: 3, placeholder: '$pbkdf2-sha256$310000$... 또는 $2b$...' },
+        { id: 'encoded', label: '검증할 해시 (검증 시)', rows: 3, placeholder: '$argon2id$v=19$... 또는 $pbkdf2-sha256$... 또는 $2b$...' },
       ],
       options: [
-        { id: 'alg', label: '알고리즘', type: 'select', values: [['pbkdf2', 'PBKDF2-SHA-256'], ['bcrypt', 'bcrypt']] },
+        { id: 'alg', label: '알고리즘', type: 'select', values: [['argon2id', 'Argon2id (권장)'], ['argon2i', 'Argon2i'], ['argon2d', 'Argon2d'], ['pbkdf2', 'PBKDF2-SHA-256'], ['bcrypt', 'bcrypt']] },
         { id: 'iterations', label: 'PBKDF2 반복 횟수', type: 'number', value: 310000, size: 100 },
         { id: 'bcryptCost', label: 'bcrypt Cost', type: 'number', value: 12, size: 70 },
+        { id: 'argonMemory', label: 'Argon2 메모리(MiB)', type: 'number', value: 64, size: 80 },
+        { id: 'argonTime', label: 'Argon2 반복', type: 'number', value: 3, size: 70 },
+        { id: 'argonLanes', label: 'Argon2 병렬', type: 'number', value: 1, size: 70 },
       ],
       actions: [{ id: 'generate', label: '해시 생성' }, { id: 'verify', label: '검증' }],
       autorun: false, outputRows: 5,
       async process(v, o, action) {
         if (!v.password) throw new Error('비밀번호를 입력하세요.');
+        if (o.alg.startsWith('argon2')) {
+          await loadScript(LIB.hashWasm);
+          if (action === 'verify') {
+            const hash = v.encoded.trim();
+            if (!/^\$argon2(id|i|d)\$/.test(hash)) throw new Error('올바른 Argon2 해시를 입력하세요.');
+            return await hashwasm.argon2Verify({ password: v.password, hash })
+              ? '✔ 비밀번호가 일치합니다.' : '✘ 비밀번호가 일치하지 않습니다.';
+          }
+          const memory = Math.trunc(+o.argonMemory), time = Math.trunc(+o.argonTime), lanes = Math.trunc(+o.argonLanes);
+          if (!(memory >= 1 && memory <= 1024)) throw new Error('Argon2 메모리는 1~1024 MiB로 입력하세요.');
+          if (!(time >= 1 && time <= 20)) throw new Error('Argon2 반복은 1~20으로 입력하세요.');
+          if (!(lanes >= 1 && lanes <= 16)) throw new Error('Argon2 병렬은 1~16으로 입력하세요.');
+          return hashwasm[o.alg]({
+            password: v.password,
+            salt: crypto.getRandomValues(new Uint8Array(16)),
+            memorySize: memory * 1024, // hash-wasm은 KiB 단위를 받는다
+            iterations: time,
+            parallelism: lanes,
+            hashLength: 32,
+            outputType: 'encoded',
+          });
+        }
         if (o.alg === 'bcrypt') {
           await loadScript(LIB.bcrypt);
           const bcrypt = dcodeIO.bcrypt;
@@ -178,7 +453,7 @@ tool({
         const b64url = (b) => bytesToB64(b).replace(/=+$/g, '').replace(/\+/g, '-').replace(/\//g, '_');
         return `$pbkdf2-sha256$${iterations}$${b64url(salt)}$${b64url(hash)}`;
       },
-      note: '비밀번호와 해시는 브라우저 밖으로 전송되지 않습니다. bcrypt 선택 시 반복/Cost 값을 10~12 정도로 사용하세요.',
+      note: '비밀번호와 해시는 브라우저 밖으로 전송되지 않습니다. 새로 만드는 서비스라면 Argon2id를, bcrypt를 쓴다면 Cost 10~12를 권장합니다. 메모리를 크게 잡으면 계산에 몇 초가 걸릴 수 있습니다.',
     });
   },
 });

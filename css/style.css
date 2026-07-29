@@ -174,8 +174,6 @@ a:hover { text-decoration: underline; }
 }
 .detect-close:hover { background: var(--panel); color: var(--text); }
 .detect-close:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
-/* 하단 고정 '맨 위로' 버튼(#sidebar-top)이 끝까지 스크롤한 마지막 항목의 별 버튼을 가리지 않도록 여백 확보 */
-#nav { padding-bottom: 60px; }
 #nav .cat { margin-bottom: 4px; }
 #nav .cat-title {
   font-size: 12px;
@@ -230,48 +228,6 @@ a:hover { text-decoration: underline; }
 }
 .star-btn:hover { background: var(--accent-weak); }
 .star-btn.active { color: #f5a623; }
-
-#sidebar-top {
-  position: fixed;
-  left: 222px;
-  bottom: 18px;
-  z-index: 45;
-  width: 32px;
-  height: 28px;
-  padding: 0;
-  border: 1px solid var(--accent);
-  border-radius: 7px;
-  background: transparent;
-  color: var(--accent);
-  cursor: pointer;
-  opacity: 0;
-  visibility: hidden;
-  transform: translateY(8px);
-  transition: opacity .16s, transform .16s, visibility .16s;
-}
-#sidebar-top::before {
-  content: '';
-  position: absolute;
-  left: 11px;
-  top: 8px;
-  width: 8px;
-  height: 8px;
-  border-top: 1.5px solid currentColor;
-  border-left: 1.5px solid currentColor;
-  transform: rotate(45deg);
-}
-#sidebar-top::after {
-  content: '';
-  position: absolute;
-  left: 15px;
-  top: 8px;
-  width: 1.5px;
-  height: 12px;
-  background: currentColor;
-}
-#sidebar-top.visible { opacity: .92; visibility: visible; transform: none; }
-#sidebar-top:hover { opacity: 1; background: var(--accent-weak); }
-#sidebar-top:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 #menu-btn {
   display: none;
@@ -448,7 +404,6 @@ mark.rx { background: var(--accent-weak); color: var(--accent); border-radius: 3
     width: 280px;
   }
   #sidebar.open { transform: none; box-shadow: 0 0 40px rgba(0,0,0,.4); }
-  #sidebar-top { left: 232px; }
   #menu-btn { display: block; }
   #content { padding: 20px 16px 90px; }
 }

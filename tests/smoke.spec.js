@@ -26,6 +26,49 @@ test('홈 화면이 렌더링된다', async ({ page, pageErrors }) => {
   expect(await page.locator('#nav a[data-id]').count()).toBeGreaterThan(30);
 });
 
+test('시스템·라이트·다크 테마를 전환하고 선택을 유지한다', async ({ page }) => {
+  await page.emulateMedia({ colorScheme: 'dark' });
+  await page.goto('/');
+
+  const root = page.locator('html');
+  const body = page.locator('body');
+  const themeColor = page.locator('#theme-color');
+  const toggle = page.locator('#theme-toggle');
+
+  await expect(toggle).toContainText('시스템');
+  await expect(root).not.toHaveAttribute('data-theme');
+  await expect(body).toHaveCSS('background-color', 'rgb(14, 17, 22)');
+  await expect(themeColor).toHaveAttribute('content', '#0e1116');
+
+  await toggle.click();
+  await expect(toggle).toContainText('라이트');
+  await expect(root).toHaveAttribute('data-theme', 'light');
+  await expect(body).toHaveCSS('background-color', 'rgb(246, 247, 249)');
+  await expect(themeColor).toHaveAttribute('content', '#2563eb');
+
+  await toggle.click();
+  await expect(toggle).toContainText('다크');
+  await expect(root).toHaveAttribute('data-theme', 'dark');
+  await page.reload();
+  await expect(toggle).toContainText('다크');
+  await expect(root).toHaveAttribute('data-theme', 'dark');
+  expect(await page.evaluate(() => localStorage.getItem('wtools-theme'))).toBe('dark');
+
+  await toggle.click();
+  await expect(toggle).toContainText('시스템');
+  await expect(root).not.toHaveAttribute('data-theme');
+  await expect(themeColor).toHaveAttribute('content', '#0e1116');
+  expect(await page.evaluate(() => localStorage.getItem('wtools-theme'))).toBe('system');
+
+  await page.emulateMedia({ colorScheme: 'light' });
+  await expect(body).toHaveCSS('background-color', 'rgb(246, 247, 249)');
+  await expect(themeColor).toHaveAttribute('content', '#2563eb');
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.locator('#menu-btn').click();
+  await expect(toggle).toBeVisible();
+});
+
 test('검색이 도구를 필터링한다', async ({ page }) => {
   await page.goto('/');
   await page.fill('#search', 'base64');

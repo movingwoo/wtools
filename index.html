@@ -10,10 +10,10 @@
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-eval' https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://unpkg.com https://static.cloudflareinsights.com; style-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://cdn.jsdelivr.net https://cloudflare-dns.com https://cloudflareinsights.com; object-src 'none'; base-uri 'self'; form-action 'self'">
 <title>W-Tools</title>
 <meta name="description" content="MOVINGWOO Web Tools">
-<meta name="theme-color" media="(prefers-color-scheme: light)" content="#2563eb">
-<meta name="theme-color" media="(prefers-color-scheme: dark)" content="#0e1116">
+<meta id="theme-color" name="theme-color" content="#2563eb">
 <link rel="icon" href="assets/favicon-512.png">
 <link rel="manifest" href="manifest.json">
+<script src="js/theme.js"></script>
 <link rel="stylesheet" href="css/style.css">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.2.0/crypto-js.min.js" integrity="sha384-mgWScxWVKP8F7PBbpNp7i/aSb17kN0LcifBpahAplF3Mn0GR4/u1oMpWIm2rD8yY" crossorigin="anonymous" defer></script>
 <script src="https://cdn.jsdelivr.net/npm/js-yaml@4.1.0/dist/js-yaml.min.js" integrity="sha384-+pxiN6T7yvpryuJmE1gM9PX7yQit15auDb+ZwwvJOd/4be2Cie5/IuVXgQb/S9du" crossorigin="anonymous" defer></script>
@@ -29,7 +29,11 @@
 </div>
 <div id="app">
   <aside id="sidebar" aria-label="도구 메뉴">
-    <a class="brand" href="#/">W-Tools</a>
+    <div class="brand-row">
+      <a class="brand" href="#/">W-Tools</a>
+      <button id="theme-toggle" class="theme-toggle" type="button"
+        aria-label="현재 테마: 시스템. 라이트 테마로 전환" title="현재 테마: 시스템. 라이트 테마로 전환">🖥️ 시스템</button>
+    </div>
     <input id="search" type="search" placeholder="도구 검색 (/)" autocomplete="off"
       role="combobox" aria-controls="nav" aria-expanded="false" aria-autocomplete="list">
     <div id="detect-result" class="detect-result hidden" aria-live="polite"></div>

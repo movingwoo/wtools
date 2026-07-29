@@ -67,9 +67,10 @@ CI와 같은 세 브라우저 구성은 `npx playwright install chromium firefox
 
 ```
 index.html          진입점 (사이드바 + 콘텐츠 영역)
-css/style.css       스타일 (라이트/다크 자동)
+css/style.css       스타일 (시스템 연동 + 수동 라이트/다크)
 js/core.js          도구 등록 프레임워크 + 공통 UI 빌더 + 유틸
 js/main.js          해시 기반 라우터 / 사이드바 / 홈 화면
+js/theme.js         초기 테마 적용 + 시스템/라이트/다크 전환
 js/tools/*.js       카테고리별 도구 구현 (모듈별로 분리)
 assets/             아이콘·이미지
 manifest.json       PWA 매니페스트 (설치, 아이콘, 테마 색상)

@@ -45,17 +45,17 @@ python3 -m http.server 8000
 
 Then open `http://localhost:8000` and validate changes manually.
 
-CI (`.github/workflows/validate.yml`) checks JavaScript syntax, validates registrations and static assets, and runs the Playwright browser suite on every PR and every push to `main`. A second workflow, `.github/workflows/nightly.yml`, re-runs the suite once a day against the real CDN. To run the browser tests locally (requires Node.js 18+):
+CI (`.github/workflows/validate.yml`) checks JavaScript syntax, validates registrations and static assets, and runs the Playwright browser suite on every PR and every push to `main`. A second workflow, `.github/workflows/nightly.yml`, re-runs the Chromium suite once a day against the real CDN. To run the browser tests locally (requires Node.js 18+):
 
 ```bash
 cd tests
 npm install
 npx playwright install chromium
 npx playwright test --project=chromium
-npx playwright install firefox webkit        # optional: full cross-browser suite
+npx playwright install firefox webkit        # optional: add Firefox/WebKit smoke projects
 npx playwright test                          # Chromium full + Firefox/WebKit smoke
-npx playwright test tools/network.spec.js   # one module
-npx playwright test -g "subnet"             # by case name
+npx playwright test --project=chromium tools/network.spec.js  # one module
+npx playwright test --project=chromium -g "subnet"            # by case name
 ```
 
 ## Browser Tests
@@ -75,7 +75,7 @@ Follow these conventions when adding cases:
 - Stub external network calls with `page.route` so a case never depends on a live service.
 - Console errors fail every test. Allow an expected one with `test.use({ allowConsoleErrors: ['...'] })` and explain why in a comment.
 
-CDN libraries loaded lazily by tools are cached on disk by `tests/cdn-cache.js`, so a CDN hiccup does not fail a run and repeat runs stay offline. The cache lives in `tests/.lib-cache` (gitignored; CI restores it with `actions/cache`), and the browser still validates every cached response against the SRI hash pinned in `js/core.js`. The same fixture disables service worker registration with an init script, because `sw.js` caches those same external hosts and a request a service worker handles is invisible to `page.route`. Do not replace this with Playwright's `serviceWorkers: 'block'` — that option injects an init script that reads `navigator.serviceWorker`, which is a `SecurityError` inside the empty-sandbox preview iframe the markdown tool builds, and the resulting `pageerror` fails the console guard. Because PR runs no longer touch the real CDN, `.github/workflows/nightly.yml` re-runs the suite once a day with `WTOOLS_LIVE_CDN=1` to catch a dead pin or a withdrawn package. A new test entry point must spread `cdnCache` into its `test.extend({ ... })`.
+CDN libraries loaded lazily by tools are cached on disk by `tests/cdn-cache.js`, so a CDN hiccup does not fail a run and repeat runs stay offline. The cache lives in `tests/.lib-cache` (gitignored; CI restores it with `actions/cache`), and the browser still validates every cached response against the SRI hash pinned in `js/core.js`. The same fixture disables service worker registration with an init script, because `sw.js` caches those same external hosts and a request a service worker handles is invisible to `page.route`. Do not replace this with Playwright's `serviceWorkers: 'block'` — that option injects an init script that reads `navigator.serviceWorker`, which is a `SecurityError` inside the empty-sandbox preview iframe the markdown tool builds, and the resulting `pageerror` fails the console guard. Because PR runs no longer touch the real CDN, `.github/workflows/nightly.yml` re-runs the Chromium suite once a day with `WTOOLS_LIVE_CDN=1` to catch a dead pin or a withdrawn package. A new test entry point must spread `cdnCache` into its `test.extend({ ... })`.
 
 For a quick JavaScript syntax/module check on macOS, use:
 

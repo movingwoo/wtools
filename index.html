@@ -20,6 +20,7 @@
 <script type="module" src="js/main.js"></script>
 </head>
 <body>
+<a class="skip-link" href="#content">본문 바로가기</a>
 <div id="external-resource-warning" class="external-warning hidden" role="alert">
   외부 라이브러리를 불러오지 못했습니다. 홈과 기본 도구는 사용할 수 있지만 일부 기능에는 네트워크 연결이 필요합니다.
 </div>
@@ -39,7 +40,7 @@
     <div id="detect-result" class="detect-result hidden" aria-live="polite"></div>
     <nav id="nav"></nav>
   </aside>
-  <main id="content"></main>
+  <main id="content" tabindex="-1"></main>
 </div>
 <button id="menu-btn" type="button" aria-label="도구 메뉴 열기" aria-controls="sidebar" aria-expanded="false">☰</button>
 </body>

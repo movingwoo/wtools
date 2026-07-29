@@ -26,6 +26,65 @@ test('홈 화면이 렌더링된다', async ({ page, pageErrors }) => {
   expect(await page.locator('#nav a[data-id]').count()).toBeGreaterThan(30);
 });
 
+test('모바일의 닫힌 사이드바를 건너뛰고 본문으로 이동한다', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/#/tool/base64');
+
+  const sidebar = page.locator('#sidebar');
+  const skipLink = page.getByRole('link', { name: '본문 바로가기' });
+  const firstToolLink = page.locator('#nav a[data-id]').first();
+
+  await expect(sidebar).toHaveAttribute('inert', '');
+  await expect(sidebar).toHaveAttribute('aria-hidden', 'true');
+  await firstToolLink.evaluate((link) => link.focus());
+  await expect(firstToolLink).not.toBeFocused();
+
+  await page.keyboard.press('Tab');
+  await expect(skipLink).toBeFocused();
+  await expect(skipLink).toBeVisible();
+  await page.keyboard.press('Enter');
+  await expect(page.locator('#content')).toBeFocused();
+  await expect(page).toHaveURL(/#\/tool\/base64$/);
+
+  await page.locator('#menu-btn').click();
+  await expect(sidebar).not.toHaveAttribute('inert', '');
+  await expect(sidebar).not.toHaveAttribute('aria-hidden', 'true');
+  await expect(firstToolLink).toBeVisible();
+
+  await page.setViewportSize({ width: 1024, height: 768 });
+  await expect(sidebar).not.toHaveAttribute('inert', '');
+  await expect(sidebar).toBeVisible();
+});
+
+test('저장소 쓰기가 차단되어도 즐겨찾기와 메뉴 접기가 동작한다', async ({ page }) => {
+  await page.addInitScript(() => {
+    Storage.prototype.setItem = () => {
+      throw new DOMException('저장소 쓰기 차단', 'QuotaExceededError');
+    };
+  });
+  await page.goto('/');
+
+  const star = page.locator('.card .star-btn').first();
+  await star.click();
+  await expect(star).toHaveClass(/active/);
+
+  const category = page.locator('#nav .cat:not(.favorites)').first();
+  await category.locator('.cat-title').click();
+  await expect(category).toHaveClass(/collapsed/);
+});
+
+test('좁은 화면에서 공통 레이아웃이 가로로 넘치지 않는다', async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 720 });
+  await page.goto('/');
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(320);
+  await expect(page.locator('.card-grid').first()).toHaveCSS('grid-template-columns', '296px');
+
+  await page.goto('/#/tool/uuid-generate');
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(320);
+  const alphabet = page.getByLabel('NanoID 알파벳');
+  await expect(alphabet).toHaveCSS('width', '296px');
+});
+
 test('시스템·라이트·다크 테마를 전환하고 선택을 유지한다', async ({ page }) => {
   await page.emulateMedia({ colorScheme: 'dark' });
   await page.goto('/');

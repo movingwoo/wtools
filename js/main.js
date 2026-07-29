@@ -21,10 +21,12 @@ const content = document.getElementById('content');
 const search = document.getElementById('search');
 const sidebar = document.getElementById('sidebar');
 const menuBtn = document.getElementById('menu-btn');
+const skipLink = document.querySelector('.skip-link');
 const detectResult = document.getElementById('detect-result');
 const externalWarning = document.getElementById('external-resource-warning');
 const updateNotice = document.getElementById('update-notice');
 const updateApply = document.getElementById('update-apply');
+const mobileSidebarMedia = matchMedia('(max-width: 800px)');
 const MAX_DETECT_LENGTH = 64 * 1024;
 let pastedDetectionPending = false;
 let cleanupCurrentTool = null;
@@ -128,8 +130,14 @@ function loadStoredList(key) {
   }
 }
 
+function saveStoredList(key, values) {
+  try {
+    localStorage.setItem(key, JSON.stringify([...values]));
+  } catch { /* 저장소를 사용할 수 없어도 현재 세션의 동작은 유지한다. */ }
+}
+
 const favorites = new Set(loadStoredList('wtools-favorites'));
-const saveFavorites = () => localStorage.setItem('wtools-favorites', JSON.stringify([...favorites]));
+const saveFavorites = () => saveStoredList('wtools-favorites', favorites);
 
 function favoriteList() {
   return [...favorites].map((id) => tools.find((t) => t.id === id)).filter(Boolean);
@@ -176,7 +184,7 @@ function toggleFavorite(id) {
 
 /* ---------- 사이드바 ---------- */
 const collapsed = new Set(loadStoredList('wtools-collapsed'));
-const saveCollapsed = () => localStorage.setItem('wtools-collapsed', JSON.stringify([...collapsed]));
+const saveCollapsed = () => saveStoredList('wtools-collapsed', collapsed);
 
 function navItem(t) {
   return h('div', { class: 'nav-item' },
@@ -275,7 +283,7 @@ search.addEventListener('keydown', (e) => {
 document.addEventListener('keydown', (e) => {
   if (e.key === '/' && document.activeElement.tagName !== 'INPUT' && document.activeElement.tagName !== 'TEXTAREA') {
     e.preventDefault();
-    if (matchMedia('(max-width: 800px)').matches) setSidebarOpen(true);
+    if (mobileSidebarMedia.matches) setSidebarOpen(true);
     search.focus();
     search.select();
   } else if (e.key === 'Escape') {
@@ -297,15 +305,30 @@ document.addEventListener('keydown', (e) => {
 });
 
 function setSidebarOpen(open) {
-  sidebar.classList.toggle('open', open);
-  menuBtn.setAttribute('aria-expanded', String(open));
-  menuBtn.setAttribute('aria-label', open ? '도구 메뉴 닫기' : '도구 메뉴 열기');
+  const nextOpen = mobileSidebarMedia.matches && open;
+  const hidden = mobileSidebarMedia.matches && !nextOpen;
+  if (hidden && sidebar.contains(document.activeElement)) menuBtn.focus();
+  sidebar.classList.toggle('open', nextOpen);
+  sidebar.toggleAttribute('inert', hidden);
+  if (hidden) sidebar.setAttribute('aria-hidden', 'true');
+  else sidebar.removeAttribute('aria-hidden');
+  menuBtn.setAttribute('aria-expanded', String(nextOpen));
+  menuBtn.setAttribute('aria-label', nextOpen ? '도구 메뉴 닫기' : '도구 메뉴 열기');
 }
 menuBtn.addEventListener('click', () => setSidebarOpen(!sidebar.classList.contains('open')));
 nav.addEventListener('click', (e) => { if (e.target.tagName === 'A') setSidebarOpen(false); });
 document.addEventListener('pointerdown', (e) => {
   if (sidebar.classList.contains('open') && !sidebar.contains(e.target) && !menuBtn.contains(e.target))
     setSidebarOpen(false);
+});
+mobileSidebarMedia.addEventListener('change', () => setSidebarOpen(false));
+setSidebarOpen(false);
+
+skipLink.addEventListener('click', (e) => {
+  // 해시 라우팅을 유지하면서 본문으로 포커스를 이동한다.
+  e.preventDefault();
+  content.focus();
+  content.scrollIntoView({ block: 'start' });
 });
 
 /* ---------- 라우팅 ---------- */

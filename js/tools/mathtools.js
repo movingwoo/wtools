@@ -211,6 +211,138 @@ tool({
   },
 });
 
+/* ---------- 범용 단위 변환기 ---------- */
+const UNIT_CATEGORIES = {
+  length: {
+    label: '길이', from: 'm', to: 'cm',
+    units: [
+      { id: 'mm', label: '밀리미터', symbol: 'mm', factor: 0.001 },
+      { id: 'cm', label: '센티미터', symbol: 'cm', factor: 0.01 },
+      { id: 'm', label: '미터', symbol: 'm', factor: 1 },
+      { id: 'km', label: '킬로미터', symbol: 'km', factor: 1000 },
+      { id: 'in', label: '인치', symbol: 'in', factor: 0.0254 },
+      { id: 'ft', label: '피트', symbol: 'ft', factor: 0.3048 },
+      { id: 'yd', label: '야드', symbol: 'yd', factor: 0.9144 },
+      { id: 'mi', label: '마일', symbol: 'mi', factor: 1609.344 },
+    ],
+  },
+  area: {
+    label: '넓이', from: 'pyeong', to: 'm2',
+    units: [
+      { id: 'mm2', label: '제곱밀리미터', symbol: 'mm²', factor: 0.000001 },
+      { id: 'cm2', label: '제곱센티미터', symbol: 'cm²', factor: 0.0001 },
+      { id: 'm2', label: '제곱미터', symbol: 'm²', factor: 1 },
+      { id: 'km2', label: '제곱킬로미터', symbol: 'km²', factor: 1000000 },
+      { id: 'pyeong', label: '평', symbol: '평', factor: 400 / 121 },
+      { id: 'are', label: '아르', symbol: 'a', factor: 100 },
+      { id: 'ha', label: '헥타르', symbol: 'ha', factor: 10000 },
+      { id: 'acre', label: '에이커', symbol: 'ac', factor: 4046.8564224 },
+      { id: 'ft2', label: '제곱피트', symbol: 'ft²', factor: 0.09290304 },
+    ],
+  },
+  weight: {
+    label: '무게', from: 'kg', to: 'lb',
+    units: [
+      { id: 'mg', label: '밀리그램', symbol: 'mg', factor: 0.000001 },
+      { id: 'g', label: '그램', symbol: 'g', factor: 0.001 },
+      { id: 'kg', label: '킬로그램', symbol: 'kg', factor: 1 },
+      { id: 't', label: '톤', symbol: 't', factor: 1000 },
+      { id: 'oz', label: '온스', symbol: 'oz', factor: 0.028349523125 },
+      { id: 'lb', label: '파운드', symbol: 'lb', factor: 0.45359237 },
+    ],
+  },
+  temperature: {
+    label: '온도', from: 'c', to: 'f',
+    units: [
+      { id: 'c', label: '섭씨', symbol: '°C', toBase: (v) => v, fromBase: (v) => v },
+      { id: 'f', label: '화씨', symbol: '°F', toBase: (v) => (v - 32) * 5 / 9, fromBase: (v) => v * 9 / 5 + 32 },
+      { id: 'k', label: '켈빈', symbol: 'K', toBase: (v) => v - 273.15, fromBase: (v) => v + 273.15 },
+    ],
+  },
+  volume: {
+    label: '부피', from: 'l', to: 'ml',
+    units: [
+      { id: 'ml', label: '밀리리터', symbol: 'mL', factor: 0.001 },
+      { id: 'l', label: '리터', symbol: 'L', factor: 1 },
+      { id: 'm3', label: '세제곱미터', symbol: 'm³', factor: 1000 },
+      { id: 'tsp', label: '티스푼 (미국)', symbol: 'tsp', factor: 0.00492892159375 },
+      { id: 'tbsp', label: '테이블스푼 (미국)', symbol: 'tbsp', factor: 0.01478676478125 },
+      { id: 'cup', label: '컵 (미국)', symbol: 'cup', factor: 0.2365882365 },
+      { id: 'floz', label: '액량 온스 (미국)', symbol: 'fl oz', factor: 0.0295735295625 },
+      { id: 'gal-us', label: '갤런 (미국)', symbol: 'US gal', factor: 3.785411784 },
+      { id: 'gal-uk', label: '갤런 (영국)', symbol: 'imp gal', factor: 4.54609 },
+    ],
+  },
+  speed: {
+    label: '속도', from: 'kmh', to: 'ms',
+    units: [
+      { id: 'ms', label: '미터/초', symbol: 'm/s', factor: 1 },
+      { id: 'kmh', label: '킬로미터/시', symbol: 'km/h', factor: 1 / 3.6 },
+      { id: 'mph', label: '마일/시', symbol: 'mph', factor: 0.44704 },
+      { id: 'knot', label: '노트', symbol: 'kn', factor: 1852 / 3600 },
+      { id: 'fts', label: '피트/초', symbol: 'ft/s', factor: 0.3048 },
+    ],
+  },
+};
+
+function formatConvertedNumber(value) {
+  if (Object.is(value, -0) || Math.abs(value) < 1e-15) value = 0;
+  const abs = Math.abs(value);
+  if (abs !== 0 && (abs >= 1e15 || abs < 1e-9))
+    return value.toExponential(10).replace(/\.?0+e/, 'e').replace('e+', 'e');
+  return Number(value.toPrecision(12)).toLocaleString('en-US', { maximumFractionDigits: 15 });
+}
+
+tool({
+  id: 'unit-converter', cat: CAT, name: '범용 단위 변환기',
+  desc: '길이, 넓이, 무게, 온도, 부피, 속도의 단위를 변환하고 전체 환산표를 표시합니다.',
+  keywords: '단위 변환 길이 넓이 면적 무게 질량 온도 섭씨 화씨 켈빈 부피 속도 unit converter length area weight temperature volume speed',
+  render(root) {
+    const initial = UNIT_CATEGORIES['length'];
+    const unitValues = (category) => category.units.map((unit) => [unit.id, `${unit.label} (${unit.symbol})`]);
+    const io = makeIO(root, {
+      inputs: [{ id: 'input', label: '변환할 값', rows: 1, value: '1' }],
+      options: [
+        { id: 'category', label: '분류', type: 'select', values: Object.entries(UNIT_CATEGORIES).map(([id, category]) => [id, category.label]) },
+        { id: 'from', label: '변환 전 단위', type: 'select', values: unitValues(initial), value: initial.from },
+        { id: 'to', label: '변환 후 단위', type: 'select', values: unitValues(initial), value: initial.to },
+      ],
+      outputHTML: true, runOnLoad: true,
+      note: '선택한 변환 결과와 입력값을 같은 분류의 모든 단위로 환산한 표를 함께 표시합니다.',
+      process(text, o) {
+        const raw = text.trim().replace(/,/g, '');
+        if (!raw) throw new Error('변환할 값을 입력하세요.');
+        const value = Number(raw);
+        if (!Number.isFinite(value)) throw new Error('올바른 숫자를 입력하세요.');
+        const category = UNIT_CATEGORIES[o.category];
+        const from = category?.units.find((unit) => unit.id === o.from);
+        const to = category?.units.find((unit) => unit.id === o.to);
+        if (!category || !from || !to) throw new Error('변환 단위를 다시 선택하세요.');
+        const base = from.toBase ? from.toBase(value) : value * from.factor;
+        const convert = (unit) => unit.fromBase ? unit.fromBase(base) : base / unit.factor;
+        return kvTable([
+          [`변환 결과 (${from.symbol} → ${to.symbol})`, `${formatConvertedNumber(convert(to))} ${to.symbol}`],
+          ...category.units.map((unit) => [
+            `${unit.label} (${unit.symbol})`,
+            `${formatConvertedNumber(convert(unit))} ${unit.symbol}`,
+          ]),
+        ]);
+      },
+    });
+
+    const syncUnits = () => {
+      const category = UNIT_CATEGORIES[io.optEls.category.value];
+      const replaceOptions = (select, selected) => select.replaceChildren(
+        ...unitValues(category).map(([value, label]) => h('option', { value, selected: value === selected }, label)),
+      );
+      replaceOptions(io.optEls.from, category.from);
+      replaceOptions(io.optEls.to, category.to);
+    };
+    // makeIO의 자동 실행 리스너보다 먼저 선택지를 바꿔 중간 오류 출력을 방지한다.
+    io.optEls.category.addEventListener('change', syncUnits, true);
+  },
+});
+
 tool({
   id: 'random-number', cat: CAT, name: '랜덤 숫자 생성기',
   desc: '지정 범위에서 랜덤한 정수 또는 실수를 생성합니다.',

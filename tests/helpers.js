@@ -2,11 +2,13 @@
 // makeIO가 만드는 공통 UI(입력 textarea, 옵션, 액션 버튼, 출력)를 조작하고,
 // 테이블로 선언한 케이스(toolCase)를 실행한다.
 import { test as base, expect } from '@playwright/test';
+import { cdnCache } from './cdn-cache.js';
 
 // 모든 테스트에서 콘솔 에러와 처리되지 않은 예외를 자동 수집하고 0건임을 확인한다.
 // 오류 응답 처리를 검증하는 테스트처럼 브라우저가 직접 남기는 로그가 있으면
 // test.use({ allowConsoleErrors: [문자열|정규식, ...] })로 예외를 지정한다.
 export const test = base.extend({
+  ...cdnCache,
   allowConsoleErrors: [[], { option: true }],
   _errorGuard: [async ({ page, allowConsoleErrors }, use) => {
     const errors = [];

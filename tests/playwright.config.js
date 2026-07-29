@@ -10,6 +10,10 @@ export default defineConfig({
   use: {
     baseURL: 'http://127.0.0.1:8917',
     browserName: 'chromium',
+    // sw.js는 cdn.jsdelivr.net 등을 자체 캐시로 가로챈다. 서비스워커가 처리한 요청은
+    // page.route로 잡히지 않아(Playwright 문서 권고) CDN 캐시 픽스처가 무력화되고,
+    // 워커가 제어권을 잡는 시점에 따라 결과도 달라진다. 테스트에서는 등록을 막는다.
+    serviceWorkers: 'block',
   },
   webServer: {
     // 저장소 루트를 그대로 서빙한다. ES 모듈은 file:// 로 동작하지 않기 때문.

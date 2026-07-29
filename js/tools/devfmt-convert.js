@@ -289,7 +289,7 @@ tool({
       inputs: [{ id: 'input', label: 'SQL INSERT, JSON 또는 CSV', rows: 12, value: "INSERT INTO users (id, name, active) VALUES\n  (1, '홍길동', TRUE),\n  (2, '김서연', FALSE);" }],
       options: [
         { id: 'table', label: '출력 테이블명', type: 'text', value: 'users', size: 140 },
-        { id: 'dialect', label: 'SQL 방언', type: 'select', values: [['postgres', 'PostgreSQL'], ['mysql', 'MySQL'], ['sqlite', 'SQLite']] },
+        { id: 'dialect', label: '대상 DB', type: 'select', values: [['postgres', 'PostgreSQL'], ['mysql', 'MySQL'], ['sqlite', 'SQLite']] },
       ],
       actions: [
         { id: 'sqlJson', label: 'SQL → JSON' }, { id: 'sqlCsv', label: 'SQL → CSV' },

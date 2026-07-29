@@ -106,6 +106,29 @@ test('저장소 쓰기가 차단되어도 즐겨찾기와 메뉴 접기가 동�
   await expect(category).toHaveClass(/collapsed/);
 });
 
+test('사이드바 카테고리를 키보드로 접고 펼칠 수 있다', async ({ page }) => {
+  await page.goto('/');
+
+  const category = page.locator('#nav .cat:not(.favorites)').first();
+  const title = category.locator('button.cat-title');
+  const itemsId = await title.getAttribute('aria-controls');
+
+  expect(itemsId).toBeTruthy();
+  await expect(page.locator(`#${itemsId}`)).toBeVisible();
+  await expect(title).toHaveAttribute('aria-expanded', 'true');
+
+  await title.focus();
+  await page.keyboard.press('Enter');
+  await expect(category).toHaveClass(/collapsed/);
+  await expect(title).toHaveAttribute('aria-expanded', 'false');
+  await expect(page.locator(`#${itemsId}`)).toBeHidden();
+
+  await page.keyboard.press('Space');
+  await expect(category).not.toHaveClass(/collapsed/);
+  await expect(title).toHaveAttribute('aria-expanded', 'true');
+  await expect(page.locator(`#${itemsId}`)).toBeVisible();
+});
+
 test('좁은 화면에서 공통 레이아웃이 가로로 넘치지 않는다', async ({ page }) => {
   await page.setViewportSize({ width: 320, height: 720 });
   await page.goto('/');
@@ -212,6 +235,6 @@ test('Base64 도구가 입력을 변환한다', async ({ page }) => {
 
   // 액션 버튼 클릭으로 디코딩.
   await input.fill('SGVsbG8=');
-  await page.getByRole('button', { name: '디코딩' }).click();
+  await page.getByRole('button', { name: '디코딩', exact: true }).click();
   await expect(output).toHaveValue('Hello');
 });

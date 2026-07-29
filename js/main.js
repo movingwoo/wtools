@@ -209,6 +209,7 @@ function navItem(t) {
 function buildNav() {
   nav.innerHTML = '';
   navLinkId = 0;
+  let categoryId = 0;
   const favList = favoriteList();
   if (favList.length) {
     nav.append(h('div', { class: 'cat favorites' },
@@ -217,15 +218,24 @@ function buildNav() {
   }
   for (const [cat, list] of byCat()) {
     if (!list.length) continue;
+    const itemsId = `nav-category-${++categoryId}`;
+    const isCollapsed = collapsed.has(cat);
+    const items = h('div', { class: 'cat-items', id: itemsId }, list.map((t) => navItem(t)));
     const sec = h('div', { class: 'cat' + (collapsed.has(cat) ? ' collapsed' : ''), 'data-cat': cat },
-      h('div', {
-        class: 'cat-title',
+      h('button', {
+        class: 'cat-title', type: 'button',
+        'aria-label': `${cat} 카테고리`,
+        'aria-expanded': String(!isCollapsed), 'aria-controls': itemsId,
         onclick: () => {
           collapsed[sec.classList.toggle('collapsed') ? 'add' : 'delete'](cat);
+          sec.querySelector('.cat-title').setAttribute(
+            'aria-expanded',
+            String(nav.classList.contains('searching') || !sec.classList.contains('collapsed')),
+          );
           saveCollapsed();
         },
       }, cat),
-      list.map((t) => navItem(t)));
+      items);
     nav.append(sec);
   }
 }
@@ -265,6 +275,8 @@ function applyFilter() {
       if (hit) visible++;
     }
     sec.classList.toggle('hidden', !visible);
+    const title = sec.querySelector('button.cat-title');
+    if (title) title.setAttribute('aria-expanded', String(!!terms.length || !sec.classList.contains('collapsed')));
   }
   search.setAttribute('aria-expanded', String(!!terms.length && visibleSearchResults().length > 0));
   setCurrentSearchResult(null);
@@ -408,6 +420,7 @@ function syncNavActive() {
     const sec = a.closest('.cat');
     if (sec?.classList.contains('collapsed')) {
       sec.classList.remove('collapsed');
+      sec.querySelector('button.cat-title')?.setAttribute('aria-expanded', 'true');
       collapsed.delete(sec.dataset.cat);
       saveCollapsed();
     }

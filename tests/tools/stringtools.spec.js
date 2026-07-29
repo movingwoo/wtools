@@ -1,4 +1,4 @@
-// 문자열 / 텍스트 도구 정밀 테스트.
+// stringtools.js — 문자열 / 텍스트 도구 정밀 테스트.
 // 시간/난수 의존 도구(lorem 랜덤 부분, dummy-data)는 정확값 대신 형식을 검증한다.
 import { test, expect, toolCases, openTool, ioSection, setOption, clickAction } from '../helpers.js';
 

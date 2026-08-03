@@ -26,6 +26,22 @@ test('홈 화면이 렌더링된다', async ({ page, pageErrors }) => {
   expect(await page.locator('#nav a[data-id]').count()).toBeGreaterThan(30);
 });
 
+test('사이드바에서 GitHub 저장소 링크를 제공한다', async ({ page }) => {
+  await page.goto('/');
+
+  const repositoryLink = page.getByRole('link', { name: 'GitHub 저장소 (새 창)' });
+  await expect(repositoryLink).toBeVisible();
+  await expect(repositoryLink).toHaveAttribute('href', 'https://github.com/movingwoo/wtools');
+  await expect(repositoryLink).toHaveAttribute('target', '_blank');
+  await expect(repositoryLink).toHaveAttribute('rel', 'noopener');
+
+  await page.locator('.brand').focus();
+  await page.keyboard.press('Tab');
+  await expect(repositoryLink).toBeFocused();
+  await page.keyboard.press('Tab');
+  await expect(page.locator('#theme-toggle')).toBeFocused();
+});
+
 test('검색 및 공유 메타데이터와 크롤러 문서를 제공한다', async ({ page, request }) => {
   await page.goto('/');
   await expect(page.locator('meta[name="description"]')).toHaveAttribute(
@@ -134,6 +150,15 @@ test('좁은 화면에서 공통 레이아웃이 가로로 넘치지 않는다',
   await page.goto('/');
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(320);
   await expect(page.locator('.card-grid').first()).toHaveCSS('grid-template-columns', '296px');
+
+  await page.locator('#menu-btn').click();
+  const brandRow = page.locator('.brand-row');
+  expect(await brandRow.evaluate((row) => row.scrollWidth)).toBeLessThanOrEqual(
+    await brandRow.evaluate((row) => row.clientWidth),
+  );
+  await expect(page.getByRole('link', { name: 'GitHub 저장소 (새 창)' })).toBeVisible();
+  await expect(page.locator('#theme-toggle')).toBeVisible();
+  await page.locator('#menu-btn').click();
 
   await page.goto('/#/tool/uuid-generate');
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(320);

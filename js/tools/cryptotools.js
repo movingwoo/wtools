@@ -74,7 +74,7 @@ tool({
   render(root) {
     makeIO(root, {
       inputs: [
-        { id: 'text', label: '입력', rows: 5, value: 'Hello, World! 한글은 그대로 둡니다.' },
+        { id: 'text', label: '입력', rows: 5, value: 'Hello, World!' },
         { id: 'key', label: 'Vigenère 키 (비제네르 선택 시)', rows: 1, value: 'wtools' },
       ],
       options: [

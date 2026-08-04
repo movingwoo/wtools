@@ -37,18 +37,22 @@ HTML과 Vanilla JavaScript ES 모듈로 구성되어 있습니다.
 
 | 브라우저 | 최소 버전 |
 |---|---|
-| Chrome / Edge | 93 (2021-08) |
-| Firefox | 92 (2021-09) |
-| Safari (macOS / iOS) | 15.4 (2022-03) |
+| Chrome / Edge | 110 (2023-02) |
+| Firefox | 115 (2023-07) |
+| Safari (macOS / iOS) | 16.4 (2023-03) |
 
-호환성 기준선은 `Object.hasOwn`입니다.
-이보다 새로운 문법이나 API는 사용하지 않습니다.
-예를 들어 정규식 후방 탐색처럼 오래된 브라우저가 파싱하지 못하는 문법은
-정적으로 가져온 모듈 하나에서만 사용해도 사이트 전체의 실행을 중단시킬 수 있습니다.
+이 선에서 정규식 후방 탐색, `structuredClone`, `Array.prototype.findLast`,
+`toSorted` / `toReversed` / `with`, import maps를 사용할 수 있습니다.
+`Intl.Segmenter`는 Firefox 125부터 지원되므로 아직 기준선 밖이며,
+사용하는 곳에서는 `typeof` 가드로 감싸 둡니다.
 
-예외로 WebAssembly를 쓰는 두 도구(비밀번호 해시의 Argon2, BLAKE/xxHash 해시)만
-Chrome 97, Firefox 102, Safari 16.4 이상이 필요합니다. 낮은 버전에서는 이 두 도구가
-오류를 표시할 뿐 나머지 도구와 사이트 동작에는 영향이 없습니다.
+기준선을 넘는 문법은 사용하지 않습니다.
+특히 정규식 후방 탐색처럼 오래된 엔진이 파싱하지 못하는 문법은
+정적으로 가져온 모듈 하나에서만 사용해도 사이트 전체의 실행을 중단시킵니다.
+`js/main.js`가 모든 도구 모듈을 정적으로 가져오기 때문입니다.
+
+WebAssembly를 쓰는 두 도구(비밀번호 해시의 Argon2, BLAKE/xxHash 해시)는
+Chrome 97, Firefox 102, Safari 16.4 이상이 필요하며 위 기준선이 이를 포함합니다.
 
 ## 로컬에서 실행
 

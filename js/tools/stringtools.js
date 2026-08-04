@@ -5,8 +5,8 @@ const CAT = '문자열 / 텍스트';
 
 function splitWords(text) {
   return text
-    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
-    .replace(/([A-Z]+)([A-Z][a-z])/g, '$1 $2')
+    .replace(/(?<=[a-z0-9])(?=[A-Z])/g, ' ')
+    .replace(/(?<=[A-Z])(?=[A-Z][a-z])/g, ' ')
     .split(/[\s_\-./]+/)
     .filter(Boolean);
 }

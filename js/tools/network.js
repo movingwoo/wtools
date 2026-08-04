@@ -382,8 +382,8 @@ const IPV6_CANDIDATE = /(?:[0-9a-fA-F]{0,4}:){2,7}(?:[0-9a-fA-F]{1,4}|(?:\d{1,3}
 const IPV6_BOUNDARY = /[0-9a-fA-F:.]/;
 const IPV4_TAIL = /^(?:(?:25[0-5]|2[0-4]\d|1?\d?\d)\.){3}(?:25[0-5]|2[0-4]\d|1?\d?\d)$/;
 
-// 앞쪽 경계는 후방 탐색 대신 직접 확인한다. 후방 탐색은 Safari 16.4 미만에서 파싱 자체가
-// 실패하고, 이 파일은 main.js가 정적 import하므로 사이트 전체가 뜨지 않는다.
+// 앞쪽 경계를 직접 확인한다. 기준선이 Safari 16.4로 올라 후방 탐색
+// `(?<![0-9a-fA-F:.])`으로 대체할 수 있으며, 그때는 이 루프가 통째로 사라진다.
 function extractIpv6(text) {
   const out = [];
   IPV6_CANDIDATE.lastIndex = 0;

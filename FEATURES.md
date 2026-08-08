@@ -90,7 +90,7 @@
 ## 6. 암호화 / 복호화
 
 - 고전 암호 (ROT13, ROT47, 카이사르, 아트바시, 비제네르, 레일 펜스)
-- AES 암호화/복호화
+- AES 암호화/복호화 (AES-GCM 기본, PBKDF2-HMAC-SHA256, 랜덤 salt·IV·128비트 인증 태그, 128/192/256비트 키, 자체 포함 Base64/Hex, OpenSSL·CBC/CTR/CFB/OFB/ECB 레거시 호환)
 - DES / Triple DES 암호화/복호화
 - Blowfish 암호화/복호화
 - XOR / XOR 브루트포스

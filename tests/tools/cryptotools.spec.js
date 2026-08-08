@@ -1,32 +1,56 @@
 // 암호화 / 복호화 도구 정밀 테스트.
-// 결정적 벡터(raw 키 + 0 IV AES, RFC 4226 HOTP, PBKDF2 고정 솔트)와
+// 결정적 벡터(NIST AES-GCM, AES-CBC, RFC 4226 HOTP, PBKDF2 고정 솔트)와
 // 왕복(암호화→복호화) 검증을 함께 사용한다. bcrypt·jsrsasign·openpgp는
 // CDN 지연 로드 경로까지 함께 검증된다.
 import { test, expect, toolCases, openTool, ioSection, setOption, fillInputs, clickAction, kvValue } from '../helpers.js';
 
+// NIST SP 800-38D AES-128-GCM: 빈 평문, 0 키, 96비트 0 IV → 128비트 인증 태그
+const AES_GCM_ZERO_KEY = '00000000000000000000000000000000';
+const AES_GCM_ZERO_IV = '000000000000000000000000';
+const AES_GCM_EMPTY_TAG = '58e2fccefa7e3061367f1d57a4e7455a';
 // AES-128-CBC, 키 000102..0f, 0 IV, PKCS7 — node crypto로 계산한 기대값
 const AES_KEY = '000102030405060708090a0b0c0d0e0f';
+const AES_CBC_ZERO_IV = '00000000000000000000000000000000';
 const AES_CIPHER_HEX = 'dffe8abce30cbb4057f416ff0ec7be10';
 // RFC 4226 부록 D 시크릿 "12345678901234567890"의 Base32
 const HOTP_SECRET = 'GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ';
 
 const cases = [
-  // AES — raw 키 + 0 IV는 결정적이므로 OpenSSL(node)과 교차 검증
+  // AES-GCM — NIST SP 800-38D 공개 벡터. Web Crypto 결과는 ciphertext || tag다.
+  {
+    name: 'aes: AES-128-GCM NIST 빈 평문 벡터', tool: 'aes',
+    options: { '키 크기': '128', '모드': 'GCM', '키 방식': 'raw', '결과 구성': 'raw', '암호문 형식': 'hex' },
+    inputs: ['', AES_GCM_ZERO_KEY, AES_GCM_ZERO_IV], action: '암호화', output: AES_GCM_EMPTY_TAG,
+  },
+
+  // AES-CBC — 명시적인 0 IV를 사용한 상호 운용용 레거시 벡터
   {
     name: 'aes: raw 키 암호화 (node 교차 검증)', tool: 'aes',
-    options: { '키 유도': 'raw', '암호문 형식': 'hex' },
-    inputs: ['Secret message', AES_KEY], action: '암호화', output: AES_CIPHER_HEX,
+    options: { '키 크기': '128', '모드': 'CBC', '키 방식': 'raw', '결과 구성': 'raw', '암호문 형식': 'hex' },
+    inputs: ['Secret message', AES_KEY, AES_CBC_ZERO_IV], action: '암호화', output: AES_CIPHER_HEX,
   },
   {
     name: 'aes: raw 키 복호화', tool: 'aes',
-    options: { '키 유도': 'raw', '암호문 형식': 'hex' },
-    inputs: [AES_CIPHER_HEX, AES_KEY], action: '복호화', output: 'Secret message',
+    options: { '키 크기': '128', '모드': 'CBC', '키 방식': 'raw', '결과 구성': 'raw', '암호문 형식': 'hex' },
+    inputs: [AES_CIPHER_HEX, AES_KEY, AES_CBC_ZERO_IV], action: '복호화', output: 'Secret message',
   },
   {
-    name: 'aes: 잘못된 키 복호화는 에러', tool: 'aes',
-    options: { '키 유도': 'raw', '암호문 형식': 'hex' },
-    inputs: [AES_CIPHER_HEX, 'ffffffffffffffffffffffffffffffff'], action: '복호화',
-    output: /^⚠ /,
+    name: 'aes: 키 길이 검증', tool: 'aes',
+    options: { '키 크기': '256', '키 방식': 'raw' },
+    inputs: ['Secret message', AES_KEY, ''], action: '암호화',
+    error: 'AES-256 키는 32바이트여야 합니다. (현재 16바이트)',
+  },
+  {
+    name: 'aes: GCM nonce 길이 검증', tool: 'aes',
+    options: { '키 크기': '128', '키 방식': 'raw', '결과 구성': 'raw' },
+    inputs: ['Secret message', AES_KEY, AES_CBC_ZERO_IV], action: '암호화',
+    error: 'GCM 모드의 IV/nonce는 12바이트여야 합니다. (현재 16바이트)',
+  },
+  {
+    name: 'aes: GCM 192비트 브라우저 호환 오류', tool: 'aes',
+    options: { '키 크기': '192', '모드': 'GCM', '키 방식': 'raw', '결과 구성': 'raw' },
+    inputs: ['Secret message', '000102030405060708090a0b0c0d0e0f1011121314151617', AES_GCM_ZERO_IV], action: '암호화',
+    error: 'AES-GCM 192비트 키는 지원 브라우저 간 호환성이 없습니다. GCM은 128 또는 256비트를 사용하세요.',
   },
 
   // XOR — node 교차 검증
@@ -142,8 +166,109 @@ const cases = [
 
 toolCases('cryptotools', cases);
 
-// 대칭키 암호화 → 복호화 왕복 (OpenSSL 비밀번호 모드, 솔트가 랜덤이라 왕복으로 검증)
-for (const toolId of ['aes', 'des', 'tripledes', 'blowfish']) {
+// AES-GCM 기본값: PBKDF2 salt, IV, 인증 태그를 자체 포함 결과에 보존한다.
+for (const format of ['base64', 'hex']) {
+  test(`aes: GCM 비밀번호 자체 포함 ${format} 왕복`, async ({ page }) => {
+    await openTool(page, 'aes');
+    const io = ioSection(page);
+    const plain = 'AES-GCM 왕복 테스트 🔐';
+    await setOption(io, '암호문 형식', format);
+    await fillInputs(io, [plain, 'correct horse battery staple', '']);
+    await clickAction(io, '암호화');
+    const out = io.locator('textarea.out');
+    await expect(io).toHaveAttribute('aria-busy', 'false');
+    await expect(out).toHaveValue(format === 'hex' ? /^[0-9a-f]+$/ : /^[A-Za-z0-9+/=]+$/);
+    const cipher = await out.inputValue();
+    const bytes = Buffer.from(cipher, format);
+    const envelope = JSON.parse(bytes.toString('utf8'));
+    expect(envelope).toMatchObject({
+      v: 1, alg: 'AES-GCM', keyBits: 256, kdf: 'PBKDF2-SHA256', iterations: 600000,
+    });
+    expect(Buffer.from(envelope.salt, 'base64')).toHaveLength(16);
+    expect(Buffer.from(envelope.iv, 'base64')).toHaveLength(12);
+    expect(Buffer.from(envelope.ciphertext, 'base64').length).toBeGreaterThanOrEqual(16);
+
+    await fillInputs(io, [cipher]);
+    await clickAction(io, '복호화');
+    await expect(out).toHaveValue(plain);
+  });
+}
+
+for (const [bits, key] of [
+  [128, '000102030405060708090a0b0c0d0e0f'],
+  [256, '000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f'],
+]) {
+  test(`aes: GCM 직접 AES-${bits} 키 왕복`, async ({ page }) => {
+    await openTool(page, 'aes');
+    const io = ioSection(page);
+    const out = io.locator('textarea.out');
+    await setOption(io, '키 크기', bits);
+    await setOption(io, '키 방식', 'raw');
+    await fillInputs(io, [`AES-${bits}`, key, '']);
+    await clickAction(io, '암호화');
+    await expect(io).toHaveAttribute('aria-busy', 'false');
+    await expect(out).toHaveValue(/^[A-Za-z0-9+/=]+$/);
+    const cipher = await out.inputValue();
+    await fillInputs(io, [cipher]);
+    await clickAction(io, '복호화');
+    await expect(out).toHaveValue(`AES-${bits}`);
+  });
+}
+
+test('aes: CBC 직접 AES-192 키 자체 포함 왕복', async ({ page }) => {
+  await openTool(page, 'aes');
+  const io = ioSection(page);
+  const out = io.locator('textarea.out');
+  const key = '000102030405060708090a0b0c0d0e0f1011121314151617';
+  await setOption(io, '키 크기', 192);
+  await setOption(io, '모드', 'CBC');
+  await setOption(io, '키 방식', 'raw');
+  await fillInputs(io, ['AES-192 CBC', key, '']);
+  await clickAction(io, '암호화');
+  await expect(out).toHaveValue(/^[A-Za-z0-9+/=]+$/);
+  const cipher = await out.inputValue();
+  await fillInputs(io, [cipher]);
+  await clickAction(io, '복호화');
+  await expect(out).toHaveValue('AES-192 CBC');
+});
+
+test('aes: GCM 변조 암호문 인증 실패', async ({ page }) => {
+  await openTool(page, 'aes');
+  const io = ioSection(page);
+  const out = io.locator('textarea.out');
+  await setOption(io, '키 크기', 128);
+  await setOption(io, '키 방식', 'raw');
+  await setOption(io, '결과 구성', 'raw');
+  await setOption(io, '암호문 형식', 'hex');
+  await fillInputs(io, ['변조 감지', AES_KEY, AES_GCM_ZERO_IV]);
+  await clickAction(io, '암호화');
+  await expect(io).toHaveAttribute('aria-busy', 'false');
+  const cipher = await out.inputValue();
+  const tampered = cipher.slice(0, -1) + (cipher.endsWith('0') ? '1' : '0');
+  await fillInputs(io, [tampered]);
+  await clickAction(io, '복호화');
+  await expect(out).toHaveValue('⚠ AES-GCM 인증 실패: 키가 다르거나 암호문 또는 인증 태그가 변경되었습니다.');
+});
+
+test('aes: OpenSSL 비밀번호 Hex 왕복은 salt를 보존한다', async ({ page }) => {
+  await openTool(page, 'aes');
+  const io = ioSection(page);
+  const out = io.locator('textarea.out');
+  await setOption(io, '키 크기', 128);
+  await setOption(io, '모드', 'CBC');
+  await setOption(io, '키 방식', 'openssl');
+  await setOption(io, '암호문 형식', 'hex');
+  await fillInputs(io, ['OpenSSL Hex 왕복', 'legacy-password', '']);
+  await clickAction(io, '암호화');
+  const cipher = await out.inputValue();
+  expect(cipher).toMatch(/^53616c7465645f5f[0-9a-f]+$/); // "Salted__" + salt + ciphertext
+  await fillInputs(io, [cipher]);
+  await clickAction(io, '복호화');
+  await expect(out).toHaveValue('OpenSSL Hex 왕복');
+});
+
+// DES 계열 레거시 대칭키 왕복 (OpenSSL 비밀번호 모드)
+for (const toolId of ['des', 'tripledes', 'blowfish']) {
   test(`${toolId}: 비밀번호 모드 암호화·복호화 왕복`, async ({ page }) => {
     await openTool(page, toolId);
     const io = ioSection(page);

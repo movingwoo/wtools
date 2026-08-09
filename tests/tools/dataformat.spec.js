@@ -28,6 +28,22 @@ const cases = [
     inputs: 'id,name\n1,김철수\n2,"이,영희"',
     output: '[\n  {\n    "id": "1",\n    "name": "김철수"\n  },\n  {\n    "id": "2",\n    "name": "이,영희"\n  }\n]',
   },
+  {
+    name: 'data-convert: 중복·빈 헤더와 헤더보다 긴 행의 열을 모두 보존', tool: 'data-convert', options: { '입력 포맷': 'csv', '출력 포맷': 'json' },
+    inputs: 'id,,id\n1,가,2,추가',
+    output: '[\n  {\n    "id": "1",\n    "열2": "가",\n    "id_2": "2",\n    "열4": "추가"\n  }\n]',
+  },
+  {
+    name: 'data-convert: 세미콜론 구분자와 헤더 없는 CSV', tool: 'data-convert',
+    options: { '입력 포맷': 'csv', '출력 포맷': 'json', 'CSV 구분자': ';', 'CSV 헤더 포함': false },
+    inputs: '1;김철수\n2;이영희',
+    output: '[\n  {\n    "열1": "1",\n    "열2": "김철수"\n  },\n  {\n    "열1": "2",\n    "열2": "이영희"\n  }\n]',
+  },
+  {
+    name: 'data-convert: JSON → 파이프 구분·헤더 없는 CSV', tool: 'data-convert',
+    options: { '입력 포맷': 'json', '출력 포맷': 'csv', 'CSV 구분자': '|', 'CSV 헤더 포함': false },
+    inputs: '[{"id":1,"name":"김철수"},{"id":2,"name":"이영희"}]', output: '1|김철수\n2|이영희',
+  },
   { name: 'data-convert: JSON → TOML', tool: 'data-convert', options: { '입력 포맷': 'json', '출력 포맷': 'toml' }, inputs: JSON_SRC, output: 'name = "WTools"\nversion = 1\ntags = [ "web", "tools" ]' },
   { name: 'data-convert: TOML → JSON', tool: 'data-convert', options: { '입력 포맷': 'toml', '출력 포맷': 'json' }, inputs: 'name = "WTools"\nversion = 1\ntags = ["web", "tools"]\n', output: JSON_PRETTY },
   {
@@ -60,6 +76,14 @@ const cases = [
   {
     name: 'data-convert: 객체 배열이 아니면 CSV 변환 불가', tool: 'data-convert', options: { '입력 포맷': 'json', '출력 포맷': 'csv' },
     inputs: '{"a":1}', error: 'CSV로 변환하려면 객체 배열 형태의 데이터가 필요합니다.',
+  },
+  {
+    name: 'data-convert: 닫히지 않은 따옴표는 시작 줄과 함께 에러', tool: 'data-convert', options: { '입력 포맷': 'csv', '출력 포맷': 'json' },
+    inputs: 'id,note\r\n1,"첫 줄\r\n둘째 줄', error: 'CSV 구문 오류: 2행에서 시작한 따옴표가 닫히지 않았습니다.',
+  },
+  {
+    name: 'data-convert: 닫는 따옴표 뒤의 문자는 에러', tool: 'data-convert', options: { '입력 포맷': 'csv', '출력 포맷': 'json' },
+    inputs: 'id,note\n1,"값"oops', error: 'CSV 구문 오류: 2행의 닫는 따옴표 뒤에는 구분자나 줄바꿈만 올 수 있습니다.',
   },
   { name: 'data-convert: 잘못된 JSON은 에러', tool: 'data-convert', options: { '입력 포맷': 'json', '출력 포맷': 'yaml' }, inputs: '{bad json', output: /^⚠ .*JSON/ },
 
@@ -227,6 +251,14 @@ test('data-convert: JSON → CSV → JSON 왕복 (값은 문자열로 남음)', 
     { id: '1', name: '김철수', note: '쉼표, 포함' },
     { id: '2', name: '이영희', note: '줄바꿈\n포함' },
   ]);
+});
+
+test('data-convert: CRLF·셀 내부 줄바꿈·따옴표 escape·빈 마지막 셀 보존', async ({ page }) => {
+  await openTool(page, 'data-convert');
+  const io = ioSection(page);
+  const csv = 'id,note,last\r\n1,"첫 줄\r\n둘째 ""줄""",\r\n';
+  const output = await runIO(io, { options: { '입력 포맷': 'csv', '출력 포맷': 'json' }, inputs: csv });
+  expect(JSON.parse(output)).toEqual([{ id: '1', note: '첫 줄\r\n둘째 "줄"', last: '' }]);
 });
 
 test('data-convert: JSON → ENV → JSON 왕복 (값은 문자열로 남음)', async ({ page }) => {

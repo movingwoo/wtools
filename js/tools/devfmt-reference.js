@@ -13,22 +13,26 @@ const DOW_KO = ['일요일', '월요일', '화요일', '수요일', '목요일',
 const MONTH_NAMES = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
 const DOW_NAMES = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
 
+function cronValue(value, idx, part) {
+  if (/^\d+$/.test(value)) return +value;
+  const names = idx === 3 ? MONTH_NAMES : idx === 4 ? DOW_NAMES : [];
+  const found = names.indexOf(value.toUpperCase());
+  if (found >= 0) return idx === 3 ? found + 1 : found;
+  const allowed = idx === 3 ? '1~12 또는 JAN~DEC' : idx === 4 ? '0~7 또는 SUN~SAT' : `${CRON_RANGES[idx][0]}~${CRON_RANGES[idx][1]}`;
+  throw new Error(`${CRON_FIELDS[idx]} 필드의 "${part}"가 올바르지 않습니다. ${allowed} 범위의 값을 사용하세요.`);
+}
+
 // 필드 하나를 검사한다. 숫자는 범위를, 이름(JAN, MON 등)은 해당 필드의 목록을 확인한다.
 function checkField(expr, idx) {
   const [min, max] = CRON_RANGES[idx];
-  const names = idx === 3 ? MONTH_NAMES : idx === 4 ? DOW_NAMES : [];
   const bad = (part, why) => new Error(`${CRON_FIELDS[idx]} 필드의 "${part}"가 올바르지 않습니다. ${why}`);
   for (const part of expr.split(',')) {
-    const m = part.match(/^(\*|[^/-]+(?:-[^/-]+)?)(?:\/(\d+))?$/);
+    if (!part) throw bad(expr, '목록에 빈 항목이 있습니다. 쉼표 앞뒤 값을 확인하세요.');
+    const m = part.match(/^(\*|[A-Za-z0-9]+(?:-[A-Za-z0-9]+)?)(?:\/(\d+))?$/);
     if (!m) throw bad(part, '형식을 확인하세요.');
     if (m[2] !== undefined && +m[2] < 1) throw bad(part, '간격은 1 이상이어야 합니다.');
     if (m[1] === '*') continue;
-    const values = m[1].split('-').map((v) => {
-      if (/^\d+$/.test(v)) return +v;
-      const found = names.indexOf(v.toUpperCase());
-      if (found < 0) throw bad(part, `${min}~${max} 범위의 숫자를 사용하세요.`);
-      return idx === 3 ? found + 1 : found;
-    });
+    const values = m[1].split('-').map((v) => cronValue(v, idx, part));
     if (values.some((v) => v < min || v > max)) throw bad(part, `${min}~${max} 범위여야 합니다.`);
     if (values.length === 2 && values[0] > values[1]) throw bad(part, '범위의 시작이 끝보다 큽니다.');
   }
@@ -37,15 +41,22 @@ function checkField(expr, idx) {
 function descField(expr, idx) {
   const unit = CRON_FIELDS[idx];
   const step = CRON_STEP_UNITS[idx];
-  const name = (v) => idx === 3 ? (MONTH_KO[v] || v) : idx === 4 ? (DOW_KO[v] ?? v) : v;
+  const name = (value, part) => {
+    const v = cronValue(value, idx, part);
+    return idx === 3 ? MONTH_KO[v] : idx === 4 ? DOW_KO[v] : v;
+  };
   if (expr === '*') return null;
   return expr.split(',').map((part) => {
-    let m;
-    if ((m = part.match(/^\*\/(\d+)$/))) return `${m[1]}${step} 간격마다`;
-    if ((m = part.match(/^(\d+)-(\d+)\/(\d+)$/))) return `${name(+m[1])}~${name(+m[2])} 사이 ${m[3]}${step} 간격`;
-    if ((m = part.match(/^(\d+)-(\d+)$/))) return `${name(+m[1])}~${name(+m[2])}`;
-    if ((m = part.match(/^(\d+)\/(\d+)$/))) return `${name(+m[1])}부터 ${m[2]}${step} 간격`;
-    return `${name(isNaN(+part) ? part : +part)}`;
+    const [base, interval] = part.split('/');
+    if (base === '*') return `${interval}${step} 간격마다`;
+    const range = base.split('-');
+    const baseDesc = range.length === 2
+      ? `${name(range[0], part)}~${name(range[1], part)}`
+      : `${name(base, part)}`;
+    if (!interval) return baseDesc;
+    return range.length === 2
+      ? `${baseDesc} 사이 ${interval}${step} 간격`
+      : `${baseDesc}부터 ${interval}${step} 간격`;
   }).join(', ') + ` (${unit})`;
 }
 
@@ -68,8 +79,13 @@ tool({
         parts.forEach(checkField);
         const rows = parts.map((p, i) => [CRON_FIELDS[i], p + (descField(p, i) ? ' → ' + descField(p, i) : ' → 매 ' + CRON_FIELDS[i])]);
         const descs = parts.map((p, i) => descField(p, i)).filter(Boolean);
+        const dayOr = parts[2] !== '*' && parts[4] !== '*';
+        const summary = dayOr
+          ? [descField(parts[0], 0), descField(parts[1], 1), `${descField(parts[2], 2)} 또는 ${descField(parts[4], 4)}`, descField(parts[3], 3)].filter(Boolean)
+          : descs;
         return h('div', null,
-          h('p', { style: { fontWeight: 700 } }, descs.length ? descs.join(' / ') + ' 에 실행' : '매분 실행'),
+          h('p', { style: { fontWeight: 700 } }, summary.length ? summary.join(' / ') + ' 에 실행' : '매분 실행'),
+          dayOr ? h('p', { class: 'note' }, '일과 요일을 모두 제한했습니다. 일반적인 cron은 두 조건을 AND가 아닌 OR로 처리하므로 둘 중 하나만 맞아도 실행합니다.') : null,
           kvTable(rows));
       },
     });

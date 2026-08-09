@@ -73,7 +73,7 @@ python3 -m http.server 8000
 python3 scripts/validate_static.py
 ```
 
-브라우저 테스트는 별도의 패키지로 분리되어 있으며 Node.js 18 이상이 필요합니다.
+브라우저 테스트는 별도의 패키지로 분리되어 있으며 `.node-version`에 고정된 Node.js 22(CI와 동일한 버전)가 필요합니다. Node 26 등 더 높은 메이저에서는 Playwright 러너가 시작 단계에서 아무 출력 없이 멈추므로, 버전이 다르면 오류가 아니라 테스트가 멈춘 것처럼 보입니다. `fnm`이나 `nvm`을 쓰면 디렉터리 이동 시 자동으로 전환됩니다.
 
 ```bash
 cd tests

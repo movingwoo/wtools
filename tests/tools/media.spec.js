@@ -8,6 +8,7 @@ const RED_PNG = makePng(8, 8, (x, y) => (x < 4 && y < 4 ? [255, 0, 0] : [255, 25
 const RED_PNG_B64 = RED_PNG.toString('base64');
 // 가로 4색 띠 — 스캔 순서로 색이 연속이라 median cut 결과가 정확히 4색이 된다
 const BANDS_PNG = makePng(8, 8, (x, y) => [[255, 0, 0], [0, 255, 0], [0, 0, 255], [0, 0, 0]][y >> 1]);
+const CLEAR_PNG = makePng(2, 2, () => [255, 0, 0, 0]);
 const TEXT_PNG = makePng(4, 4, () => [0, 128, 255], { text: '지워질 주석' });
 const EXIF_JPEG = makeJpegWithExif();
 
@@ -180,6 +181,18 @@ const formats = [
   { format: 'image/bmp', name: 'converted.bmp', magic: '424d', label: 'BMP' },
 ];
 
+test('image-convert: 포맷 한계와 재인코딩 방식을 UI에 표시', async ({ page }) => {
+  await openTool(page, 'image-convert');
+  const content = page.locator('#content');
+  const format = content.getByLabel('출력 포맷');
+  await expect(format.locator('option[value="original"]')).toHaveText('원본 포맷 유지 (재인코딩)');
+  await expect(format.locator('option[value="image/gif"]')).toHaveText('GIF (단일 프레임)');
+  await expect(format.locator('option[value="image/svg+xml"]')).toHaveText('SVG (PNG 포함)');
+  await expect(content.locator('.note')).toContainText('애니메이션 입력도 정지 이미지 한 장으로 바뀝니다.');
+  await expect(content.locator('.note')).toContainText('벡터화가 아니라 PNG 이미지를 포함한 SVG 파일입니다.');
+  await expect(content.getByLabel('JPEG/GIF/BMP 배경색')).toHaveValue('#ffffff');
+});
+
 for (const { format, name, magic, label } of formats) {
   test(`image-convert: ${label}로 변환`, async ({ page }) => {
     await openTool(page, 'image-convert');
@@ -206,6 +219,17 @@ test('image-convert: BMP 인코더는 24비트 무압축 헤더를 만든다', a
   expect(file.bytes.readInt32LE(18)).toBe(8); // 폭
   expect(file.bytes.readInt32LE(22)).toBe(8); // 높이
   expect(file.bytes.readUInt16LE(28)).toBe(24); // 비트 수
+});
+
+test('image-convert: 투명 픽셀을 선택한 BMP 배경색으로 합성', async ({ page }) => {
+  await openTool(page, 'image-convert');
+  const content = page.locator('#content');
+  await setOption(content, '출력 포맷', 'image/bmp');
+  await setOption(content, 'JPEG/GIF/BMP 배경색', '#00ff00');
+  await uploadFile(content, '이미지 선택 (여러 장 가능)', { name: 'clear.png', mimeType: 'image/png', buffer: CLEAR_PNG });
+  await expect(content.getByText('변환이 완료되었습니다.')).toBeVisible();
+  const file = await grabDownload(page, () => content.getByRole('button', { name: '다운로드', exact: true }).click());
+  expect(file.bytes.subarray(54, 57)).toEqual(Buffer.from([0, 255, 0])); // BMP의 BGR 순서
 });
 
 test('image-convert: 비율 축소', async ({ page }) => {

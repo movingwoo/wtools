@@ -136,30 +136,64 @@ tool({
 });
 
 /* ---------- CSV ---------- */
+function checkCsvDelimiter(delim) {
+  if (typeof delim !== 'string' || delim.length !== 1 || /["\r\n]/.test(delim))
+    throw new Error('CSV 구분자는 따옴표나 줄바꿈이 아닌 한 글자여야 합니다.');
+}
+
 export function parseCSV(text, delim = ',') {
+  checkCsvDelimiter(delim);
   const rows = [];
-  let row = [], cell = '', inQ = false;
+  let row = [], cell = '', inQ = false, afterQuote = false;
+  let line = 1, quoteLine = 0;
+  const finishRow = () => {
+    row.push(cell);
+    rows.push(row);
+    row = [];
+    cell = '';
+    afterQuote = false;
+  };
   for (let i = 0; i < text.length; i++) {
     const c = text[i];
     if (inQ) {
       if (c === '"') {
         if (text[i + 1] === '"') { cell += '"'; i++; }
-        else inQ = false;
-      } else cell += c;
-    } else if (c === '"') inQ = true;
-    else if (c === delim) { row.push(cell); cell = ''; }
+        else { inQ = false; afterQuote = true; }
+      } else if (c === '\r') {
+        if (text[i + 1] === '\n') { cell += '\r\n'; i++; }
+        else cell += '\r';
+        line++;
+      } else {
+        cell += c;
+        if (c === '\n') line++;
+      }
+    } else if (afterQuote) {
+      if (c === delim) { row.push(cell); cell = ''; afterQuote = false; }
+      else if (c === '\n' || c === '\r') {
+        if (c === '\r' && text[i + 1] === '\n') i++;
+        finishRow();
+        line++;
+      } else throw new Error(`CSV 구문 오류: ${line}행의 닫는 따옴표 뒤에는 구분자나 줄바꿈만 올 수 있습니다.`);
+    } else if (c === '"') {
+      if (cell) throw new Error(`CSV 구문 오류: ${line}행의 따옴표는 셀의 첫 문자에만 사용할 수 있습니다.`);
+      inQ = true;
+      quoteLine = line;
+    } else if (c === delim) { row.push(cell); cell = ''; }
     else if (c === '\n' || c === '\r') {
       if (c === '\r' && text[i + 1] === '\n') i++;
-      row.push(cell); rows.push(row); row = []; cell = '';
+      finishRow();
+      line++;
     } else cell += c;
   }
-  if (cell !== '' || row.length) { row.push(cell); rows.push(row); }
+  if (inQ) throw new Error(`CSV 구문 오류: ${quoteLine}행에서 시작한 따옴표가 닫히지 않았습니다.`);
+  if (cell !== '' || row.length || afterQuote) { row.push(cell); rows.push(row); }
   return rows.filter((r) => !(r.length === 1 && r[0] === ''));
 }
 export function toCSV(rows, delim = ',') {
+  checkCsvDelimiter(delim);
   const esc = (v) => {
     v = v == null ? '' : String(v);
-    return new RegExp(`["\n\r${delim === '\t' ? '\\t' : delim}]`).test(v) ? '"' + v.replace(/"/g, '""') + '"' : v;
+    return /["\n\r]/.test(v) || v.includes(delim) ? '"' + v.replace(/"/g, '""') + '"' : v;
   };
   return rows.map((r) => r.map(esc).join(delim)).join('\n');
 }
@@ -264,8 +298,23 @@ function toEnv(data) {
 }
 
 /* ---------- 표 형태(2차원 배열) ↔ 객체 배열 ---------- */
-function rowsToObjects(rows) {
-  const [head, ...body] = rows;
+function uniqueHeaders(source, width) {
+  const used = new Set();
+  return Array.from({ length: width }, (_, i) => {
+    const raw = source[i] ?? '';
+    const base = raw.trim() ? raw : `열${i + 1}`;
+    let name = base, suffix = 2;
+    while (used.has(name)) name = `${base}_${suffix++}`;
+    used.add(name);
+    return name;
+  });
+}
+function rowsToObjects(rows, hasHeader = true) {
+  if (!rows.length) return [];
+  const width = Math.max(...rows.map((r) => r.length));
+  const source = hasHeader ? rows[0] : [];
+  const body = hasHeader ? rows.slice(1) : rows;
+  const head = uniqueHeaders(source, width);
   return body.map((r) => Object.fromEntries(head.map((k, i) => [k, r[i] ?? ''])));
 }
 function objectsToRows(arr) {
@@ -287,11 +336,14 @@ tool({
   keywords: 'convert json yaml xml csv toml env dotenv environment',
   render(root) {
     const FMT = [['json', 'JSON'], ['yaml', 'YAML'], ['xml', 'XML'], ['csv', 'CSV'], ['toml', 'TOML'], ['env', 'ENV (.env)']];
+    const CSV_DELIMS = [[',', '쉼표 (,)'], ['\t', '탭 (TSV)'], [';', '세미콜론 (;)'], ['|', '파이프 (|)']];
     makeIO(root, {
       inputs: [{ id: 'input', label: '입력', rows: 12, value: '{\n  "name": "WTools",\n  "version": 1,\n  "tags": ["web", "tools"]\n}' }],
       options: [
         { id: 'from', label: '입력 포맷', type: 'select', values: FMT, value: 'json' },
         { id: 'to', label: '출력 포맷', type: 'select', values: FMT, value: 'yaml' },
+        { id: 'csvDelim', label: 'CSV 구분자', type: 'select', values: CSV_DELIMS },
+        { id: 'csvHeader', label: 'CSV 헤더 포함', type: 'checkbox', value: true },
       ],
       outputRows: 12,
       async process(text, o) {
@@ -301,7 +353,7 @@ tool({
           case 'json': data = JSON.parse(text); break;
           case 'yaml': data = jsyaml.load(text); break;
           case 'xml': data = parseXML(text); break;
-          case 'csv': data = rowsToObjects(parseCSV(text)); break;
+          case 'csv': data = rowsToObjects(parseCSV(text, o.csvDelim), o.csvHeader); break;
           case 'toml': data = (await toml()).parse(text); break;
           case 'env': data = parseEnv(text); break;
         }
@@ -322,7 +374,8 @@ tool({
               if (!arr) throw new Error('CSV로 변환하려면 객체 배열 형태의 데이터가 필요합니다.');
               data = arr;
             }
-            return toCSV(objectsToRows(data.map((v) => (typeof v === 'object' && v !== null ? v : { value: v }))));
+            const rows = objectsToRows(data.map((v) => (typeof v === 'object' && v !== null ? v : { value: v })));
+            return toCSV(o.csvHeader ? rows : rows.slice(1), o.csvDelim);
           }
           case 'toml': {
             if (typeof data !== 'object' || data === null || Array.isArray(data))
@@ -332,7 +385,7 @@ tool({
           case 'env': return toEnv(data);
         }
       },
-      note: 'ENV 값은 숫자나 true/false처럼 보여도 문자열로 유지됩니다. 중복 키와 잘못된 구문은 줄 번호와 함께 표시합니다.',
+      note: 'CSV 구분자·헤더 옵션은 입력 또는 출력 포맷이 CSV일 때 적용됩니다. 따옴표는 표준 CSV 방식(셀 전체를 감싸고 내부 따옴표는 ""로 이스케이프)으로 처리합니다. ENV 값은 숫자나 true/false처럼 보여도 문자열로 유지됩니다.',
     });
   },
 });

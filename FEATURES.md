@@ -34,7 +34,7 @@
 
 ## 2. 데이터 포맷 변환
 
-- JSON ↔ YAML ↔ XML ↔ CSV ↔ TOML ↔ ENV(.env) 상호 변환
+- JSON ↔ YAML ↔ XML ↔ CSV ↔ TOML ↔ ENV(.env) 상호 변환 (CSV 구분자·헤더 옵션, 표준 따옴표 검증, 빈·중복 헤더 자동 보정)
 - JSONPath / JMESPath 테스터
 - JSON Schema 검증(Draft 4/6/7/2019-09/2020-12) 및 샘플 생성
 - 리스트 변환기 (구분자 변경, 정렬, 중복 제거 등)
@@ -52,7 +52,7 @@
 - JSON Diff (구조 비교)
 - 텍스트 Diff (라인 비교)
 - 정규식(Regex) 테스터 + 검색·패턴 삽입형 JavaScript 치트시트
-- Crontab 표현식 생성/설명기
+- Crontab 표현식 생성/설명기 (월·요일 이름, 범위·목록·간격, 일·요일 OR 의미 안내)
 - Markdown → HTML 변환기
 - Markdown 목차 생성기 (헤딩 분석, GitHub 스타일 앵커, 번호 매기기)
 - HTML 태그 렌더링 / 제거(Strip)
@@ -90,7 +90,7 @@
 ## 6. 암호화 / 복호화
 
 - 고전 암호 (ROT13, ROT47, 카이사르, 아트바시, 비제네르, 레일 펜스)
-- AES 암호화/복호화
+- AES 암호화/복호화 (AES-GCM 기본, PBKDF2-HMAC-SHA256, 랜덤 salt·IV·128비트 인증 태그, 128/192/256비트 키, 자체 포함 Base64/Hex, OpenSSL·CBC/CTR/CFB/OFB/ECB 레거시 호환)
 - DES / Triple DES 암호화/복호화
 - Blowfish 암호화/복호화
 - XOR / XOR 브루트포스
@@ -145,7 +145,7 @@
 - WiFi QR 코드 생성기
 - QR 코드 리더 (이미지/클립보드 해독)
 - Base64 ↔ 이미지 변환
-- 이미지 포맷 변환기 (PNG/JPEG/WebP/GIF/BMP/SVG, 품질·비율·최대 크기 조절, 메타데이터 제거, 여러 장 일괄 변환 + 전체 ZIP 다운로드)
+- 이미지 포맷 변환기 (PNG/JPEG/WebP, 단일 프레임 GIF, BMP, PNG 포함 SVG, 품질·비율·최대 크기·불투명 배경색 조절, 재인코딩 및 메타데이터 제거, 여러 장 일괄 변환 + 전체 ZIP 다운로드)
 - 배경 투명화 (단색 배경 제거 → 투명 PNG)
 - EXIF 뷰어 / 메타데이터 제거 (JPEG/PNG, 무손실, 여러 장 일괄 처리 + 제거본 전체 ZIP 다운로드)
 - 파비콘 생성기 (favicon.ico + 다중 크기 PNG)

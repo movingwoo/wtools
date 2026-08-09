@@ -31,7 +31,27 @@ const cases = [
   },
   {
     name: 'crontab: 범위 안의 간격과 요일 이름', tool: 'crontab', inputs: '0 9-17/2 * * MON-FRI',
-    kv: { '시': '9-17/2 → 9~17 사이 2시간 간격 (시)', '요일': 'MON-FRI → MON-FRI (요일)' },
+    kv: { '시': '9-17/2 → 9~17 사이 2시간 간격 (시)', '요일': 'MON-FRI → 월요일~금요일 (요일)' },
+  },
+  {
+    name: 'crontab: 월 이름과 목록을 한국어로 설명', tool: 'crontab', inputs: '0 6 * JAN,MAR-APR *',
+    htmlContains: ['1월, 3월~4월 (월) 에 실행'],
+    kv: { '월': 'JAN,MAR-APR → 1월, 3월~4월 (월)' },
+  },
+  {
+    name: 'crontab: 일과 요일을 모두 지정하면 OR 의미 안내', tool: 'crontab', inputs: '0 0 1 * MON',
+    htmlContains: [
+      '0 (분) / 0 (시) / 1 (일) 또는 월요일 (요일) 에 실행',
+      '일과 요일을 모두 제한했습니다. 일반적인 cron은 두 조건을 AND가 아닌 OR로 처리하므로 둘 중 하나만 맞아도 실행합니다.',
+    ],
+  },
+  {
+    name: 'crontab: 범위·목록·간격 조합', tool: 'crontab', inputs: '5,20-40/10 9-17/2 * JAN,MAR-APR/1 MON,WED-FRI',
+    kv: {
+      '분': '5,20-40/10 → 5, 20~40 사이 10분 간격 (분)',
+      '월': 'JAN,MAR-APR/1 → 1월, 3월~4월 사이 1개월 간격 (월)',
+      '요일': 'MON,WED-FRI → 월요일, 수요일~금요일 (요일)',
+    },
   },
   {
     name: 'crontab: 일요일은 0과 7 모두 가능', tool: 'crontab', inputs: '0 0 * * 7',
@@ -40,9 +60,11 @@ const cases = [
   { name: 'crontab: 필드 수가 다르면 에러', tool: 'crontab', inputs: '* * *', htmlError: 'cron 표현식은 5개 필드(분 시 일 월 요일)여야 합니다.' },
   { name: 'crontab: 시 범위 초과는 에러', tool: 'crontab', inputs: '0 25 * * *', htmlError: '시 필드의 "25"가 올바르지 않습니다. 0~23 범위여야 합니다.' },
   { name: 'crontab: 월 범위 초과는 에러', tool: 'crontab', inputs: '0 0 * 13 *', htmlError: '월 필드의 "13"가 올바르지 않습니다. 1~12 범위여야 합니다.' },
-  { name: 'crontab: 알 수 없는 이름은 에러', tool: 'crontab', inputs: '0 0 * * ABC', htmlError: '요일 필드의 "ABC"가 올바르지 않습니다. 0~7 범위의 숫자를 사용하세요.' },
+  { name: 'crontab: 알 수 없는 이름은 에러', tool: 'crontab', inputs: '0 0 * * ABC', htmlError: '요일 필드의 "ABC"가 올바르지 않습니다. 0~7 또는 SUN~SAT 범위의 값을 사용하세요.' },
   { name: 'crontab: 뒤집힌 범위는 에러', tool: 'crontab', inputs: '10-5 * * * *', htmlError: '분 필드의 "10-5"가 올바르지 않습니다. 범위의 시작이 끝보다 큽니다.' },
   { name: 'crontab: 0 간격은 에러', tool: 'crontab', inputs: '*/0 * * * *', htmlError: '분 필드의 "*/0"가 올바르지 않습니다. 간격은 1 이상이어야 합니다.' },
+  { name: 'crontab: 목록의 빈 항목은 에러', tool: 'crontab', inputs: '0,,15 * * * *', htmlError: '분 필드의 "0,,15"가 올바르지 않습니다. 목록에 빈 항목이 있습니다. 쉼표 앞뒤 값을 확인하세요.' },
+  { name: 'crontab: 간격 값 누락은 에러', tool: 'crontab', inputs: '*/ * * * *', htmlError: '분 필드의 "*/"가 올바르지 않습니다. 형식을 확인하세요.' },
 ];
 
 toolCases('devfmt-reference', cases);

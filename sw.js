@@ -1,6 +1,6 @@
 // sw.js — 자체 앱 셸을 사전 캐시하고, 온라인에서는 최신 파일로 갱신한다.
 const CACHE_PREFIX = 'wtools-';
-const CACHE_NAME = CACHE_PREFIX + 'shell-v5';
+const CACHE_NAME = CACHE_PREFIX + 'shell-v6';
 const EXTERNAL_CACHE_PREFIX = CACHE_PREFIX + 'external-';
 const EXTERNAL_CACHE_NAME = EXTERNAL_CACHE_PREFIX + 'v1';
 const EXTERNAL_HOSTS = new Set([

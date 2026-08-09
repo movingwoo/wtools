@@ -172,7 +172,7 @@ function encodeSVG(canvas) {
 
 tool({
   id: 'image-convert', cat: CAT, name: '이미지 포맷 변환기',
-  desc: '이미지 포맷·품질·크기를 조정하고 여러 결과를 ZIP으로 내려받습니다.',
+  desc: '이미지를 다시 인코딩해 포맷·품질·크기·불투명 배경색을 조정하고 여러 결과를 ZIP으로 내려받습니다.',
   keywords: 'image convert png jpeg webp gif bmp svg resize compress quality metadata',
   render(root) {
     const out = h('div');
@@ -180,10 +180,11 @@ tool({
       class: 'io-status', role: 'status', 'aria-live': 'polite', 'aria-atomic': 'true',
     });
     const file = h('input', { type: 'file', accept: 'image/*', multiple: true });
-    const fmt = h('select', null, [['original', '원본 포맷 유지'], ['image/png', 'PNG'], ['image/jpeg', 'JPEG'], ['image/webp', 'WebP'], ['image/gif', 'GIF'], ['image/bmp', 'BMP'], ['image/svg+xml', 'SVG']]
+    const fmt = h('select', null, [['original', '원본 포맷 유지 (재인코딩)'], ['image/png', 'PNG'], ['image/jpeg', 'JPEG'], ['image/webp', 'WebP'], ['image/gif', 'GIF (단일 프레임)'], ['image/bmp', 'BMP'], ['image/svg+xml', 'SVG (PNG 포함)']]
       .map(([v, l]) => h('option', { value: v, selected: v === 'image/png' }, l)));
     const quality = h('input', { type: 'range', min: 10, max: 100, value: 90, style: { width: '120px' } });
     const qualityValue = h('span', { class: 'mono' }, '90');
+    const background = h('input', { type: 'color', value: '#ffffff' });
     const resizeMode = h('select', null,
       h('option', { value: 'percent' }, '비율(%)'), h('option', { value: 'max' }, '최대 폭·높이'));
     const scale = h('input', { type: 'number', value: 100, style: { width: '70px' } });
@@ -222,8 +223,8 @@ tool({
       const { w, hgt } = dimensions(img);
       const canvas = h('canvas', { width: w, height: hgt });
       const ctx = canvas.getContext('2d');
-      // 투명도가 없는 포맷은 흰 배경으로 합성
-      if (type === 'image/jpeg' || type === 'image/bmp' || type === 'image/gif') { ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, w, hgt); }
+      // 투명도를 보존하지 않는 출력은 사용자가 고른 배경색으로 먼저 합성한다.
+      if (type === 'image/jpeg' || type === 'image/bmp' || type === 'image/gif') { ctx.fillStyle = background.value; ctx.fillRect(0, 0, w, hgt); }
       ctx.drawImage(img, 0, 0, w, hgt);
       let blob;
       if (type === 'image/bmp') blob = encodeBMP(ctx.getImageData(0, 0, w, hgt));
@@ -346,17 +347,18 @@ tool({
       convert();
     });
     quality.addEventListener('input', () => { qualityValue.textContent = quality.value; convert(); });
-    [fmt, scale, maxWidth, maxHeight, noUpscale].forEach((el) => el.addEventListener('input', convert));
+    [fmt, background, scale, maxWidth, maxHeight, noUpscale].forEach((el) => el.addEventListener('input', convert));
     root.append(
       h('div', { class: 'io' },
         formLabel(file, '이미지 선택 (여러 장 가능)', { class: 'io-label' }), file, info,
         h('div', { class: 'opt-row', style: { marginTop: '10px' } },
           h('span', { class: 'opt-item' }, formLabel(fmt, '출력 포맷'), fmt),
           h('span', { class: 'opt-item' }, formLabel(quality, '품질(JPEG/WebP)'), quality, qualityValue),
+          h('span', { class: 'opt-item' }, formLabel(background, 'JPEG/GIF/BMP 배경색'), background),
           h('span', { class: 'opt-item' }, formLabel(resizeMode, '크기 방식'), resizeMode),
           percentOpt, maxOpts,
           h('span', { class: 'opt-item' }, formLabel(noUpscale, '확대하지 않기'), noUpscale)),
-        h('p', { class: 'note' }, '결과는 캔버스로 다시 인코딩되어 EXIF·GPS 등 원본 메타데이터가 제거됩니다. 화질을 유지한 채 메타데이터만 삭제하려면 EXIF 뷰어 / 메타데이터 제거 도구를 사용하세요. GIF는 첫 프레임만 처리되며 SVG 출력은 PNG를 내장한 파일입니다.'),
+        h('p', { class: 'note' }, '원본 포맷 유지를 선택해도 결과는 캔버스로 다시 인코딩되어 EXIF·GPS 등 메타데이터가 제거됩니다. 화질을 유지한 채 메타데이터만 삭제하려면 EXIF 뷰어 / 메타데이터 제거 도구를 사용하세요. GIF 출력은 단일 프레임이며 애니메이션 입력도 정지 이미지 한 장으로 바뀝니다. SVG 출력은 벡터화가 아니라 PNG 이미지를 포함한 SVG 파일입니다.'),
         convertStatus, out));
     return () => {
       active = false;

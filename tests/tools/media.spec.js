@@ -364,12 +364,12 @@ test('image-palette: 색상 수 옵션', async ({ page }) => {
   await expect(content.locator('table.kv tr')).toHaveCount(4);
 });
 
-/* ---------- ascii-art ---------- */
+/* ---------- image-ascii-art ---------- */
 
 const BLACK_PNG = makePng(8, 8, () => [0, 0, 0]);
 const WHITE_PNG = makePng(8, 8, () => [255, 255, 255]);
 
-test('ascii-art: 검은 이미지는 전부 밀도 높은 문자(@), 흰 이미지는 전부 공백', async ({ page }) => {
+test('image-ascii-art: 검은 이미지는 전부 밀도 높은 문자(@), 흰 이미지는 전부 공백', async ({ page }) => {
   await openTool(page, 'image-ascii-art');
   const content = page.locator('#content');
   await uploadFile(content, IMAGE_LABEL, { name: 'black.png', mimeType: 'image/png', buffer: BLACK_PNG });
@@ -384,7 +384,7 @@ test('ascii-art: 검은 이미지는 전부 밀도 높은 문자(@), 흰 이미�
   expect(whiteText.replace(/\n/g, '')).toBe(' '.repeat(50));
 });
 
-test('ascii-art: 밝기 반전 옵션은 매핑을 뒤집는다', async ({ page }) => {
+test('image-ascii-art: 밝기 반전 옵션은 매핑을 뒤집는다', async ({ page }) => {
   await openTool(page, 'image-ascii-art');
   const content = page.locator('#content');
   await uploadFile(content, IMAGE_LABEL, { name: 'black.png', mimeType: 'image/png', buffer: BLACK_PNG });
@@ -394,7 +394,7 @@ test('ascii-art: 밝기 반전 옵션은 매핑을 뒤집는다', async ({ page 
   expect(text.replace(/\n/g, '')).toBe(' '.repeat(50));
 });
 
-test('ascii-art: 범위를 벗어난 문자 수는 에러', async ({ page }) => {
+test('image-ascii-art: 범위를 벗어난 문자 수는 에러', async ({ page }) => {
   await openTool(page, 'image-ascii-art');
   const content = page.locator('#content');
   await uploadFile(content, IMAGE_LABEL, { name: 'black.png', mimeType: 'image/png', buffer: BLACK_PNG });
@@ -402,7 +402,7 @@ test('ascii-art: 범위를 벗어난 문자 수는 에러', async ({ page }) => 
   await expect(content.locator('.error').first()).toContainText('가로 문자 수는 10~300 사이여야 합니다.');
 });
 
-test('ascii-art: TXT 다운로드', async ({ page }) => {
+test('image-ascii-art: TXT 다운로드', async ({ page }) => {
   await openTool(page, 'image-ascii-art');
   const content = page.locator('#content');
   await uploadFile(content, IMAGE_LABEL, { name: 'black.png', mimeType: 'image/png', buffer: BLACK_PNG });
@@ -412,7 +412,7 @@ test('ascii-art: TXT 다운로드', async ({ page }) => {
   expect(bytes.toString('utf-8').replace(/\n/g, '')).toBe('@'.repeat(50));
 });
 
-test('ascii-art: 원본 색상 유지 옵션은 캔버스로 렌더링하고 PNG 다운로드 가능', async ({ page }) => {
+test('image-ascii-art: 원본 색상 유지 옵션은 캔버스로 렌더링하고 PNG 다운로드 가능', async ({ page }) => {
   await openTool(page, 'image-ascii-art');
   const content = page.locator('#content');
   await uploadFile(content, IMAGE_LABEL, { name: 'black.png', mimeType: 'image/png', buffer: BLACK_PNG });

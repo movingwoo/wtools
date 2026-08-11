@@ -20,7 +20,7 @@ HTML과 Vanilla JavaScript ES 모듈로 구성되어 있습니다.
 | 인코딩 / 디코딩 | Base64, URL, JWT, 모스 부호, 진법 변환 |
 | 데이터 포맷 변환 | JSON↔YAML↔XML↔CSV↔TOML↔ENV, JSONPath/JMESPath, JSON Schema, 색상, 단위 |
 | 코드 포맷팅 / 개발 유틸 | JSON/SQL/JS 포맷터, Diff, 정규식, Crontab, Docker, cURL↔fetch, SQL INSERT 변환 |
-| 문자열 / 텍스트 | 대소문자, Slugify, 통계, 이모지, ASCII 아트 |
+| 문자열 / 텍스트 | 대소문자, Slugify, 통계, 이모지, ASCII 텍스트 배너 |
 | 해싱 | MD/SHA/SHA3, HMAC, 파일 체크섬 |
 | 암호화 / 복호화 | AES/DES/Blowfish, RSA, PGP, XOR, 비밀번호 해시, TOTP/HOTP |
 | 공개키 / 인증서 | X.509, ASN.1, PEM↔Hex, SSH 키 |
@@ -73,7 +73,8 @@ python3 -m http.server 8000
 python3 scripts/validate_static.py
 ```
 
-브라우저 테스트는 별도의 패키지로 분리되어 있으며 Node.js 18 이상이 필요합니다.
+브라우저 테스트는 별도의 패키지로 분리되어 있으며 `.node-version`에 고정된 Node.js 22(CI와 동일한 버전)가 필요합니다.
+Node 26 등 더 높은 메이저에서는 Playwright 러너가 시작 단계에서 아무 출력 없이 멈춥니다.
 
 ```bash
 cd tests

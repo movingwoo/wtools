@@ -483,9 +483,9 @@ tool({
 });
 
 tool({
-  id: 'ascii-art', cat: CAT, name: 'ASCII 아트 생성기',
-  desc: '텍스트를 큰 ASCII 아트 글자로 변환합니다. (figlet)',
-  keywords: 'ascii art figlet banner',
+  id: 'ascii-art', cat: CAT, name: 'ASCII 텍스트 배너 생성기',
+  desc: '영문과 숫자를 큰 ASCII 문자 배너로 변환합니다. (FIGlet)',
+  keywords: 'ascii art figlet banner 텍스트 배너 아스키 아트',
   render(root) {
     makeIO(root, {
       inputs: [{ id: 'input', label: '텍스트 (영문/숫자)', rows: 2, value: 'WTools' }],

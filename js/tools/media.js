@@ -882,3 +882,132 @@ tool({
       out));
   },
 });
+
+/* ---------- 이미지 → 아스키아트 ---------- */
+// 문자셋은 어두운 픽셀 → 밀도 높은 문자(예: '@') 순서로 나열한다 (밝은 픽셀 → 성긴 문자).
+const ASCII_RAMPS = {
+  simple: ['@', '%', '#', '*', '+', '=', '-', ':', '.', ' '],
+  detailed: [
+    '$', '@', 'B', '%', '8', '&', 'W', 'M', '#', '*', 'o', 'a', 'h', 'k', 'b', 'd', 'p', 'q', 'w', 'm',
+    'Z', 'O', '0', 'Q', 'L', 'C', 'J', 'U', 'Y', 'X', 'z', 'c', 'v', 'u', 'n', 'x', 'r', 'j', 'f', 't',
+    '/', '\\', '|', '(', ')', '1', '{', '}', '[', ']', '?', '-', '_', '+', '~', '<', '>', 'i', '!', 'l',
+    'I', ';', ':', ',', '"', '^', '`', "'", '.', ' ',
+  ],
+  blocks: ['█', '▓', '▒', '░', ' '],
+};
+const ASCII_CHAR_ASPECT = 0.5; // 모노스페이스 글자 셀의 대략적인 너비/높이 비율 (세로 보정용)
+const ASCII_MAX_COLS = 300;
+const ASCII_CELL_W = 7, ASCII_CELL_H = 14; // 컬러 캔버스 렌더링용 글자 셀 크기(px)
+
+function analyzeAscii(bmp, cols, ramp) {
+  const rows = Math.max(1, Math.min(ASCII_MAX_COLS, Math.round((bmp.height / bmp.width) * cols * ASCII_CHAR_ASPECT)));
+  const canvas = h('canvas', { width: cols, height: rows });
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
+  // 투명 픽셀은 흰 배경과 합성해 밝은 영역(공백)으로 취급한다.
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(0, 0, cols, rows);
+  ctx.drawImage(bmp, 0, 0, cols, rows);
+  const { data } = ctx.getImageData(0, 0, cols, rows);
+  const lines = [], colorLines = [];
+  for (let y = 0; y < rows; y++) {
+    let line = '';
+    const colorLine = [];
+    for (let x = 0; x < cols; x++) {
+      const i = (y * cols + x) * 4;
+      const r = data[i], g = data[i + 1], b = data[i + 2];
+      const lum = 0.299 * r + 0.587 * g + 0.114 * b;
+      line += ramp[Math.min(ramp.length - 1, Math.floor((lum / 255) * ramp.length))];
+      colorLine.push(`rgb(${r},${g},${b})`);
+    }
+    lines.push(line);
+    colorLines.push(colorLine);
+  }
+  return { lines, colorLines, cols, rows };
+}
+
+function renderAsciiColorCanvas(lines, colorLines, cols, rows) {
+  const canvas = h('canvas', { width: cols * ASCII_CELL_W, height: rows * ASCII_CELL_H });
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = '#000';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.font = `${ASCII_CELL_H}px ui-monospace, Menlo, Consolas, monospace`;
+  ctx.textBaseline = 'top';
+  for (let y = 0; y < rows; y++) {
+    for (let x = 0; x < cols; x++) {
+      const ch = lines[y][x];
+      if (ch === ' ') continue;
+      ctx.fillStyle = colorLines[y][x];
+      ctx.fillText(ch, x * ASCII_CELL_W, y * ASCII_CELL_H, ASCII_CELL_W);
+    }
+  }
+  return canvas;
+}
+
+tool({
+  id: 'image-ascii-art', cat: CAT, name: '이미지 아스키아트 변환기',
+  desc: '이미지의 밝기를 분석해 아스키아트(텍스트 그림)로 바꿉니다. 문자 수(세부 정도), 문자셋, 색상 유지 여부를 조절할 수 있습니다.',
+  keywords: 'ascii art image to text 텍스트 아트 아스키 그림 변환기',
+  render(root) {
+    const out = h('div');
+    const file = h('input', { type: 'file', accept: 'image/*' });
+    const width = h('input', { type: 'number', min: 10, max: ASCII_MAX_COLS, value: 100, style: { width: '80px' } });
+    const charset = h('select', null,
+      [['simple', '기본 (10단계)'], ['detailed', '상세 (70단계)'], ['blocks', '블록 문자 (░▒▓█)']]
+        .map(([v, l]) => h('option', { value: v, selected: v === 'simple' }, l)));
+    const invert = h('input', { type: 'checkbox' });
+    const colorMode = h('input', { type: 'checkbox' });
+    let bmp = null;
+
+    function run() {
+      if (!bmp) return;
+      out.innerHTML = '';
+      try {
+        const cols = Math.round(+width.value);
+        if (!Number.isFinite(cols) || cols < 10 || cols > ASCII_MAX_COLS)
+          throw new Error(`가로 문자 수는 10~${ASCII_MAX_COLS} 사이여야 합니다.`);
+        const ramp = invert.checked ? [...ASCII_RAMPS[charset.value]].reverse() : ASCII_RAMPS[charset.value];
+        const { lines, colorLines, rows } = analyzeAscii(bmp, cols, ramp);
+        const text = lines.join('\n');
+        const btnRow = h('div', { class: 'btn-row' },
+          copyBtn(() => text, '텍스트 복사'),
+          h('button', {
+            class: 'btn small', type: 'button',
+            onclick: () => download('ascii-art.txt', text, 'text/plain;charset=utf-8'),
+          }, 'TXT 다운로드'));
+        out.append(h('p', { class: 'note' }, `${cols} × ${rows} 문자 (총 ${(cols * rows).toLocaleString('ko-KR')}자)`), btnRow);
+        if (colorMode.checked) {
+          const canvas = renderAsciiColorCanvas(lines, colorLines, cols, rows);
+          canvas.style.maxWidth = '100%';
+          btnRow.append(h('button', {
+            class: 'btn small', type: 'button',
+            onclick: () => canvas.toBlob((b) => download('ascii-art.png', b, 'image/png')),
+          }, 'PNG 다운로드'));
+          out.append(h('div', { style: { overflowX: 'auto', marginTop: '10px', background: '#000', borderRadius: '8px' } }, canvas));
+        } else {
+          out.append(h('pre', {
+            class: 'out-html mono',
+            style: { whiteSpace: 'pre', overflowX: 'auto', lineHeight: '1', fontSize: '9px', marginTop: '10px' },
+          }, text));
+        }
+      } catch (e) {
+        out.append(h('span', { class: 'error' }, e?.message || String(e)));
+      }
+    }
+
+    file.addEventListener('change', async () => {
+      const f = file.files[0];
+      if (!f) return;
+      bmp = await createImageBitmap(f);
+      run();
+    });
+    [width, charset, invert, colorMode].forEach((el) => el.addEventListener('input', run));
+    root.append(h('div', { class: 'io' },
+      formLabel(file, '이미지 선택 (브라우저 밖으로 전송되지 않습니다)', { class: 'io-label' }), file,
+      h('div', { class: 'opt-row', style: { marginTop: '8px' } },
+        h('span', { class: 'opt-item' }, formLabel(width, '가로 문자 수(세부 정도)'), width),
+        h('span', { class: 'opt-item' }, formLabel(charset, '문자셋'), charset),
+        h('span', { class: 'opt-item' }, formLabel(invert, '밝기 반전'), invert),
+        h('span', { class: 'opt-item' }, formLabel(colorMode, '원본 색상 유지'), colorMode)),
+      out));
+  },
+});

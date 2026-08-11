@@ -45,7 +45,7 @@ python3 -m http.server 8000
 
 Then open `http://localhost:8000` and validate changes manually.
 
-CI (`.github/workflows/validate.yml`) checks JavaScript syntax, validates registrations and static assets, and runs the Playwright browser suite on every PR and every push to `main`. A second workflow, `.github/workflows/nightly.yml`, re-runs the Chromium suite once a day against the real CDN. To run the browser tests locally (requires Node.js 18+):
+CI (`.github/workflows/validate.yml`) checks JavaScript syntax, validates registrations and static assets, and runs the Playwright browser suite on every PR and every push to `main`. A second workflow, `.github/workflows/nightly.yml`, re-runs the Chromium suite once a day against the real CDN. To run the browser tests locally, use the Node version pinned in `.node-version` (22, the same major CI uses). The pinned version matters: the Playwright runner pinned in `tests/package.json` hangs at startup on newer majors such as Node 26, printing nothing, so a mismatch looks like a stuck test run rather than an error. With `fnm` or `nvm` installed, the version switches automatically on `cd`.
 
 ```bash
 cd tests

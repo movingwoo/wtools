@@ -363,3 +363,63 @@ test('image-palette: 색상 수 옵션', async ({ page }) => {
   await setOption(content, '추출 색상 수', '4');
   await expect(content.locator('table.kv tr')).toHaveCount(4);
 });
+
+/* ---------- image-ascii-art ---------- */
+
+const BLACK_PNG = makePng(8, 8, () => [0, 0, 0]);
+const WHITE_PNG = makePng(8, 8, () => [255, 255, 255]);
+
+test('image-ascii-art: 검은 이미지는 전부 밀도 높은 문자(@), 흰 이미지는 전부 공백', async ({ page }) => {
+  await openTool(page, 'image-ascii-art');
+  const content = page.locator('#content');
+  await uploadFile(content, IMAGE_LABEL, { name: 'black.png', mimeType: 'image/png', buffer: BLACK_PNG });
+  await setOption(content, '가로 문자 수(세부 정도)', 10);
+  await expect(content).toContainText('10 × 5 문자 (총 50자)');
+  const blackText = await content.locator('pre.mono').innerText();
+  expect(blackText.replace(/\n/g, '')).toBe('@'.repeat(50));
+
+  await uploadFile(content, IMAGE_LABEL, { name: 'white.png', mimeType: 'image/png', buffer: WHITE_PNG });
+  await setOption(content, '가로 문자 수(세부 정도)', 10);
+  const whiteText = await content.locator('pre.mono').innerText();
+  expect(whiteText.replace(/\n/g, '')).toBe(' '.repeat(50));
+});
+
+test('image-ascii-art: 밝기 반전 옵션은 매핑을 뒤집는다', async ({ page }) => {
+  await openTool(page, 'image-ascii-art');
+  const content = page.locator('#content');
+  await uploadFile(content, IMAGE_LABEL, { name: 'black.png', mimeType: 'image/png', buffer: BLACK_PNG });
+  await setOption(content, '가로 문자 수(세부 정도)', 10);
+  await setOption(content, '밝기 반전', true);
+  const text = await content.locator('pre.mono').innerText();
+  expect(text.replace(/\n/g, '')).toBe(' '.repeat(50));
+});
+
+test('image-ascii-art: 범위를 벗어난 문자 수는 에러', async ({ page }) => {
+  await openTool(page, 'image-ascii-art');
+  const content = page.locator('#content');
+  await uploadFile(content, IMAGE_LABEL, { name: 'black.png', mimeType: 'image/png', buffer: BLACK_PNG });
+  await setOption(content, '가로 문자 수(세부 정도)', 500);
+  await expect(content.locator('.error').first()).toContainText('가로 문자 수는 10~300 사이여야 합니다.');
+});
+
+test('image-ascii-art: TXT 다운로드', async ({ page }) => {
+  await openTool(page, 'image-ascii-art');
+  const content = page.locator('#content');
+  await uploadFile(content, IMAGE_LABEL, { name: 'black.png', mimeType: 'image/png', buffer: BLACK_PNG });
+  await setOption(content, '가로 문자 수(세부 정도)', 10);
+  const { name, bytes } = await grabDownload(page, () => content.getByRole('button', { name: 'TXT 다운로드' }).click());
+  expect(name).toBe('ascii-art.txt');
+  expect(bytes.toString('utf-8').replace(/\n/g, '')).toBe('@'.repeat(50));
+});
+
+test('image-ascii-art: 원본 색상 유지 옵션은 캔버스로 렌더링하고 PNG 다운로드 가능', async ({ page }) => {
+  await openTool(page, 'image-ascii-art');
+  const content = page.locator('#content');
+  await uploadFile(content, IMAGE_LABEL, { name: 'black.png', mimeType: 'image/png', buffer: BLACK_PNG });
+  await setOption(content, '가로 문자 수(세부 정도)', 10);
+  await setOption(content, '원본 색상 유지', true);
+  await expect(content.locator('canvas').last()).toBeVisible();
+  const { name, bytes } = await grabDownload(page, () => content.getByRole('button', { name: 'PNG 다운로드' }).click());
+  expect(name).toBe('ascii-art.png');
+  expect(bytes.length).toBeGreaterThan(0);
+});

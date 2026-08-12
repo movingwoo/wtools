@@ -39,6 +39,10 @@ tool({
   id: 'base64', cat: CAT, name: 'Base64 인코딩/디코딩',
   desc: '텍스트를 Base64로 변환하거나 복원합니다. 커스텀 알파벳과 URL-safe를 지원합니다.',
   keywords: 'b64 encode decode',
+  transfer: {
+    inputs: [{ id: 'input', label: '입력', accepts: ['text', 'base64'] }],
+    outputs: [{ id: 'decoded-json', label: '디코딩한 JSON', type: 'json', targets: ['json-format', 'data-convert'] }],
+  },
   render(root) {
     makeIO(root, {
       inputs: [{ id: 'input', label: '입력', placeholder: 'Hello, World!' }],
@@ -48,6 +52,14 @@ tool({
         { id: 'pad', label: '패딩(=)', type: 'checkbox', value: true },
       ],
       actions: [{ id: 'enc', label: '인코딩' }, { id: 'dec', label: '디코딩' }],
+      transferOutput: {
+        id: 'decoded-json',
+        when: ({ result, actionId }) => {
+          if (actionId !== 'dec' || !String(result).trim()) return false;
+          JSON.parse(result);
+          return true;
+        },
+      },
       process(text, o, action) {
         let alpha = STD_B64;
         if (o.alpha === 'url') alpha = STD_B64.slice(0, 62) + '-_';
@@ -769,73 +781,204 @@ function wordArrayToB64url(wa) {
   return CryptoJS.enc.Base64.stringify(wa).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 }
 const HS = { HS256: 'HmacSHA256', HS384: 'HmacSHA384', HS512: 'HmacSHA512' };
+const JWT_ALGS = ['HS256', 'HS384', 'HS512', 'RS256', 'RS384', 'RS512', 'PS256', 'PS384', 'PS512', 'ES256', 'ES384', 'ES512'];
+const HS_MIN_BYTES = { HS256: 32, HS384: 48, HS512: 64 };
+
+function jwtStatus(ok, success, failure) {
+  return h('p', {
+    class: 'jwt-status ' + (ok ? 'ok' : 'bad'),
+  }, ok ? '✔ ' + success : '✘ ' + failure);
+}
+
+function jwtSecretBytes(value) {
+  return strToBytes(value).length;
+}
+
+function safeEqual(a, b) {
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return diff === 0;
+}
+
+function expectedAudience(value) {
+  return value.split(',').map((item) => item.trim()).filter(Boolean);
+}
+
+function validateJwtClaims(payload, options, now = Date.now() / 1000) {
+  const skew = Number(options.skew);
+  if (!Number.isFinite(skew) || skew < 0) throw new Error('clock skew는 0 이상의 초 단위 숫자여야 합니다.');
+  const checks = [];
+  const numericDate = (name) => {
+    if (!(name in payload)) return null;
+    if (typeof payload[name] !== 'number' || !Number.isFinite(payload[name])) {
+      checks.push({ ok: false, text: `${name}: NumericDate 숫자가 아닙니다.` });
+      return null;
+    }
+    return payload[name];
+  };
+  const exp = numericDate('exp');
+  const nbf = numericDate('nbf');
+  const iat = numericDate('iat');
+  if (exp != null) checks.push({
+    ok: now <= exp + skew,
+    text: now <= exp + skew ? 'exp: 만료되지 않았습니다.' : `exp: ${Math.ceil(now - exp)}초 전에 만료되었습니다.`,
+  });
+  if (nbf != null) checks.push({
+    ok: now + skew >= nbf,
+    text: now + skew >= nbf ? 'nbf: 사용할 수 있는 시각입니다.' : `nbf: ${Math.ceil(nbf - now)}초 뒤부터 사용할 수 있습니다.`,
+  });
+  if (iat != null) checks.push({
+    ok: iat <= now + skew,
+    text: iat <= now + skew ? 'iat: 미래 시각이 아닙니다.' : `iat: 현재보다 ${Math.ceil(iat - now)}초 뒤입니다.`,
+  });
+  for (const [name, expected] of [['iss', options.iss.trim()], ['sub', options.sub.trim()]]) {
+    if (!expected) continue;
+    checks.push({
+      ok: payload[name] === expected,
+      text: payload[name] === expected
+        ? `${name}: 기대값과 일치합니다.`
+        : `${name}: 기대값 “${expected}”과(와) 일치하지 않습니다.`,
+    });
+  }
+  const audiences = expectedAudience(options.aud);
+  if (audiences.length) {
+    const actual = Array.isArray(payload.aud) ? payload.aud : payload.aud == null ? [] : [payload.aud];
+    const missing = audiences.filter((aud) => !actual.includes(aud));
+    checks.push({
+      ok: !missing.length,
+      text: missing.length ? `aud: 기대 audience가 없습니다 — ${missing.join(', ')}` : 'aud: 기대 audience를 모두 포함합니다.',
+    });
+  }
+  return checks;
+}
 
 tool({
   id: 'jwt', cat: CAT, name: 'JWT 인코딩/디코딩/검증',
-  desc: 'JWT를 디코딩하고, HS256/384/512·RS256으로 서명을 생성하거나 검증합니다.',
+  desc: 'JWT의 서명과 클레임을 분리해 검증하고 HS/RS/PS/ES 알고리즘으로 생성합니다.',
   keywords: 'jwt json web token jsonwebtoken bearer sign verify claims',
+  transfer: {
+    inputs: [{ id: 'input', label: 'JWT 토큰', accepts: ['jwt'] }],
+    outputs: [{ id: 'payload-json', label: 'Payload JSON', type: 'json', targets: ['json-format', 'data-convert', 'json-schema'] }],
+  },
   render(root) {
     // 디코딩 / 검증
     root.append(h('h3', null, '디코딩 / 검증'));
     makeIO(root, {
-      inputs: [{ id: 'input', label: 'JWT 토큰', rows: 5, placeholder: 'eyJhbGciOi...' }],
-      options: [{ id: 'key', label: '키(HS 시크릿 또는 RS 공개키 PEM)', type: 'text', size: 320, placeholder: '검증 시에만 입력' }],
+      inputs: [
+        { id: 'input', label: 'JWT 토큰', rows: 5, placeholder: 'eyJhbGciOi...' },
+        { id: 'key', label: '검증 키 (HS 시크릿 또는 RSA/EC 공개키 PEM, 선택)', rows: 3 },
+      ],
+      options: [
+        { id: 'expectedAlg', label: '예상 알고리즘', type: 'select', values: [['auto', '헤더 값 사용'], ...JWT_ALGS.map((alg) => [alg, alg])] },
+        { id: 'skew', label: 'clock skew(초)', type: 'number', value: 0, size: 90 },
+        { id: 'iss', label: '예상 iss', type: 'text', size: 140 },
+        { id: 'aud', label: '예상 aud(쉼표 구분)', type: 'text', size: 170 },
+        { id: 'sub', label: '예상 sub', type: 'text', size: 140 },
+      ],
       outputHTML: true,
-      async process(text, o) {
-        text = text.trim();
+      transferOutput: {
+        id: 'payload-json',
+        when: ({ result }) => !!result?.querySelector?.('[data-transfer-payload]'),
+        value: ({ result }) => result.querySelector('[data-transfer-payload]')?.textContent || '',
+      },
+      async process(v, o) {
+        const text = v.input.trim();
         if (!text) return '';
         const parts = text.split('.');
         if (parts.length !== 3) throw new Error('JWT는 header.payload.signature 3개 부분이어야 합니다.');
         const header = JSON.parse(b64urlDecode(parts[0]));
         const payload = JSON.parse(b64urlDecode(parts[1]));
+        if (!header || typeof header !== 'object' || Array.isArray(header))
+          throw new Error('JWT header는 JSON 객체여야 합니다.');
+        if (!payload || typeof payload !== 'object' || Array.isArray(payload))
+          throw new Error('JWT payload는 JSON 객체여야 합니다.');
         const box = h('div', null,
           h('h4', null, 'Header'), h('pre', { class: 'out-html' }, JSON.stringify(header, null, 2)),
-          h('h4', null, 'Payload'), h('pre', { class: 'out-html' }, JSON.stringify(payload, null, 2)));
+          h('h4', null, 'Payload'), h('pre', { class: 'out-html', 'data-transfer-payload': true }, JSON.stringify(payload, null, 2)));
+        const warnings = [];
+        const alg = header.alg;
+        const expectedAlg = o.expectedAlg === 'auto' ? null : o.expectedAlg;
+        if (alg === 'none') warnings.push('alg=none 토큰은 서명되지 않았으므로 신뢰할 수 없습니다.');
+        if (!JWT_ALGS.includes(alg) && alg !== 'none') warnings.push(`지원하지 않거나 허용되지 않은 알고리즘입니다: ${alg}`);
+        if (expectedAlg && alg !== expectedAlg)
+          warnings.push(`알고리즘 불일치: 헤더는 ${alg || '(없음)'}, 기대값은 ${expectedAlg}입니다.`);
+        if (HS[alg] && v.key && jwtSecretBytes(v.key) < HS_MIN_BYTES[alg])
+          warnings.push(`${alg} 시크릿이 약합니다. 최소 ${HS_MIN_BYTES[alg]}바이트를 권장합니다 (현재 ${jwtSecretBytes(v.key)}바이트).`);
+        if (warnings.length) box.prepend(h('div', { class: 'note jwt-warning', role: 'alert' },
+          h('strong', null, '보안 경고'), h('ul', null, warnings.map((warning) => h('li', null, warning)))));
         const claims = [];
         for (const c of ['exp', 'iat', 'nbf'])
-          if (payload[c]) claims.push([c, `${payload[c]} → ${new Date(payload[c] * 1000).toLocaleString('ko-KR')}${c === 'exp' && payload[c] * 1000 < Date.now() ? ' (만료됨!)' : ''}`]);
+          if (typeof payload[c] === 'number') claims.push([c, `${payload[c]} → ${new Date(payload[c] * 1000).toLocaleString('ko-KR')}`]);
         if (claims.length) box.append(h('h4', null, '시간 클레임'), kvTable(claims));
-        if (o.key.trim()) {
-          let ok = false;
-          const alg = header.alg;
+        box.append(h('h4', null, '서명 검증'));
+        if (!v.key.trim()) box.append(h('p', { class: 'jwt-status neutral' }, '검증 키를 입력하지 않아 서명을 검증하지 않았습니다.'));
+        else if (alg === 'none') box.append(jwtStatus(false, '', 'alg=none 서명은 검증하지 않습니다.'));
+        else if (expectedAlg && alg !== expectedAlg) box.append(jwtStatus(false, '', '알고리즘 불일치로 서명 검증을 거부했습니다.'));
+        else if (!JWT_ALGS.includes(alg)) box.append(jwtStatus(false, '', `지원하지 않는 알고리즘입니다: ${alg}`));
+        else {
           try {
+            let ok;
             if (HS[alg]) {
-              const sig = wordArrayToB64url(CryptoJS[HS[alg]](parts[0] + '.' + parts[1], o.key));
-              ok = sig === parts[2];
-            } else if (/^[RE]S\d+$/.test(alg)) {
+              const sig = wordArrayToB64url(CryptoJS[HS[alg]](parts[0] + '.' + parts[1], v.key));
+              ok = safeEqual(sig, parts[2]);
+            } else {
               await loadScript(LIB.jsrsasign);
-              ok = KJUR.jws.JWS.verify(text, o.key, [alg]);
-            } else throw new Error('지원하지 않는 알고리즘: ' + alg);
-            box.append(h('p', { style: { fontWeight: '700', color: ok ? 'var(--ok)' : 'var(--danger)' } },
-              ok ? '✔ 서명이 유효합니다.' : '✘ 서명이 올바르지 않습니다.'));
+              ok = KJUR.jws.JWS.verify(text, v.key, [alg]);
+            }
+            box.append(jwtStatus(ok, '서명이 유효합니다.', '서명이 올바르지 않습니다.'));
           } catch (e) {
-            box.append(h('p', { class: 'error' }, '검증 오류: ' + e.message));
+            box.append(h('p', { class: 'error' }, '서명 검증 오류: ' + e.message));
           }
         }
+        const claimChecks = validateJwtClaims(payload, o);
+        const claimsOk = claimChecks.every((check) => check.ok);
+        box.append(h('h4', null, '클레임 검증'));
+        if (!claimChecks.length) box.append(h('p', { class: 'jwt-status neutral' }, '검증할 시간 또는 기대 클레임이 없습니다.'));
+        else box.append(
+          jwtStatus(claimsOk, '클레임이 유효합니다.', '클레임 검증에 실패했습니다.'),
+          h('ul', { class: 'jwt-claim-list' }, claimChecks.map((check) =>
+            h('li', { class: check.ok ? 'ok' : 'bad' }, (check.ok ? '✔ ' : '✘ ') + check.text))),
+        );
         return box;
       },
     });
 
     // 생성
     root.append(h('h3', { style: { marginTop: '30px' } }, '생성 (서명)'));
-    makeIO(root, {
+    const weakSecretWarning = h('div', { class: 'note jwt-warning hidden', role: 'status' });
+    const createIO = makeIO(root, {
       inputs: [
         { id: 'payload', label: 'Payload (JSON)', rows: 5, value: '{\n  "sub": "1234567890",\n  "name": "홍길동",\n  "iat": ' + Math.floor(Date.now() / 1000) + '\n}' },
         { id: 'key', label: '키 (HS 시크릿 또는 RS 개인키 PEM)', rows: 2, placeholder: 'your-256-bit-secret' },
       ],
-      options: [{ id: 'alg', label: '알고리즘', type: 'select', values: ['HS256', 'HS384', 'HS512', 'RS256', 'RS384', 'RS512'] }],
+      options: [{ id: 'alg', label: '알고리즘', type: 'select', values: JWT_ALGS }],
       actions: [{ id: 'sign', label: 'JWT 생성' }],
       autorun: false,
       async process(v, o) {
         const payload = JSON.stringify(JSON.parse(v.payload));
         const header = JSON.stringify({ alg: o.alg, typ: 'JWT' });
         if (HS[o.alg]) {
+          if (!v.key) throw new Error('HMAC 시크릿을 입력하세요.');
           const si = b64url(header) + '.' + b64url(payload);
           return si + '.' + wordArrayToB64url(CryptoJS[HS[o.alg]](si, v.key));
         }
+        if (!v.key.trim()) throw new Error('RSA 또는 EC 개인키 PEM을 입력하세요.');
         await loadScript(LIB.jsrsasign);
         return KJUR.jws.JWS.sign(o.alg, header, payload, v.key);
       },
     });
+    const updateWeakSecret = () => {
+      const alg = createIO.optEls.alg.value;
+      const bytes = jwtSecretBytes(createIO.inputEls.key.value);
+      const weak = HS[alg] && bytes > 0 && bytes < HS_MIN_BYTES[alg];
+      weakSecretWarning.classList.toggle('hidden', !weak);
+      weakSecretWarning.textContent = weak
+        ? `보안 경고: ${alg} 시크릿은 최소 ${HS_MIN_BYTES[alg]}바이트를 권장합니다 (현재 ${bytes}바이트).`
+        : '';
+    };
+    createIO.inputEls.key.addEventListener('input', updateWeakSecret);
+    createIO.optEls.alg.addEventListener('change', updateWeakSecret);
+    root.append(weakSecretWarning);
   },
 });

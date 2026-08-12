@@ -80,6 +80,70 @@ test('crontab: 자주 쓰는 패턴 버튼', async ({ page }) => {
   await expect(io.locator('.out-html')).toContainText('5분 간격마다 (분) 에 실행');
 });
 
+async function cronRuns(page, expression, timeZone, from) {
+  return page.evaluate(async ({ expression: expr, timeZone: zone, from: base }) => {
+    const { nextCronRuns } = await import('/js/tools/devfmt-reference.js');
+    return nextCronRuns(expr, zone, Date.parse(base)).map((timestamp) => new Date(timestamp).toISOString());
+  }, { expression, timeZone, from });
+}
+
+test('crontab: 선택한 시간대에 따라 다음 실행 시각을 계산', async ({ page }) => {
+  await openTool(page, 'crontab');
+  await expect(await cronRuns(page, '0 9 * * *', 'UTC', '2024-01-01T00:01:00Z'))
+    .toEqual([
+      '2024-01-01T09:00:00.000Z', '2024-01-02T09:00:00.000Z', '2024-01-03T09:00:00.000Z',
+      '2024-01-04T09:00:00.000Z', '2024-01-05T09:00:00.000Z',
+    ]);
+  await expect(await cronRuns(page, '0 9 * * *', 'Asia/Seoul', '2024-01-01T00:01:00Z'))
+    .toEqual([
+      '2024-01-02T00:00:00.000Z', '2024-01-03T00:00:00.000Z', '2024-01-04T00:00:00.000Z',
+      '2024-01-05T00:00:00.000Z', '2024-01-06T00:00:00.000Z',
+    ]);
+});
+
+test('crontab: DST 건너뜀과 중복 시각을 실제 시간대 규칙으로 처리', async ({ page }) => {
+  await openTool(page, 'crontab');
+  const spring = await cronRuns(page, '30 2 * * *', 'America/New_York', '2024-03-09T08:00:00Z');
+  expect(spring.slice(0, 2)).toEqual(['2024-03-11T06:30:00.000Z', '2024-03-12T06:30:00.000Z']);
+
+  const fall = await cronRuns(page, '30 1 * * *', 'America/New_York', '2024-11-03T04:00:00Z');
+  expect(fall.slice(0, 3)).toEqual([
+    '2024-11-03T05:30:00.000Z', '2024-11-03T06:30:00.000Z', '2024-11-04T06:30:00.000Z',
+  ]);
+});
+
+test('crontab: 윤년, 월말, 일/요일 OR 의미를 반영', async ({ page }) => {
+  await openTool(page, 'crontab');
+  await expect(await cronRuns(page, '0 0 29 2 *', 'UTC', '2023-03-01T00:00:00Z'))
+    .toEqual([
+      '2024-02-29T00:00:00.000Z', '2028-02-29T00:00:00.000Z', '2032-02-29T00:00:00.000Z',
+      '2036-02-29T00:00:00.000Z', '2040-02-29T00:00:00.000Z',
+    ]);
+  const monthEnd = await cronRuns(page, '0 0 31 * *', 'UTC', '2024-04-01T00:00:00Z');
+  expect(monthEnd.slice(0, 3)).toEqual([
+    '2024-05-31T00:00:00.000Z', '2024-07-31T00:00:00.000Z', '2024-08-31T00:00:00.000Z',
+  ]);
+  const dayOrWeekday = await cronRuns(page, '0 0 1 * MON', 'UTC', '2024-01-01T00:01:00Z');
+  expect(dayOrWeekday.slice(0, 3)).toEqual([
+    '2024-01-08T00:00:00.000Z', '2024-01-15T00:00:00.000Z', '2024-01-22T00:00:00.000Z',
+  ]);
+});
+
+test('crontab: 시간대 전환 UI와 지원 범위를 안내', async ({ page }) => {
+  await openTool(page, 'crontab');
+  const io = ioSection(page);
+  const timezone = io.getByLabel('시간대 (IANA)');
+
+  await page.locator('#content').getByRole('button', { name: 'UTC로 전환' }).click();
+  await expect(timezone).toHaveValue('UTC');
+  await expect(io.locator('.cron-next h4')).toHaveText('다음 실행 시각 5회 (UTC)');
+  await expect(io.locator('.cron-next table.kv tr')).toHaveCount(5);
+  await expect(io).toContainText('Quartz/AWS의 초·연도 필드와 ?, L, W, # 확장은 별도 범위');
+
+  await timezone.fill('Not/A-Time-Zone');
+  await expect(io.locator('.out-html .error')).toContainText('지원하지 않는 시간대입니다: Not/A-Time-Zone');
+});
+
 /* ---------- chmod: makeIO를 쓰지 않는 전용 UI ---------- */
 
 test('chmod: 8진수 → 심볼릭', async ({ page }) => {

@@ -10,6 +10,7 @@ const RED_PNG_B64 = RED_PNG.toString('base64');
 const BANDS_PNG = makePng(8, 8, (x, y) => [[255, 0, 0], [0, 255, 0], [0, 0, 255], [0, 0, 0]][y >> 1]);
 const CLEAR_PNG = makePng(2, 2, () => [255, 0, 0, 0]);
 const TEXT_PNG = makePng(4, 4, () => [0, 128, 255], { text: '지워질 주석' });
+const EDIT_PNG = makePng(4, 2, (x) => (x < 2 ? [255, 0, 0] : [0, 0, 255]));
 const EXIF_JPEG = makeJpegWithExif();
 
 const IMAGE_LABEL = '이미지 선택 (브라우저 밖으로 전송되지 않습니다)';
@@ -144,6 +145,96 @@ test('qr-read: QR이 없는 이미지는 에러', async ({ page }) => {
   await expect(content.locator('.error')).toContainText('QR 코드를 찾지 못했습니다.');
 });
 
+async function installCameraMock(page, { errorName = '', result = 'https://example.com/path' } = {}) {
+  await page.addInitScript(({ errorName: deniedName, result: rawValue }) => {
+    const state = window.__cameraMock = { constraints: [], stopped: 0 };
+    const devices = [
+      { kind: 'videoinput', deviceId: 'back', label: '후면 카메라' },
+      { kind: 'videoinput', deviceId: 'front', label: '전면 카메라' },
+    ];
+    Object.defineProperty(navigator, 'mediaDevices', {
+      configurable: true,
+      value: {
+        async getUserMedia(constraints) {
+          state.constraints.push(constraints);
+          if (deniedName) {
+            const error = new Error('mock camera error');
+            error.name = deniedName;
+            throw error;
+          }
+          const deviceId = constraints.video.deviceId?.exact || 'back';
+          const track = { stop: () => { state.stopped++; }, getSettings: () => ({ deviceId }) };
+          return { getTracks: () => [track], getVideoTracks: () => [track] };
+        },
+        async enumerateDevices() { return devices; },
+      },
+    });
+    Object.defineProperty(HTMLMediaElement.prototype, 'srcObject', {
+      configurable: true,
+      get() { return this.__mockStream || null; },
+      set(value) { this.__mockStream = value; },
+    });
+    Object.defineProperty(HTMLMediaElement.prototype, 'readyState', { configurable: true, get: () => 4 });
+    HTMLMediaElement.prototype.play = async () => {};
+    window.BarcodeDetector = class {
+      static async getSupportedFormats() { return ['qr_code', 'ean_13', 'code_128', 'data_matrix']; }
+      async detect() {
+        if (this.detected) return [];
+        this.detected = true;
+        return [{ rawValue, format: 'qr_code' }];
+      }
+    };
+  }, { errorName, result });
+}
+
+test('qr-read: 카메라 스캔, 일시정지, 전환과 라우트 이탈 정리', async ({ page }) => {
+  await installCameraMock(page);
+  await openTool(page, 'qr-read');
+  const content = page.locator('#content');
+
+  await content.getByRole('button', { name: '카메라 시작' }).click();
+  await expect(content.getByLabel('카메라 선택')).toHaveValue('back');
+  await expect(content).toContainText('EAN-13');
+  await expect(content.locator('.scan-result').first()).toContainText('https://example.com/path');
+  await expect(content.locator('.scan-result').first()).toContainText('QR 코드');
+  await expect(content.getByRole('button', { name: '스캔 계속' })).toBeEnabled();
+  const openLink = content.getByRole('link', { name: '확인 후 URL 열기' });
+  await expect(openLink).toHaveAttribute('href', 'https://example.com/path');
+  await expect(openLink).toHaveAttribute('target', '_blank');
+  expect(page.url()).toContain('#/tool/qr-read');
+
+  await content.getByRole('button', { name: '스캔 계속' }).click();
+  await content.getByRole('button', { name: '스캔 일시정지' }).click();
+  await expect(content.locator('.camera-status')).toContainText('스캔을 일시정지했습니다.');
+
+  await content.getByRole('button', { name: '카메라 전환' }).click();
+  await expect(content.getByLabel('카메라 선택')).toHaveValue('front');
+  await expect.poll(() => page.evaluate(() => window.__cameraMock.constraints.length)).toBe(2);
+  await expect.poll(() => page.evaluate(() => window.__cameraMock.stopped)).toBe(1);
+
+  await openTool(page, 'base64-image');
+  await expect.poll(() => page.evaluate(() => window.__cameraMock.stopped)).toBe(2);
+});
+
+test('qr-read: 카메라 권한 거부를 구체적으로 안내', async ({ page }) => {
+  await installCameraMock(page, { errorName: 'NotAllowedError' });
+  await openTool(page, 'qr-read');
+  const content = page.locator('#content');
+  await content.getByRole('button', { name: '카메라 시작' }).click();
+  await expect(content.locator('.camera-status')).toContainText('카메라 권한이 거부되었습니다.');
+  await expect(content.getByRole('button', { name: '카메라 시작' })).toBeEnabled();
+});
+
+test('qr-read: 카메라 API 미지원 환경은 이미지 입력을 안내', async ({ page }) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, 'mediaDevices', { configurable: true, value: undefined });
+  });
+  await openTool(page, 'qr-read');
+  const content = page.locator('#content');
+  await content.getByRole('button', { name: '카메라 시작' }).click();
+  await expect(content.locator('.camera-status')).toContainText('이 브라우저는 카메라 접근을 지원하지 않습니다. QR 이미지 선택을 이용하세요.');
+});
+
 /* ---------- base64-image 왕복 ---------- */
 
 test('base64-image: 이미지 → Base64 → 이미지 왕복', async ({ page }) => {
@@ -173,6 +264,60 @@ async function convertOnce(page, { format, options = {} } = {}) {
   return grabDownload(page, () => content.getByRole('button', { name: '다운로드', exact: true }).click());
 }
 
+async function previewPixels(content, points) {
+  const preview = content.locator('img.img-preview').first();
+  await preview.evaluate((img) => img.decode());
+  return preview.evaluate((img, samplePoints) => {
+    const canvas = document.createElement('canvas');
+    canvas.width = img.naturalWidth;
+    canvas.height = img.naturalHeight;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(img, 0, 0);
+    return {
+      width: canvas.width,
+      height: canvas.height,
+      pixels: samplePoints.map(([x, y]) => [...ctx.getImageData(x, y, 1, 1).data]),
+    };
+  }, points);
+}
+
+function addExifOrientation(jpeg, orientation) {
+  const tiff = Buffer.alloc(26);
+  tiff.write('II', 0, 'latin1');
+  tiff.writeUInt16LE(0x2a, 2);
+  tiff.writeUInt32LE(8, 4);
+  tiff.writeUInt16LE(1, 8);
+  tiff.writeUInt16LE(0x0112, 10);
+  tiff.writeUInt16LE(3, 12);
+  tiff.writeUInt32LE(1, 14);
+  tiff.writeUInt16LE(orientation, 18);
+  tiff.writeUInt32LE(0, 22);
+  const body = Buffer.concat([Buffer.from('Exif\0\0', 'latin1'), tiff]);
+  const length = Buffer.alloc(2);
+  length.writeUInt16BE(body.length + 2);
+  return Buffer.concat([jpeg.subarray(0, 2), Buffer.from([0xff, 0xe1]), length, body, jpeg.subarray(2)]);
+}
+
+async function makeOrientedJpeg(page, orientation = 6) {
+  const base64 = await page.evaluate(async () => {
+    const canvas = document.createElement('canvas');
+    canvas.width = 40;
+    canvas.height = 20;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#ff0000';
+    ctx.fillRect(0, 0, 20, 20);
+    ctx.fillStyle = '#0000ff';
+    ctx.fillRect(20, 0, 20, 20);
+    const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg', 1));
+    const bytes = new Uint8Array(await blob.arrayBuffer());
+    let binary = '';
+    for (let i = 0; i < bytes.length; i += 0x8000)
+      binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+    return btoa(binary);
+  });
+  return addExifOrientation(Buffer.from(base64, 'base64'), orientation);
+}
+
 const formats = [
   { format: 'image/png', name: 'converted.png', magic: '89504e47', label: 'PNG' },
   { format: 'image/jpeg', name: 'converted.jpg', magic: 'ffd8ff', label: 'JPEG' },
@@ -188,8 +333,8 @@ test('image-convert: 포맷 한계와 재인코딩 방식을 UI에 표시', asyn
   await expect(format.locator('option[value="original"]')).toHaveText('원본 포맷 유지 (재인코딩)');
   await expect(format.locator('option[value="image/gif"]')).toHaveText('GIF (단일 프레임)');
   await expect(format.locator('option[value="image/svg+xml"]')).toHaveText('SVG (PNG 포함)');
-  await expect(content.locator('.note')).toContainText('애니메이션 입력도 정지 이미지 한 장으로 바뀝니다.');
-  await expect(content.locator('.note')).toContainText('벡터화가 아니라 PNG 이미지를 포함한 SVG 파일입니다.');
+  await expect(content.locator('.note').last()).toContainText('애니메이션 입력도 정지 이미지 한 장으로 바뀝니다.');
+  await expect(content.locator('.note').last()).toContainText('벡터화가 아니라 PNG 이미지를 포함한 SVG 파일입니다.');
   await expect(content.getByLabel('JPEG/GIF/BMP 배경색')).toHaveValue('#ffffff');
 });
 
@@ -266,6 +411,71 @@ test('image-convert: 여러 장은 ZIP으로 묶어 받는다', async ({ page })
   expect(zip.bytes.subarray(0, 4).toString('hex')).toBe('504b0304');
   expect(zip.bytes.toString('latin1')).toContain('a.png');
   expect(zip.bytes.toString('latin1')).toContain('b.png');
+});
+
+test('image-convert: 공통 회전·반전·자르기를 픽셀에 적용', async ({ page }) => {
+  await openTool(page, 'image-convert');
+  const content = page.locator('#content');
+  await uploadFile(content, '이미지 선택 (여러 장 가능)', { name: 'edit.png', mimeType: 'image/png', buffer: EDIT_PNG });
+
+  await setOption(content, '공통 회전', '90');
+  await expect(content.getByText('2 × 4,', { exact: false })).toBeVisible();
+  let sample = await previewPixels(content, [[0, 0], [0, 3]]);
+  expect(sample).toEqual({ width: 2, height: 4, pixels: [[255, 0, 0, 255], [0, 0, 255, 255]] });
+
+  await setOption(content, '공통 회전', '0');
+  await setOption(content, '공통 좌우 반전', true);
+  sample = await previewPixels(content, [[0, 0], [3, 0]]);
+  expect(sample.pixels).toEqual([[0, 0, 255, 255], [255, 0, 0, 255]]);
+
+  await setOption(content, '공통 좌우 반전', false);
+  await setOption(content, '공통 자르기', 'custom');
+  await setOption(content, '공통 자르기 X(%)', '50');
+  await setOption(content, '공통 폭(%)', '50');
+  await expect(content.getByText('2 × 2,', { exact: false })).toBeVisible();
+  sample = await previewPixels(content, [[0, 0], [1, 1]]);
+  expect(sample.pixels).toEqual([[0, 0, 255, 255], [0, 0, 255, 255]]);
+});
+
+test('image-convert: 잘못된 사용자 자르기 영역을 거부', async ({ page }) => {
+  await openTool(page, 'image-convert');
+  const content = page.locator('#content');
+  await uploadFile(content, '이미지 선택 (여러 장 가능)', { name: 'edit.png', mimeType: 'image/png', buffer: EDIT_PNG });
+  await setOption(content, '공통 자르기', 'custom');
+  await setOption(content, '공통 자르기 X(%)', '60');
+  await setOption(content, '공통 폭(%)', '50');
+  await expect(content.getByRole('alert')).toContainText('자르기 영역은 이미지 경계(100%) 안에 있어야 합니다.');
+});
+
+test('image-convert: 파일별 편집 설정이 공통 편집 설정보다 우선', async ({ page }) => {
+  await openTool(page, 'image-convert');
+  const content = page.locator('#content');
+  await uploadFile(content, '이미지 선택 (여러 장 가능)', [
+    { name: 'a.png', mimeType: 'image/png', buffer: EDIT_PNG },
+    { name: 'b.png', mimeType: 'image/png', buffer: EDIT_PNG },
+  ]);
+  await setOption(content, '공통 회전', '90');
+  await content.getByText('b.png 개별 편집 설정', { exact: true }).click();
+  await content.getByLabel('b.png 개별 편집 설정 사용').check();
+  await setOption(content, 'b.png 회전', '0');
+  await expect(content.getByText('a.png → a.png — 2 × 4,', { exact: false })).toBeVisible();
+  await expect(content.getByText('b.png → b.png — 4 × 2,', { exact: false })).toBeVisible();
+});
+
+test('image-convert: EXIF orientation을 미리보기와 결과에 한 번만 적용', async ({ page }) => {
+  await openTool(page, 'image-convert');
+  const content = page.locator('#content');
+  const jpeg = await makeOrientedJpeg(page, 6);
+  await uploadFile(content, '이미지 선택 (여러 장 가능)', { name: 'oriented.jpg', mimeType: 'image/jpeg', buffer: jpeg });
+  await expect(content.getByText('원본: 20 × 40 — EXIF 방향 6 적용됨')).toBeVisible();
+  await expect(content.getByText('20 × 40,', { exact: false })).toBeVisible();
+  const sample = await previewPixels(content, [[10, 3], [10, 36]]);
+  expect(sample.width).toBe(20);
+  expect(sample.height).toBe(40);
+  expect(sample.pixels[0][0]).toBeGreaterThan(220);
+  expect(sample.pixels[0][2]).toBeLessThan(30);
+  expect(sample.pixels[1][0]).toBeLessThan(30);
+  expect(sample.pixels[1][2]).toBeGreaterThan(220);
 });
 
 /* ---------- bg-remove ---------- */

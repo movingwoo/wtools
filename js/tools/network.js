@@ -342,6 +342,12 @@ tool({
   id: 'dns-lookup', cat: CAT, name: 'DNS over HTTPS 조회',
   desc: 'Cloudflare DoH를 통해 도메인의 DNS 레코드를 조회합니다.',
   keywords: 'dns doh lookup resolve resolver dig nslookup a aaaa mx txt cname',
+  externalRequest: {
+    service: 'Cloudflare DNS over HTTPS',
+    sends: '입력한 도메인과 선택한 레코드 타입',
+    privacy: 'Cloudflare는 요청 처리 과정에서 접속 IP 등 일반적인 통신 정보를 확인할 수 있습니다. 비공개 내부 도메인이나 민감한 호스트 이름은 입력하지 마세요.',
+    cors: true,
+  },
   render(root) {
     const io = makeIO(root, {
       inputs: [{ id: 'input', label: '도메인', rows: 1, value: 'example.com' }],
@@ -351,10 +357,16 @@ tool({
       async process(text, o, _, signal) {
         const domain = text.trim();
         if (!domain) return '';
-        const res = await fetch(`https://cloudflare-dns.com/dns-query?name=${encodeURIComponent(domain)}&type=${o.type}`, {
-          headers: { accept: 'application/dns-json' },
-          signal,
-        });
+        let res;
+        try {
+          res = await fetch(`https://cloudflare-dns.com/dns-query?name=${encodeURIComponent(domain)}&type=${o.type}`, {
+            headers: { accept: 'application/dns-json' },
+            signal,
+          });
+        } catch (error) {
+          if (error?.name === 'AbortError') throw error;
+          throw new Error('DNS 조회 서버에 연결하지 못했습니다. 네트워크 연결 또는 CORS 정책을 확인하세요.');
+        }
         if (!res.ok) throw new Error('DNS 조회 실패: HTTP ' + res.status);
         const data = await res.json();
         const RCODE = { 0: 'NOERROR', 1: 'FORMERR', 2: 'SERVFAIL', 3: 'NXDOMAIN (도메인 없음)', 5: 'REFUSED' };

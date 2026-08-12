@@ -1,5 +1,15 @@
 // 인코딩 / 디코딩 도구 정밀 테스트 — 대표 입력에 대한 기대 출력 검증.
+import { createHmac } from 'node:crypto';
 import { test, expect, toolCases, openTool, ioSection, fillInputs, setOption, clickAction } from '../helpers.js';
+import { makeTestPki } from '../fixtures.js';
+
+const jwtPart = (value) => Buffer.from(JSON.stringify(value)).toString('base64url');
+const jwtTestSecret = '0123456789abcdef0123456789abcdef';
+const signHs256 = (payload, key = jwtTestSecret) => {
+  const signingInput = `${jwtPart({ alg: 'HS256', typ: 'JWT' })}.${jwtPart(payload)}`;
+  return `${signingInput}.${createHmac('sha256', key).update(signingInput).digest('base64url')}`;
+};
+const jwtTestNow = Math.floor(Date.now() / 1000);
 
 const cases = [
   // Base64
@@ -61,20 +71,57 @@ const cases = [
   { name: 'roman: 최댓값 3999', tool: 'roman', inputs: '3999', output: 'MMMCMXCIX' },
   { name: 'roman: 범위 밖은 에러', tool: 'roman', inputs: '4000', error: '1 ~ 3999 범위만 지원합니다.' },
 
-  // JWT — jwt.io의 표준 HS256 예제 토큰 사용
+  // JWT — jwt.io에 공개된 HS256 예제 벡터와 경계 조건
   {
     name: 'jwt: 디코딩과 HS256 서명 검증 성공', tool: 'jwt',
-    options: { '키(HS 시크릿 또는 RS 공개키 PEM)': 'your-256-bit-secret' },
-    inputs: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyfQ.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c',
-    htmlContains: ['John Doe', '서명이 유효합니다'],
+    inputs: [
+      'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyfQ.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c',
+      'your-256-bit-secret',
+    ],
+    htmlContains: ['John Doe', '서명 검증', '서명이 유효합니다', '클레임 검증', '클레임이 유효합니다', '시크릿이 약합니다'],
   },
   {
     name: 'jwt: 잘못된 키로 검증 실패', tool: 'jwt',
-    options: { '키(HS 시크릿 또는 RS 공개키 PEM)': 'wrong-secret' },
-    inputs: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyfQ.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c',
+    inputs: [
+      'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyfQ.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c',
+      'wrong-secret',
+    ],
     htmlContains: ['서명이 올바르지 않습니다'],
   },
   { name: 'jwt: 형식 오류', tool: 'jwt', inputs: 'not-a-jwt', htmlError: 'JWT는 header.payload.signature 3개 부분이어야 합니다.' },
+  {
+    name: 'jwt: 만료된 exp 클레임', tool: 'jwt',
+    inputs: [signHs256({ sub: 'expired', exp: 1 }), jwtTestSecret],
+    htmlContains: ['서명이 유효합니다', '클레임 검증에 실패했습니다', '전에 만료되었습니다'],
+  },
+  {
+    name: 'jwt: 미래 nbf와 iat 클레임', tool: 'jwt',
+    inputs: [signHs256({ nbf: 4102444800, iat: 4102444800 }), jwtTestSecret],
+    htmlContains: ['뒤부터 사용할 수 있습니다', '현재보다', '클레임 검증에 실패했습니다'],
+  },
+  {
+    name: 'jwt: clock skew 범위 안의 만료 허용', tool: 'jwt',
+    options: { 'clock skew(초)': '300' },
+    inputs: [signHs256({ exp: jwtTestNow - 10 }), jwtTestSecret],
+    htmlContains: ['클레임이 유효합니다'],
+  },
+  {
+    name: 'jwt: iss/aud/sub 기대값과 audience 불일치', tool: 'jwt',
+    options: { '예상 iss': 'issuer-a', '예상 aud(쉼표 구분)': 'api-b', '예상 sub': 'user-1' },
+    inputs: [signHs256({ iss: 'issuer-a', aud: ['api-a'], sub: 'user-1' }), jwtTestSecret],
+    htmlContains: ['iss: 기대값과 일치합니다', 'aud: 기대 audience가 없습니다 — api-b', 'sub: 기대값과 일치합니다', '클레임 검증에 실패했습니다'],
+  },
+  {
+    name: 'jwt: alg=none 명시적 경고와 검증 거부', tool: 'jwt',
+    inputs: [`${jwtPart({ alg: 'none', typ: 'JWT' })}.${jwtPart({ sub: 'unsigned' })}.`, 'any-key'],
+    htmlContains: ['alg=none 토큰은 서명되지 않았으므로 신뢰할 수 없습니다', 'alg=none 서명은 검증하지 않습니다'],
+  },
+  {
+    name: 'jwt: 예상 알고리즘 불일치 경고와 검증 거부', tool: 'jwt',
+    options: { '예상 알고리즘': 'RS256' },
+    inputs: [signHs256({ sub: 'algorithm-check' }), jwtTestSecret],
+    htmlContains: ['알고리즘 불일치: 헤더는 HS256, 기대값은 RS256', '알고리즘 불일치로 서명 검증을 거부했습니다'],
+  },
   {
     name: 'jwt: HS256 서명 생성 (표준 벡터)', tool: 'jwt', io: 1,
     inputs: ['{"sub":"1234567890","name":"John Doe","iat":1516239022}', 'your-256-bit-secret'],
@@ -149,3 +196,29 @@ const cases = [
 ];
 
 toolCases('encoding', cases);
+
+const jwtPki = makeTestPki();
+for (const [alg, privateKey, publicKey] of [
+  ['PS256', jwtPki.rsaKey, jwtPki.rsaPublicKey],
+  ['PS384', jwtPki.rsaKey, jwtPki.rsaPublicKey],
+  ['PS512', jwtPki.rsaKey, jwtPki.rsaPublicKey],
+  ['ES256', jwtPki.ecKey, jwtPki.ecPublicKey],
+  ['ES384', jwtPki.ec384Key, jwtPki.ec384PublicKey],
+  ['ES512', jwtPki.ec521Key, jwtPki.ec521PublicKey],
+]) {
+  test(`jwt: ${alg} 생성·검증 왕복`, async ({ page }) => {
+    await openTool(page, 'jwt');
+    const create = ioSection(page, 1);
+    await setOption(create, '알고리즘', alg);
+    await fillInputs(create, ['{"sub":"asymmetric-test"}', privateKey]);
+    await clickAction(create, 'JWT 생성');
+    await expect(create).toHaveAttribute('aria-busy', 'false');
+    const token = await create.locator('textarea.out').inputValue();
+    expect(token.split('.')).toHaveLength(3);
+
+    const verify = ioSection(page, 0);
+    await setOption(verify, '예상 알고리즘', alg);
+    await fillInputs(verify, [token, publicKey]);
+    await expect(verify.locator('.out-html').first()).toContainText('서명이 유효합니다');
+  });
+}

@@ -141,6 +141,30 @@ const cases = [
     output: '{\n  "name": "홍길동",\n  "age": 0\n}',
   },
   {
+    name: 'json-schema: 로컬 $ref와 required, allOf, pattern 샘플', tool: 'json-schema',
+    inputs: [null, '{"$defs":{"base":{"type":"object","required":["id"],"properties":{"id":{"type":"string","pattern":"^[A-Z]{2}-\\\\d{3}$"}}},"person":{"type":"object","required":["name"],"properties":{"name":{"const":"홍길동"}}}},"allOf":[{"$ref":"#/$defs/base"},{"$ref":"#/$defs/person"}]}'],
+    action: '샘플 생성', output: '{\n  "id": "AA-000",\n  "name": "홍길동"\n}',
+  },
+  {
+    name: 'json-schema: oneOf 첫 분기 샘플', tool: 'json-schema',
+    inputs: [null, '{"oneOf":[{"type":"string","const":"첫째"},{"type":"integer","minimum":10}]}'],
+    action: '샘플 생성', output: '"첫째"',
+  },
+  {
+    name: 'json-schema: prefixItems와 minItems 샘플', tool: 'json-schema',
+    inputs: [null, '{"type":"array","prefixItems":[{"const":"머리"},{"type":"integer","minimum":5}],"items":{"type":"boolean"},"minItems":4}'],
+    action: '샘플 생성', output: '[\n  "머리",\n  5,\n  false,\n  false\n]',
+  },
+  {
+    name: 'json-schema: items false는 빈 배열 샘플', tool: 'json-schema',
+    inputs: [null, '{"type":"array","items":false}'], action: '샘플 생성', output: '[]',
+  },
+  {
+    name: 'json-schema: 외부 $ref는 네트워크 요청 없이 거부', tool: 'json-schema',
+    inputs: [null, '{"$ref":"https://example.com/schema.json"}'], action: '샘플 생성',
+    error: '외부 $ref는 샘플 생성에서 지원하지 않습니다: https://example.com/schema.json',
+  },
+  {
     name: 'json-schema: 스키마가 비면 에러', tool: 'json-schema',
     inputs: ['{}', ' '], action: '검증', error: 'JSON Schema를 입력하세요.',
   },

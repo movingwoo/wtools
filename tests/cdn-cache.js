@@ -82,6 +82,12 @@ export const cdnCache = {
       await page.addInitScript(blockServiceWorker);
       await page.route(external, handle);
     }
-    await use();
+    try {
+      await use();
+    } finally {
+      // 테스트가 외부 라이브러리 로딩 중 끝나도 route.fetch()의 종료 오류가
+      // 테스트 실패로 번지지 않게 진행 중인 라우트 콜백을 안전하게 정리한다.
+      if (!LIVE) await page.unrouteAll({ behavior: 'ignoreErrors' });
+    }
   }, { auto: true }],
 };

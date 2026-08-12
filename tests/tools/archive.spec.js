@@ -2,6 +2,7 @@
 // 다른 구현(node zlib, python bz2/lzma)이 만든 벡터를 해제해 교차 검증하고,
 // 압축 → 해제 왕복과 파일 업로드/다운로드 경로를 확인한다.
 import { test, expect, toolCases, openTool, ioSection, runIO, uploadFile, grabDownload } from '../helpers.js';
+import { brotliDecompressSync, zstdDecompressSync } from 'node:zlib';
 
 const MSG = 'hello wtools compression test\n'.repeat(3); // 90바이트
 // 원문 MSG를 다른 구현으로 압축한 벡터: node zlib(gzip/deflate/deflateRaw), python bz2/lzma(FORMAT_ALONE)
@@ -73,6 +74,8 @@ const roundTrips = [
   { tool: 'raw-deflate', name: 'Raw Deflate' },
   { tool: 'lzma', name: 'LZMA' },
   { tool: 'lz4', name: 'LZ4' },
+  { tool: 'brotli', name: 'Brotli' },
+  { tool: 'zstd', name: 'Zstandard' },
 ];
 
 for (const { tool, name } of roundTrips) {
@@ -84,6 +87,22 @@ for (const { tool, name } of roundTrips) {
     const base64 = packed.split('\n')[0];
     const back = await runIO(io, { options: { '입력 형식': 'base64', '출력 형식': 'text' }, inputs: base64, action: '해제' });
     expect(back).toBe(src);
+  });
+}
+
+for (const { tool, decompress, magic } of [
+  { tool: 'brotli', decompress: brotliDecompressSync },
+  { tool: 'zstd', decompress: zstdDecompressSync, magic: '28b52ffd' },
+]) {
+  test(`${tool}: 브라우저 압축 결과를 Node 표준 구현으로 해제`, async ({ page }) => {
+    await openTool(page, tool);
+    const io = ioSection(page);
+    const options = { '출력 형식': 'base64' };
+    if (tool === 'zstd') options['압축 레벨'] = '10';
+    const packed = await runIO(io, { options, inputs: MSG, action: '압축' });
+    const bytes = Buffer.from(packed.split('\n')[0], 'base64');
+    if (magic) expect(bytes.subarray(0, 4).toString('hex')).toBe(magic);
+    expect(decompress(bytes).toString()).toBe(MSG);
   });
 }
 
@@ -105,6 +124,30 @@ test('gzip: 파일 압축 → 해제 왕복', async ({ page }) => {
   expect(back.name).toBe('note.txt');
   expect(back.bytes.toString()).toBe(MSG);
 });
+
+for (const { tool, ext, magic } of [
+  { tool: 'brotli', ext: '.br' },
+  { tool: 'zstd', ext: '.zst', magic: '28b52ffd' },
+]) {
+  test(`${tool}: 파일 압축 → 해제 왕복`, async ({ page }) => {
+    await openTool(page, tool);
+    const content = page.locator('#content');
+    const fileRow = content.locator('.btn-row').filter({ hasText: `압축 (${ext})` });
+    await uploadFile(content, '압축하거나 해제할 파일 선택', {
+      name: 'note.txt', mimeType: 'text/plain', buffer: Buffer.from(MSG),
+    });
+    const packed = await grabDownload(page, () => fileRow.getByRole('button', { name: `압축 (${ext})` }).click());
+    expect(packed.name).toBe('note.txt' + ext);
+    if (magic) expect(packed.bytes.subarray(0, 4).toString('hex')).toBe(magic);
+
+    await uploadFile(content, '압축하거나 해제할 파일 선택', {
+      name: packed.name, mimeType: 'application/octet-stream', buffer: packed.bytes,
+    });
+    const back = await grabDownload(page, () => fileRow.getByRole('button', { name: '해제', exact: true }).click());
+    expect(back.name).toBe('note.txt');
+    expect(back.bytes.toString()).toBe(MSG);
+  });
+}
 
 test('zip: 파일 묶기 → 풀기 왕복', async ({ page }) => {
   await openTool(page, 'zip');

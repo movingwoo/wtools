@@ -23,12 +23,25 @@ export function stageToolInput(toolId, value, setup = {}) {
   pendingToolInput = { toolId, value, ...setup };
 }
 
-function takeToolInput() {
+function takeToolInput(inputIds) {
   const id = location.hash.match(/^#\/tool\/([\w-]+)/)?.[1];
   if (!pendingToolInput || pendingToolInput.toolId !== id) return null;
+  if (pendingToolInput.inputId && !inputIds.includes(pendingToolInput.inputId)) return null;
   const pending = pendingToolInput;
   pendingToolInput = null;
   return pending;
+}
+
+function transferTargets(sourceId, outputId) {
+  const output = tools.find((item) => item.id === sourceId)?.transfer?.outputs
+    ?.find((item) => item.id === outputId);
+  if (!output) return [];
+  return (output.targets || []).flatMap((targetId) => {
+    const target = tools.find((item) => item.id === targetId);
+    if (!target) return [];
+    const inputs = (target.transfer?.inputs || []).filter((input) => input.accepts?.includes(output.type));
+    return inputs.length ? [{ target, inputs, type: output.type }] : [];
+  });
 }
 
 /* ---------- DOM 헬퍼 ---------- */
@@ -52,6 +65,129 @@ let fieldId = 0;
 export function formLabel(control, text, attrs = {}) {
   if (!control.id) control.id = `wtools-field-${++fieldId}`;
   return h('label', { ...attrs, for: control.id }, text);
+}
+
+function fileMatchesAccept(file, accept) {
+  const rules = accept.split(',').map((value) => value.trim().toLowerCase()).filter(Boolean);
+  if (!rules.length) return true;
+  const name = file.name.toLowerCase();
+  const type = file.type.toLowerCase();
+  return rules.some((rule) => rule.startsWith('.') ? name.endsWith(rule)
+    : rule.endsWith('/*') ? type.startsWith(rule.slice(0, -1))
+      : type === rule);
+}
+
+function clipboardFileName(type, index) {
+  const extensions = {
+    'image/png': 'png', 'image/jpeg': 'jpg', 'image/webp': 'webp', 'image/gif': 'gif',
+    'text/plain': 'txt', 'application/json': 'json', 'application/pdf': 'pdf',
+  };
+  return `클립보드-${index + 1}.${extensions[type] || 'bin'}`;
+}
+
+// 도구가 만든 파일 input을 공통 드롭·클립보드 UI로 보강한다.
+export function enhanceFileInputs(root) {
+  let fileInputIndex = 0;
+  for (const input of root.querySelectorAll('input[type="file"]:not([data-file-enhanced])')) {
+    input.dataset.fileEnhanced = 'true';
+    const status = h('span', { class: 'file-drop-status', 'aria-live': 'polite' });
+    const browse = h('button', { class: 'btn small', type: 'button' }, '파일 찾아보기');
+    const paste = h('button', { class: 'btn small', type: 'button' }, '클립보드 파일 붙여넣기');
+    const zone = h('div', {
+      class: 'file-drop-zone', tabindex: 0,
+      'aria-label': `파일 끌어놓기 및 클립보드 붙여넣기 영역 ${++fileInputIndex}`,
+    },
+    h('span', { class: 'file-drop-instruction' }, input.multiple
+      ? '파일을 여기에 끌어놓거나 이 영역에서 Ctrl/Cmd+V로 붙여넣으세요. 여러 파일을 받을 수 있습니다.'
+      : '파일을 여기에 끌어놓거나 이 영역에서 Ctrl/Cmd+V로 붙여넣으세요.'),
+    h('span', { class: 'file-drop-actions' }, browse, paste),
+    status,
+    h('span', { class: 'file-drop-privacy' }, '파일 내용은 브라우저 밖으로 전송되지 않습니다.'));
+
+    const announce = (message, error = false) => {
+      if (!zone.isConnected) return;
+      status.textContent = message;
+      status.classList.toggle('error', error);
+    };
+    const selectFiles = (files, source) => {
+      if (!zone.isConnected) return;
+      if (input.disabled) { announce('현재 파일을 처리 중입니다. 완료된 뒤 다시 시도하세요.', true); return; }
+      const candidates = [...files].filter(Boolean);
+      const accepted = candidates.filter((file) => fileMatchesAccept(file, input.accept));
+      const rejected = candidates.filter((file) => !fileMatchesAccept(file, input.accept));
+      if (!accepted.length) {
+        announce(rejected.length ? '이 입력에서 지원하지 않는 파일 형식입니다.' : `${source}에서 파일을 찾지 못했습니다.`, true);
+        return;
+      }
+      const selected = input.multiple ? accepted : accepted.slice(0, 1);
+      try {
+        const transfer = new DataTransfer();
+        selected.forEach((file) => transfer.items.add(file));
+        input.files = transfer.files;
+      } catch {
+        announce('이 브라우저에서는 끌어놓기 파일을 입력에 연결할 수 없습니다. 파일 선택을 이용하세요.', true);
+        return;
+      }
+      input.dispatchEvent(new Event('change', { bubbles: true }));
+      const suffix = rejected.length ? `, 지원하지 않는 형식 ${rejected.length}개 제외` : '';
+      announce(`${source}에서 ${selected.length}개 파일을 가져왔습니다${suffix}.`);
+    };
+
+    browse.addEventListener('click', () => input.click());
+    paste.addEventListener('click', async () => {
+      if (!globalThis.isSecureContext || !navigator.clipboard?.read) {
+        announce('클립보드 파일 읽기는 HTTPS 또는 localhost의 지원 브라우저에서만 사용할 수 있습니다.', true);
+        zone.focus();
+        return;
+      }
+      try {
+        const files = [];
+        for (const item of await navigator.clipboard.read()) {
+          for (const type of item.types) {
+            const blob = await item.getType(type);
+            files.push(blob instanceof File ? blob : new File([blob], clipboardFileName(type, files.length), { type }));
+          }
+        }
+        selectFiles(files, '클립보드');
+      } catch (error) {
+        announce(error?.name === 'NotAllowedError'
+          ? '클립보드 읽기 권한이 거부되었습니다. 브라우저 권한을 확인하거나 파일 선택을 이용하세요.'
+          : '클립보드에서 파일을 읽지 못했습니다. 파일 선택을 이용하세요.', true);
+      }
+    });
+    zone.addEventListener('paste', (event) => {
+      const files = event.clipboardData?.files?.length
+        ? [...event.clipboardData.files]
+        : [...(event.clipboardData?.items || [])].map((item) => item.kind === 'file' ? item.getAsFile() : null).filter(Boolean);
+      if (!files.length) { announce('클립보드에 파일이 없습니다.', true); return; }
+      event.preventDefault();
+      selectFiles(files, '클립보드');
+    });
+    zone.addEventListener('dragenter', (event) => {
+      if ([...(event.dataTransfer?.types || [])].includes('Files')) {
+        event.preventDefault();
+        zone.classList.add('dragging');
+      }
+    });
+    zone.addEventListener('dragover', (event) => {
+      if ([...(event.dataTransfer?.types || [])].includes('Files')) {
+        event.preventDefault();
+        event.dataTransfer.dropEffect = 'copy';
+      }
+    });
+    zone.addEventListener('dragleave', (event) => {
+      if (!zone.contains(event.relatedTarget)) zone.classList.remove('dragging');
+    });
+    zone.addEventListener('drop', (event) => {
+      event.preventDefault();
+      zone.classList.remove('dragging');
+      selectFiles(event.dataTransfer?.files || [], '끌어놓기');
+    });
+    input.addEventListener('change', () => {
+      if (input.files?.length) announce(`선택한 파일: ${[...input.files].map((file) => file.name).join(', ')}`);
+    });
+    input.insertAdjacentElement('afterend', zone);
+  }
 }
 
 function legacyCopy(text) {
@@ -273,6 +409,8 @@ cfg = {
   actions: [{id,label,primary}]                // 생략 시 자동 실행만
   process: (input|{inputs}, opts, actionId, signal) => string|Node|Promise
   outputHTML: bool, outputRows, autorun (기본 true), runOnLoad (기본 false), note,
+  transferOutput: {id, when?: ({result,input,opts,actionId}) => bool,
+                   value?: ({result,input,opts,actionId}) => string},
   cancelable: bool, retryable: bool, largeInputThreshold (기본 1,000,000자, false면 경고 안 함)
 }
 ------------------------------------------------ */
@@ -281,7 +419,7 @@ export function makeIO(root, cfg) {
   const wrap = h('div', { class: 'io', 'aria-busy': 'false' });
   const inputDefs = cfg.inputs === null ? [] : (cfg.inputs || [{ id: 'input', label: '입력' }]);
   const inputEls = {};
-  const staged = inputDefs.length ? takeToolInput() : null;
+  const staged = inputDefs.length ? takeToolInput(inputDefs.map((def) => def.id)) : null;
 
   for (const def of inputDefs) {
     const ta = h('textarea', {
@@ -290,7 +428,7 @@ export function makeIO(root, cfg) {
       placeholder: def.placeholder || '', spellcheck: 'false',
     });
     if (def.value != null) ta.value = def.value;
-    if (staged && def === inputDefs[0]) ta.value = staged.value;
+    if (staged && def.id === (staged.inputId || inputDefs[0].id)) ta.value = staged.value;
     inputEls[def.id] = ta;
     wrap.append(formLabel(ta, def.label || '입력', { class: 'io-label' }), ta);
     ta.addEventListener('input', () => {
@@ -367,15 +505,30 @@ export function makeIO(root, cfg) {
     out.setAttribute('role', 'region');
     out.setAttribute('aria-labelledby', outLabel.id);
   }
+  const sourceId = location.hash.match(/^#\/tool\/([\w-]+)/)?.[1];
+  const transferConfig = typeof cfg.transferOutput === 'string'
+    ? { id: cfg.transferOutput }
+    : cfg.transferOutput;
+  const transferButton = h('button', {
+    class: 'copy-mini hidden', type: 'button', 'aria-expanded': 'false',
+  }, '다른 도구로 보내기');
+  const outActions = h('div', { class: 'out-actions' },
+    copyBtn(() => (cfg.outputHTML ? out.textContent : out.value)), transferButton);
   const outHead = h('div', { class: 'out-head' },
     outLabel,
-    copyBtn(() => (cfg.outputHTML ? out.textContent : out.value)));
+    outActions);
+  const transferTarget = h('select', { 'aria-label': '전달할 도구' });
+  const transferInput = h('select', { 'aria-label': '전달할 입력 칸' });
+  const transferGo = h('button', { class: 'btn small', type: 'button' }, '보내기');
+  const transferPanel = h('div', { class: 'transfer-panel hidden' },
+    h('span', { class: 'io-label' }, '결과 전달'), transferTarget, transferInput, transferGo,
+    h('span', { class: 'transfer-privacy' }, '값은 현재 탭의 메모리에서 한 번만 전달됩니다.'));
   const status = h('div', {
     class: 'io-status', role: 'status', 'aria-live': 'polite', 'aria-atomic': 'true',
   });
   const retryButton = h('button', { class: 'btn small hidden', type: 'button' }, '다시 시도');
   retryButton.addEventListener('click', () => run());
-  wrap.append(status, h('div', { class: 'out-wrap' }, outHead, out));
+  wrap.append(status, h('div', { class: 'out-wrap' }, outHead, transferPanel, out));
   status.after(retryButton);
   root.append(wrap);
 
@@ -384,6 +537,55 @@ export function makeIO(root, cfg) {
     for (const [id, el] of Object.entries(optEls))
       o[id] = el.type === 'checkbox' ? el.checked : el.value;
     return o;
+  }
+  let transferContext = null;
+  let compatibleTargets = [];
+  function updateTransferInputs() {
+    const selected = compatibleTargets.find((item) => item.target.id === transferTarget.value);
+    transferInput.innerHTML = '';
+    for (const input of selected?.inputs || [])
+      transferInput.append(h('option', { value: input.id }, input.label));
+    transferInput.classList.toggle('hidden', (selected?.inputs.length || 0) < 2);
+  }
+  transferTarget.addEventListener('change', updateTransferInputs);
+  transferButton.addEventListener('click', () => {
+    const open = transferPanel.classList.toggle('hidden');
+    transferButton.setAttribute('aria-expanded', String(!open));
+    if (!open) transferTarget.focus();
+  });
+  transferGo.addEventListener('click', () => {
+    if (!transferContext) return;
+    const selected = compatibleTargets.find((item) => item.target.id === transferTarget.value);
+    const input = selected?.inputs.find((item) => item.id === transferInput.value) || selected?.inputs[0];
+    if (!selected || !input) return;
+    const value = transferConfig.value
+      ? transferConfig.value(transferContext)
+      : cfg.outputHTML ? out.textContent : out.value;
+    const setup = input.optionsByType?.[selected.type] || {};
+    stageToolInput(selected.target.id, String(value), { ...setup, inputId: input.id });
+    const hash = '#/tool/' + selected.target.id;
+    if (location.hash === hash) window.dispatchEvent(new Event('wtools:staged-input'));
+    else location.hash = hash;
+  });
+  function setTransferResult(context, isErr) {
+    transferContext = null;
+    compatibleTargets = [];
+    transferButton.classList.add('hidden');
+    transferPanel.classList.add('hidden');
+    transferButton.setAttribute('aria-expanded', 'false');
+    if (isErr || !transferConfig || context.result == null) return;
+    let allowed = true;
+    try { allowed = !transferConfig.when || transferConfig.when(context); }
+    catch { allowed = false; }
+    if (!allowed) return;
+    compatibleTargets = transferTargets(sourceId, transferConfig.id);
+    if (!compatibleTargets.length) return;
+    transferContext = context;
+    transferTarget.innerHTML = '';
+    for (const item of compatibleTargets)
+      transferTarget.append(h('option', { value: item.target.id }, item.target.name));
+    updateTransferInputs();
+    transferButton.classList.remove('hidden');
   }
   function setOut(res, isErr = false) {
     if (cfg.outputHTML) {
@@ -396,9 +598,11 @@ export function makeIO(root, cfg) {
       out.value = isErr ? '⚠ ' + res : res == null ? '' : String(res);
       out.style.color = isErr ? 'var(--danger)' : '';
     }
+    setTransferResult({ result: res, input: lastInput, opts: lastOpts, actionId: lastAction }, isErr);
   }
 
   let seq = 0, running = false, pending = false, controller = null, largeInputApproved = false;
+  let lastInput = null, lastOpts = null;
   function setRunning(value, message = '') {
     running = value;
     wrap.setAttribute('aria-busy', String(value));
@@ -439,10 +643,13 @@ export function makeIO(root, cfg) {
     for (const [id, el] of Object.entries(inputEls)) vals[id] = el.value;
     // 입력이 하나면 문자열을, 여러 개면 {id: 값} 객체를 process에 전달한다.
     const arg = cfg.inputs === null ? null : inputDefs.length === 1 ? vals[inputDefs[0].id] : vals;
+    const opts = getOpts();
+    lastInput = arg;
+    lastOpts = opts;
     let isAsync = false;
     controller = cfg.cancelable ? new AbortController() : null;
     try {
-      let res = cfg.process(arg, getOpts(), lastAction, controller?.signal);
+      let res = cfg.process(arg, opts, lastAction, controller?.signal);
       if (res && typeof res.then === 'function') {
         isAsync = true;
         setRunning(true);

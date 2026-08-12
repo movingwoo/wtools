@@ -170,10 +170,87 @@ function encodeSVG(canvas) {
   return new Blob([svg], { type: 'image/svg+xml' });
 }
 
+function imageEditControls(labelPrefix = '') {
+  const rotation = h('select', null, [['0', '0°'], ['90', '90° 시계 방향'], ['180', '180°'], ['270', '270° 시계 방향']]
+    .map(([value, label]) => h('option', { value }, label)));
+  const flipHorizontal = h('input', { type: 'checkbox' });
+  const flipVertical = h('input', { type: 'checkbox' });
+  const cropMode = h('select', null,
+    h('option', { value: 'none' }, '자르지 않음'),
+    h('option', { value: 'square' }, '가운데 정사각형'),
+    h('option', { value: 'custom' }, '사용자 지정 (%)'));
+  const cropX = h('input', { type: 'number', min: 0, max: 99.9, step: 0.1, value: 0, style: { width: '68px' } });
+  const cropY = h('input', { type: 'number', min: 0, max: 99.9, step: 0.1, value: 0, style: { width: '68px' } });
+  const cropWidth = h('input', { type: 'number', min: 0.1, max: 100, step: 0.1, value: 100, style: { width: '68px' } });
+  const cropHeight = h('input', { type: 'number', min: 0.1, max: 100, step: 0.1, value: 100, style: { width: '68px' } });
+  const customCrop = h('span', { class: 'opt-item hidden' },
+    formLabel(cropX, `${labelPrefix}자르기 X(%)`), cropX,
+    formLabel(cropY, `${labelPrefix}Y(%)`), cropY,
+    formLabel(cropWidth, `${labelPrefix}폭(%)`), cropWidth,
+    formLabel(cropHeight, `${labelPrefix}높이(%)`), cropHeight);
+  const controls = {
+    rotation, flipHorizontal, flipVertical, cropMode, cropX, cropY, cropWidth, cropHeight, customCrop,
+  };
+  controls.node = h('div', { class: 'opt-row image-edit-controls' },
+    h('span', { class: 'opt-item' }, formLabel(rotation, `${labelPrefix}회전`), rotation),
+    h('span', { class: 'opt-item' }, formLabel(flipHorizontal, `${labelPrefix}좌우 반전`), flipHorizontal),
+    h('span', { class: 'opt-item' }, formLabel(flipVertical, `${labelPrefix}상하 반전`), flipVertical),
+    h('span', { class: 'opt-item' }, formLabel(cropMode, `${labelPrefix}자르기`), cropMode),
+    customCrop);
+  controls.syncCrop = () => customCrop.classList.toggle('hidden', cropMode.value !== 'custom');
+  controls.syncCrop();
+  return controls;
+}
+
+function copyImageEditControls(from, to) {
+  for (const key of ['rotation', 'cropMode', 'cropX', 'cropY', 'cropWidth', 'cropHeight']) to[key].value = from[key].value;
+  to.flipHorizontal.checked = from.flipHorizontal.checked;
+  to.flipVertical.checked = from.flipVertical.checked;
+  to.syncCrop();
+}
+
+function imageEditSettings(controls) {
+  const percent = (input, label, min, max) => {
+    const value = Number(input.value);
+    if (!Number.isFinite(value) || value < min || value > max)
+      throw new Error(`${label}은(는) ${min}~${max}% 범위로 입력하세요.`);
+    return value;
+  };
+  const settings = {
+    rotation: Number(controls.rotation.value),
+    flipHorizontal: controls.flipHorizontal.checked,
+    flipVertical: controls.flipVertical.checked,
+    cropMode: controls.cropMode.value,
+    cropX: 0, cropY: 0, cropWidth: 100, cropHeight: 100,
+  };
+  if (settings.cropMode === 'custom') {
+    settings.cropX = percent(controls.cropX, '자르기 X', 0, 99.9);
+    settings.cropY = percent(controls.cropY, '자르기 Y', 0, 99.9);
+    settings.cropWidth = percent(controls.cropWidth, '자르기 폭', 0.1, 100);
+    settings.cropHeight = percent(controls.cropHeight, '자르기 높이', 0.1, 100);
+    if (settings.cropX + settings.cropWidth > 100 || settings.cropY + settings.cropHeight > 100)
+      throw new Error('자르기 영역은 이미지 경계(100%) 안에 있어야 합니다.');
+  }
+  return settings;
+}
+
+function imageCropRect(width, height, settings) {
+  if (settings.cropMode === 'square') {
+    const size = Math.min(width, height);
+    return { x: (width - size) / 2, y: (height - size) / 2, width: size, height: size };
+  }
+  if (settings.cropMode !== 'custom') return { x: 0, y: 0, width, height };
+  const x = Math.floor(width * settings.cropX / 100);
+  const y = Math.floor(height * settings.cropY / 100);
+  const right = Math.min(width, Math.ceil(width * (settings.cropX + settings.cropWidth) / 100));
+  const bottom = Math.min(height, Math.ceil(height * (settings.cropY + settings.cropHeight) / 100));
+  return { x, y, width: Math.max(1, right - x), height: Math.max(1, bottom - y) };
+}
+
 tool({
   id: 'image-convert', cat: CAT, name: '이미지 포맷 변환기',
-  desc: '이미지를 다시 인코딩해 포맷·품질·크기·불투명 배경색을 조정하고 여러 결과를 ZIP으로 내려받습니다.',
-  keywords: 'image convert png jpeg webp gif bmp svg resize compress quality metadata',
+  desc: '이미지를 회전·반전·자르기·크기 조절한 뒤 다시 인코딩하고 여러 결과를 ZIP으로 내려받습니다.',
+  keywords: 'image convert png jpeg webp gif bmp svg resize crop rotate flip compress quality metadata exif orientation 회전 반전 자르기',
   render(root) {
     const out = h('div');
     const convertStatus = h('div', {
@@ -192,40 +269,55 @@ tool({
     const maxHeight = h('input', { type: 'number', min: 1, value: 1080, style: { width: '80px' } });
     const noUpscale = h('input', { type: 'checkbox' });
     noUpscale.checked = true;
+    const commonEdit = imageEditControls('공통 ');
+    const fileEdits = h('div', { class: 'image-file-edits' });
     const percentOpt = h('span', { class: 'opt-item' }, formLabel(scale, '크기(%)'), scale);
     const maxOpts = h('span', { class: 'opt-item', style: { display: 'none' } },
       formLabel(maxWidth, '최대 폭'), maxWidth, formLabel(maxHeight, '높이'), maxHeight);
     const info = h('span', { style: { color: 'var(--muted)' } });
-    let items = []; // [{ name, type, size, img, url }]
+    let items = []; // [{ name, type, size, bitmap, orientation, edit }]
     let outUrls = [];
     let seq = 0;
     let active = true;
     let converting = false, convertPending = false;
 
-    function dimensions(img) {
+    function dimensions(sourceWidth, sourceHeight) {
       let s;
       if (resizeMode.value === 'max') {
         const mw = +maxWidth.value, mh = +maxHeight.value;
         if (mw <= 0 || mh <= 0) throw new Error('최대 폭과 높이는 1 이상이어야 합니다.');
-        s = Math.min(mw / img.naturalWidth, mh / img.naturalHeight);
+        s = Math.min(mw / sourceWidth, mh / sourceHeight);
       } else {
         if (+scale.value <= 0) throw new Error('크기 비율은 1 이상이어야 합니다.');
         s = +scale.value / 100;
       }
       if (noUpscale.checked) s = Math.min(1, s);
       return {
-        w: Math.max(1, Math.round(img.naturalWidth * s)),
-        hgt: Math.max(1, Math.round(img.naturalHeight * s)),
+        w: Math.max(1, Math.round(sourceWidth * s)),
+        hgt: Math.max(1, Math.round(sourceHeight * s)),
       };
     }
 
-    async function convertOne(img, type, q) {
-      const { w, hgt } = dimensions(img);
+    async function convertOne(item, type, q) {
+      const controls = item.useEdit?.checked ? item.edit : commonEdit;
+      const edit = imageEditSettings(controls);
+      const crop = imageCropRect(item.bitmap.width, item.bitmap.height, edit);
+      const turns = edit.rotation === 90 || edit.rotation === 270;
+      const sourceWidth = turns ? crop.height : crop.width;
+      const sourceHeight = turns ? crop.width : crop.height;
+      const { w, hgt } = dimensions(sourceWidth, sourceHeight);
       const canvas = h('canvas', { width: w, height: hgt });
       const ctx = canvas.getContext('2d');
       // 투명도를 보존하지 않는 출력은 사용자가 고른 배경색으로 먼저 합성한다.
       if (type === 'image/jpeg' || type === 'image/bmp' || type === 'image/gif') { ctx.fillStyle = background.value; ctx.fillRect(0, 0, w, hgt); }
-      ctx.drawImage(img, 0, 0, w, hgt);
+      ctx.save();
+      ctx.translate(w / 2, hgt / 2);
+      ctx.scale(edit.flipHorizontal ? -1 : 1, edit.flipVertical ? -1 : 1);
+      ctx.scale(w / sourceWidth, hgt / sourceHeight);
+      ctx.rotate(edit.rotation * Math.PI / 180);
+      ctx.drawImage(item.bitmap, crop.x, crop.y, crop.width, crop.height,
+        -crop.width / 2, -crop.height / 2, crop.width, crop.height);
+      ctx.restore();
       let blob;
       if (type === 'image/bmp') blob = encodeBMP(ctx.getImageData(0, 0, w, hgt));
       else if (type === 'image/gif') blob = await encodeGIF(ctx.getImageData(0, 0, w, hgt));
@@ -268,7 +360,7 @@ tool({
             if (type === 'image/jpg') type = 'image/jpeg';
             if (!['image/png', 'image/jpeg', 'image/webp', 'image/gif', 'image/bmp', 'image/svg+xml'].includes(type))
               throw new Error('이 파일의 원본 포맷은 출력할 수 없습니다. 다른 출력 포맷을 선택하세요.');
-            const { blob, w, hgt } = await convertOne(item.img, type, q);
+            const { blob, w, hgt } = await convertOne(item, type, q);
             if (my !== seq) return;
             const ext = type === 'image/svg+xml' ? 'svg' : type === 'image/jpeg' ? 'jpg' : type.split('/')[1];
             const outName = items.length === 1 ? 'converted.' + ext : item.name.replace(/\.[^.]+$/, '') + '.' + ext;
@@ -323,22 +415,49 @@ tool({
       if (!list.length) return;
       file.disabled = true;
       info.textContent = '이미지 로딩 중...';
-      items.forEach((it) => URL.revokeObjectURL(it.url));
+      items.forEach((item) => item.bitmap.close?.());
       items = [];
+      fileEdits.innerHTML = '';
       const failed = [];
       for (const f of list) {
-        const img = new Image();
-        const url = URL.createObjectURL(f);
-        const ok = await new Promise((res) => { img.onload = () => res(true); img.onerror = () => res(false); img.src = url; });
-        if (!active) { URL.revokeObjectURL(url); return; }
-        if (ok) items.push({ name: f.name, type: f.type, size: f.size, img, url });
-        else { URL.revokeObjectURL(url); failed.push(f.name); }
+        try {
+          const bytes = new Uint8Array(await f.arrayBuffer());
+          let orientation = 1;
+          try { orientation = Number(readExif(bytes)?.ifd0?.[0x0112]) || 1; } catch { /* 손상된 EXIF는 픽셀 디코딩을 막지 않는다. */ }
+          const bitmap = await createImageBitmap(f, { imageOrientation: 'from-image' });
+          if (!active) { bitmap.close?.(); return; }
+          items.push({ name: f.name, type: f.type, size: f.size, bitmap, orientation });
+        } catch {
+          failed.push(f.name);
+        }
       }
       file.disabled = false;
       info.textContent = (items.length === 1
-        ? `원본: ${items[0].img.naturalWidth} × ${items[0].img.naturalHeight}`
+        ? `원본: ${items[0].bitmap.width} × ${items[0].bitmap.height}` +
+          (items[0].orientation >= 2 && items[0].orientation <= 8 ? ` — EXIF 방향 ${items[0].orientation} 적용됨` : '')
         : `${items.length}개 파일 선택됨`) +
         (failed.length ? ` — 로드 실패: ${failed.join(', ')}` : '');
+      for (const item of items) {
+        const useEdit = h('input', { type: 'checkbox' });
+        const edit = imageEditControls(`${item.name} `);
+        const fieldset = h('fieldset', { class: 'image-file-edit-fields', disabled: true }, edit.node);
+        let initialized = false;
+        useEdit.addEventListener('change', () => {
+          if (useEdit.checked && !initialized) { copyImageEditControls(commonEdit, edit); initialized = true; }
+          fieldset.disabled = !useEdit.checked;
+          convert();
+        });
+        for (const control of [edit.rotation, edit.flipHorizontal, edit.flipVertical, edit.cropMode, edit.cropX, edit.cropY, edit.cropWidth, edit.cropHeight]) {
+          control.addEventListener('input', () => { edit.syncCrop(); convert(); });
+          control.addEventListener('change', () => { edit.syncCrop(); convert(); });
+        }
+        item.useEdit = useEdit;
+        item.edit = edit;
+        fileEdits.append(h('details', { class: 'image-file-edit' },
+          h('summary', null, `${item.name} 개별 편집 설정`),
+          h('div', { class: 'image-file-edit-toggle' }, formLabel(useEdit, `${item.name} 개별 편집 설정 사용`), useEdit),
+          fieldset));
+      }
       convert();
     });
     resizeMode.addEventListener('change', () => {
@@ -348,6 +467,11 @@ tool({
     });
     quality.addEventListener('input', () => { qualityValue.textContent = quality.value; convert(); });
     [fmt, background, scale, maxWidth, maxHeight, noUpscale].forEach((el) => el.addEventListener('input', convert));
+    for (const control of [commonEdit.rotation, commonEdit.flipHorizontal, commonEdit.flipVertical, commonEdit.cropMode,
+      commonEdit.cropX, commonEdit.cropY, commonEdit.cropWidth, commonEdit.cropHeight]) {
+      control.addEventListener('input', () => { commonEdit.syncCrop(); convert(); });
+      control.addEventListener('change', () => { commonEdit.syncCrop(); convert(); });
+    }
     root.append(
       h('div', { class: 'io' },
         formLabel(file, '이미지 선택 (여러 장 가능)', { class: 'io-label' }), file, info,
@@ -358,12 +482,15 @@ tool({
           h('span', { class: 'opt-item' }, formLabel(resizeMode, '크기 방식'), resizeMode),
           percentOpt, maxOpts,
           h('span', { class: 'opt-item' }, formLabel(noUpscale, '확대하지 않기'), noUpscale)),
+        h('h4', { style: { marginBottom: '8px' } }, '공통 편집 설정'), commonEdit.node,
+        h('p', { class: 'note' }, 'EXIF 방향 정보는 파일을 읽을 때 픽셀에 한 번 적용되며 미리보기와 다운로드 결과가 같은 방향을 사용합니다. 자르기는 EXIF 방향 적용 후, 사용자 회전·반전 전에 수행됩니다. 여러 파일에서는 공통 편집 설정을 기본으로 사용하고, 파일별 설정을 켠 파일은 회전·반전·자르기 설정 전체를 개별 값으로 대체합니다. 출력 포맷·품질·크기는 항상 공통입니다.'),
+        fileEdits,
         h('p', { class: 'note' }, '원본 포맷 유지를 선택해도 결과는 캔버스로 다시 인코딩되어 EXIF·GPS 등 메타데이터가 제거됩니다. 화질을 유지한 채 메타데이터만 삭제하려면 EXIF 뷰어 / 메타데이터 제거 도구를 사용하세요. GIF 출력은 단일 프레임이며 애니메이션 입력도 정지 이미지 한 장으로 바뀝니다. SVG 출력은 벡터화가 아니라 PNG 이미지를 포함한 SVG 파일입니다.'),
         convertStatus, out));
     return () => {
       active = false;
       seq++;
-      items.forEach((it) => URL.revokeObjectURL(it.url));
+      items.forEach((item) => item.bitmap.close?.());
       outUrls.forEach((url) => URL.revokeObjectURL(url));
       items = [];
       outUrls = [];
@@ -490,15 +617,51 @@ tool({
   },
 });
 
-/* ---------- QR 코드 리더 ---------- */
+/* ---------- QR / 바코드 리더 ---------- */
+const BARCODE_FORMATS = {
+  qr_code: 'QR 코드', data_matrix: 'Data Matrix', aztec: 'Aztec', pdf417: 'PDF417',
+  code_128: 'Code 128', code_39: 'Code 39', code_93: 'Code 93', codabar: 'Codabar',
+  ean_13: 'EAN-13', ean_8: 'EAN-8', itf: 'ITF', upc_a: 'UPC-A', upc_e: 'UPC-E',
+};
+
+function showCodeResult(out, text, format = 'qr_code') {
+  out.innerHTML = '';
+  const rows = [['내용', text], ['길이', text.length + '자'], ['코드 형식', BARCODE_FORMATS[format] || format]];
+  if (/^https?:\/\//i.test(text)) rows.push(['유형', 'URL']);
+  else if (text.startsWith('WIFI:')) {
+    rows.push(['유형', 'WiFi 접속 정보']);
+    const g = (key) => (text.match(new RegExp(key + ':((?:\\\\.|[^;])*)')) || [])[1]?.replace(/\\(.)/g, '$1');
+    for (const [key, label] of [['S', 'SSID'], ['P', '비밀번호'], ['T', '보안']])
+      if (g(key)) rows.push([label, g(key)]);
+  } else if (text.startsWith('mailto:')) rows.push(['유형', '이메일']);
+  else if (text.startsWith('tel:')) rows.push(['유형', '전화번호']);
+  out.append(kvTable(rows));
+  if (/^https?:\/\//i.test(text))
+    out.append(h('p', null, h('a', { href: text, target: '_blank', rel: 'noopener noreferrer' }, '확인 후 URL 열기')));
+}
+
+function cameraErrorMessage(error) {
+  if (error?.name === 'NotAllowedError' || error?.name === 'PermissionDeniedError')
+    return '카메라 권한이 거부되었습니다. 브라우저의 사이트 설정에서 카메라 권한을 허용한 뒤 다시 시도하세요.';
+  if (error?.name === 'NotFoundError' || error?.name === 'DevicesNotFoundError')
+    return '사용 가능한 카메라를 찾지 못했습니다.';
+  if (error?.name === 'NotReadableError' || error?.name === 'TrackStartError')
+    return '카메라를 사용할 수 없습니다. 다른 앱이 카메라를 사용 중인지 확인하세요.';
+  if (error?.name === 'OverconstrainedError' || error?.name === 'ConstraintNotSatisfiedError')
+    return '선택한 카메라를 사용할 수 없습니다. 다른 카메라를 선택해 주세요.';
+  if (error?.name === 'SecurityError')
+    return '카메라는 HTTPS 또는 localhost 같은 보안 환경에서만 사용할 수 있습니다.';
+  return '카메라 시작 실패: ' + (error?.message || '알 수 없는 오류');
+}
+
 tool({
   id: 'qr-read', cat: CAT, name: 'QR 코드 리더',
-  desc: 'QR 코드 이미지를 업로드하거나 클립보드에서 붙여넣어 내용을 해독합니다.',
-  keywords: 'qr code read scan decode reader wifi',
+  desc: '카메라로 QR·바코드를 실시간 스캔하거나 이미지와 클립보드의 QR 코드를 해독합니다.',
+  keywords: 'qr barcode code 128 ean data matrix camera read scan decode reader wifi',
   render(root) {
-    const out = h('div');
+    const imageOut = h('div', { class: 'scan-result', 'aria-live': 'polite' });
     async function decode(src) {
-      out.innerHTML = '해독 중...';
+      imageOut.innerHTML = '해독 중...';
       try {
         await loadScript(LIB.jsqr);
         const bmp = await createImageBitmap(src);
@@ -507,51 +670,205 @@ tool({
         const w = Math.round(bmp.width * scale), hgt = Math.round(bmp.height * scale);
         const ctx = h('canvas', { width: w, height: hgt }).getContext('2d', { willReadFrequently: true });
         ctx.drawImage(bmp, 0, 0, w, hgt);
+        bmp.close?.();
         const res = jsQR(ctx.getImageData(0, 0, w, hgt).data, w, hgt);
-        out.innerHTML = '';
         if (!res?.data) {
-          out.append(h('span', { class: 'error' }, 'QR 코드를 찾지 못했습니다. 이미지가 선명한지, 코드 주변에 여백이 있는지 확인하세요.'));
+          imageOut.innerHTML = '';
+          imageOut.append(h('span', { class: 'error' }, 'QR 코드를 찾지 못했습니다. 이미지가 선명한지, 코드 주변에 여백이 있는지 확인하세요.'));
           return;
         }
-        const text = res.data;
-        const rows = [['내용', text], ['길이', text.length + '자']];
-        if (/^https?:\/\//i.test(text)) rows.push(['유형', 'URL']);
-        else if (text.startsWith('WIFI:')) {
-          rows.push(['유형', 'WiFi 접속 정보']);
-          const g = (k) => (text.match(new RegExp(k + ':((?:\\\\.|[^;])*)')) || [])[1]?.replace(/\\(.)/g, '$1');
-          for (const [key, label] of [['S', 'SSID'], ['P', '비밀번호'], ['T', '보안']])
-            if (g(key)) rows.push([label, g(key)]);
-        } else if (text.startsWith('mailto:')) rows.push(['유형', '이메일']);
-        else if (text.startsWith('tel:')) rows.push(['유형', '전화번호']);
-        out.append(kvTable(rows));
-        if (/^https?:\/\//i.test(text))
-          out.append(h('p', null, h('a', { href: text, target: '_blank', rel: 'noopener noreferrer' }, text)));
+        showCodeResult(imageOut, res.data);
       } catch (e) {
-        out.innerHTML = '';
-        out.append(h('span', { class: 'error' }, '해독 실패: ' + e.message));
+        imageOut.innerHTML = '';
+        imageOut.append(h('span', { class: 'error' }, '해독 실패: ' + e.message));
       }
     }
+
+    const video = h('video', { class: 'scanner-video', playsinline: true, muted: true, autoplay: true });
+    const cameraSelect = h('select', { disabled: true, 'aria-label': '카메라 선택' });
+    cameraSelect.append(h('option', { value: '' }, '카메라 시작 후 선택 가능'));
+    const cameraStatus = h('p', { class: 'note camera-status', role: 'status', 'aria-live': 'polite' },
+      '카메라는 사용자가 시작 버튼을 누른 뒤에만 켜지며 영상은 브라우저 밖으로 전송되지 않습니다.');
+    const formatInfo = h('p', { class: 'sub scanner-formats' }, '인식 형식: QR 코드');
+    const cameraOut = h('div', { class: 'scan-result', 'aria-live': 'polite' });
+    let stream = null, detector = null, nativeFormats = [], cameras = [];
+    let raf = 0, generation = 0, scanning = false, detecting = false, destroyed = false, lastFrame = 0;
+    const scanCanvas = h('canvas');
+    const scanCtx = scanCanvas.getContext('2d', { willReadFrequently: true });
+
+    const startBtn = h('button', { class: 'btn primary', type: 'button' }, '카메라 시작');
+    const pauseBtn = h('button', { class: 'btn', type: 'button', disabled: true }, '스캔 일시정지');
+    const switchBtn = h('button', { class: 'btn', type: 'button', disabled: true }, '카메라 전환');
+    const stopBtn = h('button', { class: 'btn', type: 'button', disabled: true }, '카메라 끄기');
+
+    function releaseStream() {
+      if (stream) stream.getTracks().forEach((track) => track.stop());
+      stream = null;
+      video.srcObject = null;
+    }
+
+    function updateButtons(running) {
+      startBtn.disabled = running;
+      pauseBtn.disabled = !running;
+      stopBtn.disabled = !running;
+      cameraSelect.disabled = !running || cameras.length < 2;
+      switchBtn.disabled = !running || cameras.length < 2;
+    }
+
+    function stopCamera(message = '카메라가 꺼졌습니다.') {
+      generation++;
+      scanning = false;
+      detecting = false;
+      cancelAnimationFrame(raf);
+      releaseStream();
+      pauseBtn.textContent = '스캔 일시정지';
+      updateButtons(false);
+      if (message) cameraStatus.textContent = message;
+    }
+
+    async function prepareDetector() {
+      detector = null;
+      nativeFormats = [];
+      if ('BarcodeDetector' in window) {
+        try {
+          const supported = await BarcodeDetector.getSupportedFormats();
+          nativeFormats = Object.keys(BARCODE_FORMATS).filter((format) => supported.includes(format));
+          if (nativeFormats.length) detector = new BarcodeDetector({ formats: nativeFormats });
+        } catch { detector = null; nativeFormats = []; }
+      }
+      if (!nativeFormats.includes('qr_code')) await loadScript(LIB.jsqr);
+      const formats = ['qr_code', ...nativeFormats.filter((format) => format !== 'qr_code')];
+      formatInfo.textContent = '인식 형식: ' + formats.map((format) => BARCODE_FORMATS[format]).join(', ');
+    }
+
+    async function refreshCameras(selectedId) {
+      try {
+        cameras = (await navigator.mediaDevices.enumerateDevices()).filter((device) => device.kind === 'videoinput');
+      } catch { cameras = []; }
+      cameraSelect.replaceChildren(...(cameras.length
+        ? cameras.map((camera, index) => h('option', {
+          value: camera.deviceId, selected: camera.deviceId === selectedId,
+        }, camera.label || `카메라 ${index + 1}`))
+        : [h('option', { value: '' }, '사용 중인 카메라')]));
+      if (selectedId && cameras.some((camera) => camera.deviceId === selectedId)) cameraSelect.value = selectedId;
+      updateButtons(!!stream);
+    }
+
+    function showDetected(text, format) {
+      scanning = false;
+      pauseBtn.textContent = '스캔 계속';
+      cameraStatus.textContent = '코드를 인식했습니다. 내용을 확인한 뒤 스캔을 계속할 수 있습니다.';
+      showCodeResult(cameraOut, text, format);
+    }
+
+    async function scanFrame(now, token) {
+      if (destroyed || token !== generation) return;
+      raf = requestAnimationFrame((nextNow) => scanFrame(nextNow, token));
+      if (!scanning || detecting || now - lastFrame < 120 || video.readyState < 2) return;
+      detecting = true;
+      lastFrame = now;
+      try {
+        if (detector) {
+          const codes = await detector.detect(video);
+          const code = codes.find((item) => item.rawValue);
+          if (code && scanning) { showDetected(code.rawValue, code.format); return; }
+        }
+        if (!nativeFormats.includes('qr_code') && scanning) {
+          const width = video.videoWidth, height = video.videoHeight;
+          if (!width || !height) return;
+          const scale = Math.min(1, 960 / Math.max(width, height));
+          scanCanvas.width = Math.max(1, Math.round(width * scale));
+          scanCanvas.height = Math.max(1, Math.round(height * scale));
+          scanCtx.drawImage(video, 0, 0, scanCanvas.width, scanCanvas.height);
+          const data = scanCtx.getImageData(0, 0, scanCanvas.width, scanCanvas.height);
+          const result = jsQR(data.data, data.width, data.height);
+          if (result?.data && scanning) showDetected(result.data, 'qr_code');
+        }
+      } catch (error) {
+        cameraStatus.textContent = '코드 인식 중 오류가 발생했습니다: ' + error.message;
+        scanning = false;
+        pauseBtn.textContent = '스캔 계속';
+      } finally { detecting = false; }
+    }
+
+    async function startCamera(deviceId = '') {
+      if (!window.isSecureContext) {
+        cameraStatus.textContent = '카메라는 HTTPS 또는 localhost 같은 보안 환경에서만 사용할 수 있습니다.';
+        return;
+      }
+      if (!navigator.mediaDevices?.getUserMedia) {
+        cameraStatus.textContent = '이 브라우저는 카메라 접근을 지원하지 않습니다. QR 이미지 선택을 이용하세요.';
+        return;
+      }
+      const token = ++generation;
+      scanning = false;
+      cancelAnimationFrame(raf);
+      releaseStream();
+      updateButtons(false);
+      startBtn.disabled = true;
+      cameraStatus.textContent = '카메라 권한을 확인하고 있습니다...';
+      try {
+        await prepareDetector();
+        const nextStream = await navigator.mediaDevices.getUserMedia({
+          audio: false,
+          video: deviceId ? { deviceId: { exact: deviceId } } : { facingMode: { ideal: 'environment' } },
+        });
+        if (destroyed || token !== generation) {
+          nextStream.getTracks().forEach((track) => track.stop());
+          return;
+        }
+        stream = nextStream;
+        video.srcObject = stream;
+        await video.play();
+        const selected = stream.getVideoTracks?.()[0]?.getSettings?.().deviceId || deviceId;
+        await refreshCameras(selected);
+        scanning = true;
+        pauseBtn.textContent = '스캔 일시정지';
+        cameraOut.innerHTML = '';
+        const extraFormats = nativeFormats.filter((format) => format !== 'qr_code').map((format) => BARCODE_FORMATS[format]);
+        cameraStatus.textContent = extraFormats.length
+          ? `스캔 중입니다. QR 코드와 ${extraFormats.join(', ')} 바코드를 인식할 수 있습니다.`
+          : '스캔 중입니다. 이 브라우저에서는 QR 코드를 인식할 수 있습니다.';
+        updateButtons(true);
+        raf = requestAnimationFrame((now) => scanFrame(now, token));
+      } catch (error) {
+        if (destroyed || token !== generation) return;
+        releaseStream();
+        updateButtons(false);
+        cameraStatus.textContent = cameraErrorMessage(error);
+      }
+    }
+
+    startBtn.addEventListener('click', () => startCamera());
+    stopBtn.addEventListener('click', () => stopCamera());
+    pauseBtn.addEventListener('click', () => {
+      scanning = !scanning;
+      pauseBtn.textContent = scanning ? '스캔 일시정지' : '스캔 계속';
+      cameraStatus.textContent = scanning ? '스캔을 계속합니다.' : '스캔을 일시정지했습니다. 카메라는 켜져 있습니다.';
+    });
+    cameraSelect.addEventListener('change', () => startCamera(cameraSelect.value));
+    switchBtn.addEventListener('click', () => {
+      if (cameras.length < 2) return;
+      const index = Math.max(0, cameras.findIndex((camera) => camera.deviceId === cameraSelect.value));
+      startCamera(cameras[(index + 1) % cameras.length].deviceId);
+    });
+
     const file = h('input', { type: 'file', accept: 'image/*' });
     file.addEventListener('change', () => file.files[0] && decode(file.files[0]));
-    const pasteBtn = h('button', {
-      class: 'btn', type: 'button',
-      onclick: async () => {
-        try {
-          for (const item of await navigator.clipboard.read()) {
-            const type = item.types.find((t) => t.startsWith('image/'));
-            if (type) return decode(await item.getType(type));
-          }
-          out.innerHTML = '';
-          out.append(h('span', { class: 'error' }, '클립보드에 이미지가 없습니다.'));
-        } catch {
-          out.innerHTML = '';
-          out.append(h('span', { class: 'error' }, '클립보드 읽기가 거부되었습니다. 파일 선택을 이용하세요.'));
-        }
-      },
-    }, '클립보드 이미지 붙여넣기');
     root.append(h('div', { class: 'io' },
+      h('h3', null, '실시간 카메라 스캔'),
+      h('div', { class: 'scanner-preview' }, video, h('div', { class: 'scanner-guide', 'aria-hidden': 'true' })),
+      h('div', { class: 'opt-row' },
+        h('span', { class: 'opt-item' }, formLabel(cameraSelect, '카메라'), cameraSelect)),
+      h('div', { class: 'btn-row' }, startBtn, pauseBtn, switchBtn, stopBtn),
+      cameraStatus, formatInfo, cameraOut,
+      h('h3', { style: { marginTop: '24px' } }, '이미지에서 QR 읽기'),
       formLabel(file, 'QR 이미지 선택 (브라우저 밖으로 전송되지 않습니다)', { class: 'io-label' }), file,
-      h('div', { class: 'btn-row', style: { marginTop: '8px' } }, pasteBtn), out));
+      imageOut));
+    return () => {
+      destroyed = true;
+      stopCamera('');
+    };
   },
 });
 

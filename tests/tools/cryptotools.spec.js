@@ -123,6 +123,21 @@ const cases = [
     options: { '문자 집합': 'custom' }, action: '생성',
     error: '커스텀 문자를 입력하세요.',
   },
+  {
+    name: 'token-gen: 혼동 문자 제외', tool: 'token-gen',
+    options: { '문자 집합': 'ascii', '혼동 문자(0/O/1/I/l/|) 제외': true, '길이': 256, '개수': 1 }, action: '생성',
+    output: /^[^0O1Il|]{256}$/,
+  },
+  {
+    name: 'token-gen: 문자 종류별 최소 개수 합 검증', tool: 'token-gen',
+    options: { '문자 집합': 'ascii', '길이': 4, '대문자 최소': 2, '소문자 최소': 2, '숫자 최소': 1 }, action: '생성',
+    error: '문자 종류별 최소 개수 합(5)이 전체 길이(4)보다 큽니다.',
+  },
+  {
+    name: 'token-gen: EFF 단어 패스프레이즈 형식', tool: 'token-gen',
+    options: { '생성 방식': 'passphrase', '단어 수': 8, '단어 구분': ' ', '개수': 2 }, action: '생성',
+    output: /^[a-z-]+(?: [a-z-]+){7}\n[a-z-]+(?: [a-z-]+){7}$/,
+  },
 
   // 고전 암호 — 교과서 표준 벡터
   { name: 'classic-cipher: ROT13', tool: 'classic-cipher', options: { '방식': 'rot13' }, inputs: ['Hello, World!', ''], action: '암호화', output: 'Uryyb, Jbeyq!' },
@@ -165,6 +180,48 @@ const cases = [
 ];
 
 toolCases('cryptotools', cases);
+
+test('token-gen: 대문자·소문자·숫자·기호 최소 개수를 모두 보장', async ({ page }) => {
+  await openTool(page, 'token-gen');
+  const io = ioSection(page);
+  await setOption(io, '문자 집합', 'ascii');
+  await setOption(io, '길이', 40);
+  await setOption(io, '대문자 최소', 2);
+  await setOption(io, '소문자 최소', 3);
+  await setOption(io, '숫자 최소', 4);
+  await setOption(io, '기호 최소', 5);
+  await setOption(io, '개수', 10);
+  await clickAction(io, '생성');
+  const tokens = (await io.locator('textarea.out').inputValue()).split('\n');
+  expect(tokens).toHaveLength(10);
+  for (const token of tokens) {
+    expect(token).toHaveLength(40);
+    expect((token.match(/[A-Z]/g) || []).length).toBeGreaterThanOrEqual(2);
+    expect((token.match(/[a-z]/g) || []).length).toBeGreaterThanOrEqual(3);
+    expect((token.match(/[0-9]/g) || []).length).toBeGreaterThanOrEqual(4);
+    expect((token.match(/[^A-Za-z0-9]/g) || []).length).toBeGreaterThanOrEqual(5);
+  }
+  await expect(page.locator('.token-entropy')).toContainText('보수적 하한');
+});
+
+test('token-gen: 문자 토큰과 패스프레이즈의 엔트로피를 계산해 안내', async ({ page }) => {
+  await openTool(page, 'token-gen');
+  const io = ioSection(page);
+  const info = page.locator('.token-entropy');
+  await setOption(io, '문자 집합', 'custom');
+  await setOption(io, '커스텀 문자', 'AB');
+  await setOption(io, '길이', 10);
+  await setOption(io, '개수', 1);
+  await clickAction(io, '생성');
+  await expect(info).toContainText('추정 엔트로피: 10.0비트');
+  await expect(info).toContainText('운영 비밀에는 너무 짧습니다');
+
+  await setOption(io, '생성 방식', 'passphrase');
+  await setOption(io, '단어 수', 8);
+  await clickAction(io, '생성');
+  await expect(info).toContainText('추정 엔트로피: 82.7비트');
+  await expect(info).toContainText('고가치 계정의 패스프레이즈나 API 토큰');
+});
 
 // AES-GCM 기본값: PBKDF2 salt, IV, 인증 태그를 자체 포함 결과에 보존한다.
 for (const format of ['base64', 'hex']) {

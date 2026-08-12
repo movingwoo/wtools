@@ -1,5 +1,5 @@
 // Diff / 정규식 테스터 정밀 테스트.
-import { test, expect, toolCases, openTool, ioSection, setOption, fillInputs } from '../helpers.js';
+import { test, expect, toolCases, openTool, ioSection, setOption, fillInputs, grabDownload } from '../helpers.js';
 
 // grid 표를 [[셀, ...], ...]로 읽는다 (헤더 행 포함).
 function gridRows(scope) {
@@ -130,6 +130,38 @@ test('text-diff: 같은 텍스트에는 표시가 없다', async ({ page }) => {
   await fillInputs(io, ['같은 내용\n두 번째 줄', '같은 내용\n두 번째 줄']);
   await expect(io.locator('.out-html')).toContainText('두 번째 줄');
   await expect(io.locator('.diff-line-add, .diff-line-del, .diff-add, .diff-del')).toHaveCount(0);
+});
+
+test('text-diff: 통합 diff를 생성하고 다운로드', async ({ page }) => {
+  await openTool(page, 'text-diff');
+  const io = ioSection(page);
+  await fillInputs(io, ['alpha\nold\nomega\n', 'alpha\nnew\nomega\n']);
+  await io.getByText('통합 diff 보기').click();
+  const patch = io.locator('.unified-diff');
+  await expect(patch).toContainText('--- 텍스트 A.txt');
+  await expect(patch).toContainText('+++ 텍스트 B.txt');
+  await expect(patch).toContainText('@@ -1,3 +1,3 @@');
+  await expect(patch).toContainText('-old');
+  await expect(patch).toContainText('+new');
+
+  const saved = await grabDownload(page, () => io.getByRole('button', { name: '통합 diff 다운로드' }).click());
+  expect(saved.name).toBe('text-diff.patch');
+  expect(saved.bytes.toString()).toContain('--- 텍스트 A.txt');
+  expect(saved.bytes.toString()).toContain('-old\n+new');
+});
+
+test('text-diff: 공백 차이 무시 옵션', async ({ page }) => {
+  await openTool(page, 'text-diff');
+  const io = ioSection(page);
+  await setOption(io, '공백 차이 무시', true);
+  await fillInputs(io, ['  alpha  \n\tbeta\n', 'alpha\nbeta  \n']);
+  await expect(io).toContainText('공백 차이를 제외하면 두 텍스트는 같습니다.');
+  await expect(io.locator('.diff-line-add, .diff-line-del')).toHaveCount(0);
+  await expect(io.locator('.unified-diff')).not.toContainText('@@');
+
+  await fillInputs(io, [' alpha ', ' beta ']);
+  await expect(io.locator('.diff-line-del')).toHaveText(['alpha']);
+  await expect(io.locator('.diff-line-add')).toHaveText(['beta']);
 });
 
 /* ---------- regex-tester: 매치 표와 치트시트 ---------- */

@@ -60,11 +60,141 @@ function descField(expr, idx) {
   }).join(', ') + ` (${unit})`;
 }
 
+function cronValues(expr, idx) {
+  const [min, max] = CRON_RANGES[idx];
+  const values = new Set();
+  for (const part of expr.split(',')) {
+    const [base, rawStep] = part.split('/');
+    const step = rawStep == null ? 1 : +rawStep;
+    let start, end;
+    if (base === '*') [start, end] = [min, max];
+    else if (base.includes('-')) [start, end] = base.split('-').map((value) => cronValue(value, idx, part));
+    else {
+      start = cronValue(base, idx, part);
+      end = rawStep == null ? start : max;
+    }
+    for (let value = start; value <= end; value += step)
+      values.add(idx === 4 && value === 7 ? 0 : value);
+  }
+  return [...values].sort((a, b) => a - b);
+}
+
+function parseCron(expression) {
+  const parts = expression.trim().split(/\s+/);
+  if (parts.length !== 5) throw new Error('cron 표현식은 5개 필드(분 시 일 월 요일)여야 합니다.');
+  parts.forEach(checkField);
+  return {
+    parts,
+    values: parts.map(cronValues),
+    dayRestricted: parts[2] !== '*',
+    weekdayRestricted: parts[4] !== '*',
+  };
+}
+
+const cronFormatters = new Map();
+function timeZoneFormatter(timeZone) {
+  let formatter = cronFormatters.get(timeZone);
+  if (formatter) return formatter;
+  try {
+    formatter = new Intl.DateTimeFormat('en-US', {
+      timeZone, calendar: 'gregory', numberingSystem: 'latn', hourCycle: 'h23',
+      year: 'numeric', month: '2-digit', day: '2-digit',
+      hour: '2-digit', minute: '2-digit', second: '2-digit',
+    });
+    formatter.format(new Date(0));
+  } catch {
+    throw new Error(`지원하지 않는 시간대입니다: ${timeZone || '(비어 있음)'}. IANA 시간대 이름(예: Asia/Seoul)을 입력하세요.`);
+  }
+  cronFormatters.set(timeZone, formatter);
+  return formatter;
+}
+
+function zonedParts(timestamp, timeZone) {
+  const result = {};
+  for (const part of timeZoneFormatter(timeZone).formatToParts(new Date(timestamp)))
+    if (part.type !== 'literal') result[part.type] = +part.value;
+  return result;
+}
+
+function zoneOffsetAt(timestamp, timeZone) {
+  const wholeSecond = Math.floor(timestamp / 1000) * 1000;
+  const part = zonedParts(wholeSecond, timeZone);
+  return Date.UTC(part.year, part.month - 1, part.day, part.hour, part.minute, part.second) - wholeSecond;
+}
+
+function offsetsNearDate(year, month, day, timeZone) {
+  const base = Date.UTC(year, month - 1, day, 12);
+  return [...new Set([-2, -1, 0, 1, 2].map((days) => zoneOffsetAt(base + days * 86400000, timeZone)))];
+}
+
+// DST 겹침에는 두 UTC 시각을, DST 건너뜀에는 빈 배열을 반환한다.
+function localTimeCandidates(year, month, day, hour, minute, timeZone, offsets) {
+  const wallTime = Date.UTC(year, month - 1, day, hour, minute);
+  return [...new Set(offsets.map((offset) => wallTime - offset))]
+    .filter((timestamp) => {
+      const part = zonedParts(timestamp, timeZone);
+      return part.year === year && part.month === month && part.day === day
+        && part.hour === hour && part.minute === minute;
+    })
+    .sort((a, b) => a - b);
+}
+
+export function nextCronRuns(expression, timeZone, from = Date.now(), count = 5) {
+  if (!Number.isFinite(from)) throw new Error('기준 시각이 올바르지 않습니다.');
+  if (!Number.isInteger(count) || count < 1) throw new Error('실행 횟수는 1 이상이어야 합니다.');
+  timeZoneFormatter(timeZone);
+  const cron = parseCron(expression);
+  const [minutes, hours, days, months, weekdays] = cron.values;
+  const minuteSet = new Set(minutes), hourSet = new Set(hours), daySet = new Set(days);
+  const monthSet = new Set(months), weekdaySet = new Set(weekdays);
+  const start = zonedParts(from, timeZone);
+  let cursor = Date.UTC(start.year, start.month - 1, start.day);
+  const found = [];
+
+  // 2월 29일 5회와 2100년 같은 평년 세기 경계도 포함할 수 있는 범위다.
+  for (let scanned = 0; scanned < 366 * 30; scanned++, cursor += 86400000) {
+    const date = new Date(cursor);
+    const year = date.getUTCFullYear(), month = date.getUTCMonth() + 1, day = date.getUTCDate();
+    if (!monthSet.has(month)) continue;
+    const weekday = date.getUTCDay();
+    const dayMatches = cron.dayRestricted && cron.weekdayRestricted
+      ? daySet.has(day) || weekdaySet.has(weekday)
+      : (!cron.dayRestricted || daySet.has(day)) && (!cron.weekdayRestricted || weekdaySet.has(weekday));
+    if (!dayMatches) continue;
+
+    const offsets = offsetsNearDate(year, month, day, timeZone);
+    const candidates = [];
+    for (let hour = 0; hour < 24; hour++) {
+      if (!hourSet.has(hour)) continue;
+      for (let minute = 0; minute < 60; minute++) {
+        if (!minuteSet.has(minute)) continue;
+        candidates.push(...localTimeCandidates(year, month, day, hour, minute, timeZone, offsets));
+      }
+    }
+    for (const timestamp of [...new Set(candidates)].sort((a, b) => a - b)) {
+      if (timestamp <= from) continue;
+      found.push(timestamp);
+      if (found.length === count) return found;
+    }
+  }
+  throw new Error('앞으로 30년 안에 실행 시각을 찾지 못했습니다. 날짜 조건을 확인하세요.');
+}
+
+function formatCronRun(timestamp, timeZone) {
+  const local = new Intl.DateTimeFormat('ko-KR', {
+    timeZone, calendar: 'gregory', hourCycle: 'h23',
+    year: 'numeric', month: '2-digit', day: '2-digit', weekday: 'short',
+    hour: '2-digit', minute: '2-digit', timeZoneName: 'short',
+  }).format(new Date(timestamp));
+  return `${local} · UTC ${new Date(timestamp).toISOString().replace('.000Z', 'Z')}`;
+}
+
 tool({
   id: 'crontab', cat: CAT, name: 'Crontab 표현식 생성/설명',
-  desc: 'cron 표현식을 사람이 읽을 수 있는 설명으로 풀어주고 자주 쓰는 패턴을 제공합니다.',
-  keywords: 'cron crontab schedule expression job scheduler',
+  desc: 'cron 표현식을 설명하고 선택한 시간대의 다음 실행 시각 5회를 계산합니다.',
+  keywords: 'cron crontab schedule expression job scheduler timezone next run DST',
   render(root) {
+    const systemTimeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
     const presets = [
       ['* * * * *', '매분'], ['*/5 * * * *', '5분마다'], ['0 * * * *', '매시 정각'],
       ['0 0 * * *', '매일 자정'], ['0 9 * * 1-5', '평일 오전 9시'], ['0 0 * * 0', '매주 일요일 자정'],
@@ -72,11 +202,12 @@ tool({
     ];
     const io = makeIO(root, {
       inputs: [{ id: 'input', label: 'cron 표현식 (분 시 일 월 요일)', rows: 1, value: '*/15 9-18 * * 1-5' }],
+      options: [{ id: 'timezone', label: '시간대 (IANA)', type: 'text', value: systemTimeZone, size: 180 }],
       outputHTML: true, runOnLoad: true,
-      process(text) {
-        const parts = text.trim().split(/\s+/);
-        if (parts.length !== 5) throw new Error('cron 표현식은 5개 필드(분 시 일 월 요일)여야 합니다.');
-        parts.forEach(checkField);
+      process(text, options) {
+        const { parts } = parseCron(text);
+        const timeZone = options.timezone.trim();
+        const nextRuns = nextCronRuns(text, timeZone);
         const rows = parts.map((p, i) => [CRON_FIELDS[i], p + (descField(p, i) ? ' → ' + descField(p, i) : ' → 매 ' + CRON_FIELDS[i])]);
         const descs = parts.map((p, i) => descField(p, i)).filter(Boolean);
         const dayOr = parts[2] !== '*' && parts[4] !== '*';
@@ -86,10 +217,18 @@ tool({
         return h('div', null,
           h('p', { style: { fontWeight: 700 } }, summary.length ? summary.join(' / ') + ' 에 실행' : '매분 실행'),
           dayOr ? h('p', { class: 'note' }, '일과 요일을 모두 제한했습니다. 일반적인 cron은 두 조건을 AND가 아닌 OR로 처리하므로 둘 중 하나만 맞아도 실행합니다.') : null,
-          kvTable(rows));
+          kvTable(rows),
+          h('div', { class: 'cron-next' },
+            h('h4', null, `다음 실행 시각 5회 (${timeZone})`),
+            kvTable(nextRuns.map((timestamp, index) => [`${index + 1}회`, formatCronRun(timestamp, timeZone)]))));
       },
+      note: '기본 5필드 cron만 지원합니다. Quartz/AWS의 초·연도 필드와 ?, L, W, # 확장은 별도 범위이며 현재 계산하지 않습니다.',
     });
-    root.append(h('h4', null, '자주 쓰는 패턴'),
+    root.append(
+      h('div', { class: 'btn-row' },
+        h('button', { class: 'btn small', type: 'button', onclick: () => { io.optEls.timezone.value = systemTimeZone; io.run(); } }, `시스템 시간대 (${systemTimeZone})`),
+        h('button', { class: 'btn small', type: 'button', onclick: () => { io.optEls.timezone.value = 'UTC'; io.run(); } }, 'UTC로 전환')),
+      h('h4', null, '자주 쓰는 패턴'),
       h('div', { class: 'btn-row' }, presets.map(([expr, label]) =>
         h('button', { class: 'btn small', type: 'button', onclick: () => { io.inputEls.input.value = expr; io.run(); } }, `${label} (${expr})`))));
   },

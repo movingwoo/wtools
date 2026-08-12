@@ -931,54 +931,179 @@ tool({
   },
 });
 
-// 거절 샘플링: 2^32를 chars.length로 나눈 나머지 구간을 버려 modulo bias 제거
+const TOKEN_GROUPS = {
+  upper: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ',
+  lower: 'abcdefghijklmnopqrstuvwxyz',
+  digit: '0123456789',
+  symbol: '!@#$%^&*()-_=+[]{}|;:,.<>?',
+};
+const TOKEN_CHARSETS = {
+  alnum: TOKEN_GROUPS.upper + TOKEN_GROUPS.lower + TOKEN_GROUPS.digit,
+  alpha: TOKEN_GROUPS.upper + TOKEN_GROUPS.lower,
+  num: TOKEN_GROUPS.digit,
+  hex: '0123456789abcdef',
+  base64: TOKEN_GROUPS.upper + TOKEN_GROUPS.lower + TOKEN_GROUPS.digit + '-_',
+  ascii: TOKEN_GROUPS.upper + TOKEN_GROUPS.lower + TOKEN_GROUPS.digit + TOKEN_GROUPS.symbol,
+};
+const AMBIGUOUS_CHARS = new Set(['0', 'O', '1', 'I', 'l', '|']);
+const EFF_WORDLIST_URL = new URL('../../assets/eff-short-wordlist-1.txt', import.meta.url);
+let effWordsPromise;
+
+function uniqueChars(text, excludeAmbiguous = false) {
+  return [...new Set([...String(text)].filter((char) => !excludeAmbiguous || !AMBIGUOUS_CHARS.has(char)))];
+}
+
+// 거절 샘플링: 2^32를 선택지 수로 나눈 나머지 구간을 버려 modulo bias를 제거한다.
+function randomIndex(size) {
+  const limit = Math.floor(0x100000000 / size) * size;
+  const value = new Uint32Array(1);
+  do crypto.getRandomValues(value); while (value[0] >= limit);
+  return value[0] % size;
+}
 function randomString(len, chars) {
-  const limit = Math.floor(0x100000000 / chars.length) * chars.length;
-  let s = '';
-  while (s.length < len) {
-    const batch = crypto.getRandomValues(new Uint32Array(len - s.length));
-    for (const v of batch) {
-      if (v < limit) s += chars[v % chars.length];
+  const pool = Array.isArray(chars) ? chars : uniqueChars(chars);
+  if (!len) return '';
+  if (!pool.length) throw new Error('사용할 문자가 없습니다.');
+  const limit = Math.floor(0x100000000 / pool.length) * pool.length;
+  const out = [];
+  while (out.length < len) {
+    const batch = crypto.getRandomValues(new Uint32Array(len - out.length));
+    for (const value of batch) {
+      if (value < limit) out.push(pool[value % pool.length]);
     }
   }
-  return s;
+  return out.join('');
+}
+function secureShuffle(values) {
+  for (let i = values.length - 1; i > 0; i--) {
+    const j = randomIndex(i + 1);
+    [values[i], values[j]] = [values[j], values[i]];
+  }
+  return values;
+}
+function boundedInteger(value, label, min, max) {
+  const number = Number(value);
+  if (!Number.isInteger(number) || number < min || number > max)
+    throw new Error(`${label}은(는) ${min}~${max}의 정수로 입력하세요.`);
+  return number;
+}
+async function effWords() {
+  if (!effWordsPromise) {
+    effWordsPromise = fetch(EFF_WORDLIST_URL, { cache: 'force-cache' }).then(async (response) => {
+      if (!response.ok) throw new Error(`내장 단어 목록을 불러오지 못했습니다. (HTTP ${response.status})`);
+      const words = (await response.text()).trim().split(/\n/).map((line) => line.trim().replace(/^\d+\s+/, ''));
+      if (words.length !== 1296 || new Set(words).size !== 1296 || words.some((word) => !/^[a-z-]+$/.test(word)))
+        throw new Error('내장 EFF 단어 목록의 형식이 올바르지 않습니다.');
+      return words;
+    });
+  }
+  return effWordsPromise;
+}
+function entropyAdvice(bits) {
+  if (bits < 40) return '운영 비밀에는 너무 짧습니다. 길이나 단어 수를 늘리세요.';
+  if (bits < 60) return '온라인 로그인용 무작위 비밀번호에는 쓸 수 있지만, 장기 보관하거나 오프라인 공격을 받는 비밀에는 더 길게 설정하세요.';
+  if (bits < 80) return '서비스마다 다르게 쓰는 무작위 로그인 비밀번호로 강한 편입니다. 마스터 패스프레이즈나 고가치 비밀은 80비트 이상을 권장합니다.';
+  if (bits < 128) return '고가치 계정의 패스프레이즈나 API 토큰으로 강한 편입니다. 결과를 재사용하지 말고 안전한 저장소에 보관하세요.';
+  return '128비트 이상의 선택 공간입니다. API 키·랜덤 시크릿에 충분한 수준이지만, 형식이 정해진 암호화 키는 전용 키 생성기를 사용하세요.';
 }
 
 tool({
   id: 'token-gen', cat: CAT, name: '토큰 / 시크릿 생성기',
   desc: '암호학적으로 안전한 랜덤 토큰을 생성합니다.',
-  keywords: 'token secret random password generate api key',
+  keywords: 'token secret random password generate api key passphrase diceware entropy 패스프레이즈 엔트로피',
   render(root) {
+    const entropyInfo = h('div', { class: 'note token-entropy', role: 'status', 'aria-live': 'polite' });
     const io = makeIO(root, {
       inputs: null,
       options: [
+        { id: 'mode', label: '생성 방식', type: 'select', values: [['token', '문자 토큰'], ['passphrase', '단어 패스프레이즈']] },
         { id: 'len', label: '길이', type: 'number', value: 32, size: 80 },
         { id: 'charset', label: '문자 집합', type: 'select', values: [['alnum', '영문+숫자'], ['hex', 'Hex'], ['base64', 'Base64URL'], ['alpha', '영문만'], ['num', '숫자만'], ['ascii', '전체 ASCII 기호 포함'], ['custom', '커스텀']] },
         { id: 'custom', label: '커스텀 문자', type: 'text', size: 180, placeholder: 'ABCdef123!@#' },
+        { id: 'avoidAmbiguous', label: '혼동 문자(0/O/1/I/l/|) 제외', type: 'checkbox' },
+        { id: 'minUpper', label: '대문자 최소', type: 'number', value: 0, size: 65 },
+        { id: 'minLower', label: '소문자 최소', type: 'number', value: 0, size: 65 },
+        { id: 'minDigit', label: '숫자 최소', type: 'number', value: 0, size: 65 },
+        { id: 'minSymbol', label: '기호 최소', type: 'number', value: 0, size: 65 },
+        { id: 'wordCount', label: '단어 수', type: 'number', value: 8, size: 70 },
+        { id: 'separator', label: '단어 구분', type: 'select', values: [['-', '하이픈 (-)'], [' ', '공백'], ['.', '점 (.)'], ['_', '밑줄 (_)'], [':', '콜론 (:)']] },
         { id: 'count', label: '개수', type: 'number', value: 5, size: 70 },
       ],
       actions: [{ id: 'gen', label: '생성' }],
       outputRows: 8,
-      process(_, o) {
-        const len = Math.max(1, Math.min(4096, +o.len));
-        const sets = {
-          alnum: 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789',
-          alpha: 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz',
-          num: '0123456789',
-          hex: '0123456789abcdef',
-          base64: 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_',
-          ascii: 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*()-_=+[]{}|;:,.<>?',
-          custom: o.custom,
-        };
-        const chars = sets[o.charset];
-        if (!chars) throw new Error('커스텀 문자를 입력하세요.');
+      autorun: false,
+      async process(_, o) {
+        const count = boundedInteger(o.count, '개수', 1, 100);
         const out = [];
-        for (let n = 0; n < Math.max(1, +o.count); n++) {
-          out.push(randomString(len, chars));
+        let entropy;
+        let conservative = false;
+        if (o.mode === 'passphrase') {
+          const wordCount = boundedInteger(o.wordCount, '단어 수', 1, 64);
+          const words = await effWords();
+          entropy = wordCount * Math.log2(words.length);
+          for (let n = 0; n < count; n++) {
+            out.push(Array.from({ length: wordCount }, () => words[randomIndex(words.length)]).join(o.separator));
+          }
+        } else {
+          const len = boundedInteger(o.len, '길이', 1, 4096);
+          const source = o.charset === 'custom' ? o.custom : TOKEN_CHARSETS[o.charset];
+          if (!source) throw new Error('커스텀 문자를 입력하세요.');
+          const chars = uniqueChars(source, o.avoidAmbiguous);
+          if (!chars.length) throw new Error('혼동 문자를 제외하고 남은 문자가 없습니다.');
+          const minimums = {
+            upper: boundedInteger(o.minUpper, '대문자 최소 개수', 0, 4096),
+            lower: boundedInteger(o.minLower, '소문자 최소 개수', 0, 4096),
+            digit: boundedInteger(o.minDigit, '숫자 최소 개수', 0, 4096),
+            symbol: boundedInteger(o.minSymbol, '기호 최소 개수', 0, 4096),
+          };
+          const required = Object.values(minimums).reduce((sum, value) => sum + value, 0);
+          if (required > len) throw new Error(`문자 종류별 최소 개수 합(${required})이 전체 길이(${len})보다 큽니다.`);
+          const available = {};
+          for (const [group, minimum] of Object.entries(minimums)) {
+            available[group] = chars.filter((char) => TOKEN_GROUPS[group].includes(char));
+            if (minimum && !available[group].length)
+              throw new Error(`선택한 문자 집합에는 ${group === 'upper' ? '대문자' : group === 'lower' ? '소문자' : group === 'digit' ? '숫자' : '기호'}가 없습니다.`);
+          }
+          entropy = (len - required) * Math.log2(chars.length);
+          for (const [group, minimum] of Object.entries(minimums)) {
+            entropy += minimum * Math.log2(available[group].length || 1);
+          }
+          conservative = required > 0;
+          for (let n = 0; n < count; n++) {
+            const token = [];
+            for (const [group, minimum] of Object.entries(minimums))
+              token.push(...randomString(minimum, available[group] || chars));
+            token.push(...randomString(len - required, chars));
+            out.push(secureShuffle(token).join(''));
+          }
         }
+        const shown = entropy >= 1000 ? Math.round(entropy).toLocaleString() : entropy.toFixed(1);
+        entropyInfo.replaceChildren(
+          h('strong', null, `각 결과의 추정 엔트로피: ${shown}비트${conservative ? ' 이상(보수적 하한)' : ''}`),
+          h('div', null, entropyAdvice(entropy)),
+          h('div', null, '무작위 생성 과정의 선택 공간 추정치이며, 서비스의 저장·해시 방식이나 비밀 유출·재사용 위험은 반영하지 않습니다.'),
+        );
         return out.join('\n');
       },
+      note: h('span', null,
+        '모든 결과는 crypto.getRandomValues와 편향 없는 거절 샘플링으로 브라우저 안에서 생성됩니다. 패스프레이즈는 ',
+        h('a', { href: 'https://www.eff.org/files/2016/09/08/eff_short_wordlist_1.txt', target: '_blank', rel: 'noopener noreferrer' }, 'EFF 짧은 단어 목록 1'),
+        '(1,296개, ',
+        h('a', { href: 'https://creativecommons.org/licenses/by/3.0/us/', target: '_blank', rel: 'noopener noreferrer' }, 'CC BY 3.0 US'),
+        ')을 사용합니다.'),
     });
+    root.append(entropyInfo);
+    const tokenOnly = ['len', 'charset', 'custom', 'avoidAmbiguous', 'minUpper', 'minLower', 'minDigit', 'minSymbol'];
+    const phraseOnly = ['wordCount', 'separator'];
+    const setOptionVisible = (id, visible) => io.optEls[id].closest('.opt-item').classList.toggle('hidden', !visible);
+    const syncOptions = () => {
+      const phrase = io.optEls.mode.value === 'passphrase';
+      for (const id of tokenOnly) setOptionVisible(id, !phrase && (id !== 'custom' || io.optEls.charset.value === 'custom'));
+      for (const id of phraseOnly) setOptionVisible(id, phrase);
+    };
+    io.optEls.mode.addEventListener('change', syncOptions);
+    io.optEls.charset.addEventListener('change', syncOptions);
+    syncOptions();
     io.run();
   },
 });

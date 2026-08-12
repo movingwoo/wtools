@@ -22,6 +22,10 @@ tool({
   id: 'json-format', cat: CAT, name: 'JSON 포맷/압축/트리 뷰어',
   desc: 'JSON을 정렬(pretty print), 압축(minify)하거나 접을 수 있는 트리로 표시합니다.',
   keywords: 'json pretty prettify beautify minify tree viewer formatter',
+  transfer: {
+    inputs: [{ id: 'input', label: 'JSON', accepts: ['json'] }],
+    outputs: [{ id: 'json', label: 'JSON 결과', type: 'json', targets: ['data-convert', 'json-schema'] }],
+  },
   render(root) {
     makeIO(root, {
       inputs: [{ id: 'input', label: 'JSON', rows: 10, value: '{"name":"WTools","list":[1,2,3],"nested":{"ok":true}}' }],
@@ -31,6 +35,11 @@ tool({
       ],
       actions: [{ id: 'fmt', label: '포맷' }, { id: 'min', label: '압축' }, { id: 'tree', label: '트리 뷰' }],
       outputHTML: true, outputRows: 12,
+      transferOutput: {
+        id: 'json',
+        when: ({ result, actionId }) => actionId !== 'tree' && !!result?.textContent.trim(),
+        value: ({ result }) => result.textContent,
+      },
       process(text, o, action) {
         if (!text.trim()) return '';
         let data = JSON.parse(text);

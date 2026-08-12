@@ -263,3 +263,131 @@ test('Base64 도구가 입력을 변환한다', async ({ page }) => {
   await page.getByRole('button', { name: '디코딩', exact: true }).click();
   await expect(output).toHaveValue('Hello');
 });
+
+test('파일 입력 공통 UI가 끌어놓기와 클립보드 붙여넣기를 처리한다', async ({ page }) => {
+  await page.goto('/#/tool/checksum-file');
+  const content = page.locator('#content');
+  const zone = content.locator('.file-drop-zone');
+  await expect(zone).toContainText('파일을 여기에 끌어놓거나');
+  await expect(zone).toContainText('파일 내용은 브라우저 밖으로 전송되지 않습니다.');
+  await expect(zone.getByRole('button', { name: '클립보드 파일 붙여넣기' })).toBeVisible();
+
+  await zone.evaluate((element) => {
+    const transfer = new DataTransfer();
+    transfer.items.add(new File(['drop-content'], 'drop.txt', { type: 'text/plain' }));
+    element.dispatchEvent(new DragEvent('dragenter', { bubbles: true, cancelable: true, dataTransfer: transfer }));
+    element.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: transfer }));
+  });
+  await expect(content).toContainText('drop.txt (12 bytes)');
+  await expect(zone.locator('.file-drop-status')).toContainText('끌어놓기에서 1개 파일을 가져왔습니다.');
+  await expect(content.locator('.io-status')).toHaveText('처리가 완료되었습니다.');
+
+  await zone.evaluate((element) => {
+    const transfer = new DataTransfer();
+    transfer.items.add(new File(['paste'], 'paste.txt', { type: 'text/plain' }));
+    const event = new Event('paste', { bubbles: true, cancelable: true });
+    Object.defineProperty(event, 'clipboardData', { value: transfer });
+    element.dispatchEvent(event);
+  });
+  await expect(content).toContainText('paste.txt (5 bytes)');
+  await expect(zone.locator('.file-drop-status')).toContainText('클립보드에서 1개 파일을 가져왔습니다.');
+});
+
+test('파일 입력 공통 UI가 accept와 단일/다중 선택을 지킨다', async ({ page }) => {
+  await page.goto('/#/tool/image-convert');
+  const content = page.locator('#content');
+  const zone = content.locator('.file-drop-zone');
+  await zone.evaluate((element) => {
+    const transfer = new DataTransfer();
+    transfer.items.add(new File(['not-image'], 'note.txt', { type: 'text/plain' }));
+    element.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: transfer }));
+  });
+  await expect(zone.locator('.file-drop-status')).toHaveText('이 입력에서 지원하지 않는 파일 형식입니다.');
+  expect(await content.getByLabel('이미지 선택 (여러 장 가능)').evaluate((input) => input.files.length)).toBe(0);
+});
+
+test('결과를 주소·저장소에 남기지 않고 호환 도구로 전달한다', async ({ page }) => {
+  await page.goto('/#/tool/base64');
+  const io = page.locator('#content .io');
+  const secretJson = '{"secret":"브라우저 메모리에서만 전달"}';
+  const encoded = Buffer.from(secretJson).toString('base64');
+
+  await io.locator('textarea.mono:not(.out)').fill(encoded);
+  await io.getByRole('button', { name: '디코딩', exact: true }).click();
+  await expect(io.locator('textarea.out')).toHaveValue(secretJson);
+  await io.getByRole('button', { name: '다른 도구로 보내기' }).click();
+  await io.getByLabel('전달할 도구').selectOption('json-format');
+  await io.getByRole('button', { name: '보내기', exact: true }).click();
+
+  await expect(page).toHaveURL(/#\/tool\/json-format$/);
+  await expect(page.locator('#content textarea.mono:not(.out)').first()).toHaveValue(secretJson);
+  expect(page.url()).not.toContain('secret');
+  expect(await page.evaluate((secret) => {
+    const stored = [...Object.values(localStorage), ...Object.values(sessionStorage)].join('\n');
+    return stored.includes(secret);
+  }, secretJson)).toBe(false);
+
+  await page.goBack();
+  await expect(page.locator('.tool-header h1')).toHaveText('Base64 인코딩/디코딩');
+  await page.goto('/#/tool/json-format');
+  await expect(page.locator('#content textarea.mono:not(.out)').first()).not.toHaveValue(secretJson);
+});
+
+test('여러 입력을 받는 전달 대상에서 입력 칸을 선택한다', async ({ page }) => {
+  const schema = '{"type":"object","required":["name"]}';
+  await page.goto('/#/tool/json-format');
+  const io = page.locator('#content .io');
+  await io.locator('textarea.mono:not(.out)').fill(schema);
+  await io.getByRole('button', { name: '다른 도구로 보내기' }).click();
+  await io.getByLabel('전달할 도구').selectOption('json-schema');
+  await expect(io.getByLabel('전달할 입력 칸')).toBeVisible();
+  await io.getByLabel('전달할 입력 칸').selectOption('schema');
+  await io.getByRole('button', { name: '보내기', exact: true }).click();
+
+  await expect(page).toHaveURL(/#\/tool\/json-schema$/);
+  await expect(page.locator('#content textarea.mono:not(.out)').nth(1)).toHaveValue(
+    JSON.stringify(JSON.parse(schema), null, 2),
+  );
+});
+
+test('JSON·JWT payload·해시 결과의 우선 연결이 동작한다', async ({ page }) => {
+  await page.goto('/#/tool/json-format');
+  let io = page.locator('#content .io');
+  await io.locator('textarea.mono:not(.out)').fill('[{"name":"WTools"}]');
+  await io.getByRole('button', { name: '다른 도구로 보내기' }).click();
+  await io.getByLabel('전달할 도구').selectOption('data-convert');
+  await io.getByRole('button', { name: '보내기', exact: true }).click();
+  io = page.locator('#content .io');
+  await expect(io.getByLabel('입력 포맷', { exact: true })).toHaveValue('json');
+  await expect(io.locator('textarea.out')).toHaveValue(/name: WTools/);
+
+  const header = Buffer.from('{"alg":"none","typ":"JWT"}').toString('base64url');
+  const payload = Buffer.from('{"sub":"transfer-test"}').toString('base64url');
+  await page.goto('/#/tool/jwt');
+  io = page.locator('#content .io').first();
+  await io.getByLabel('JWT 토큰').fill(`${header}.${payload}.signature`);
+  await io.getByRole('button', { name: '다른 도구로 보내기' }).click();
+  await io.getByLabel('전달할 도구').selectOption('json-format');
+  await io.getByRole('button', { name: '보내기', exact: true }).click();
+  await expect(page.locator('#content textarea.mono:not(.out)').first()).toHaveValue(/transfer-test/);
+
+  await page.goto('/#/tool/hmac');
+  io = page.locator('#content .io');
+  await io.getByRole('button', { name: '다른 도구로 보내기' }).click();
+  await io.getByRole('button', { name: '보내기', exact: true }).click();
+  await expect(page).toHaveURL(/#\/tool\/hash-analyze$/);
+  await expect(page.locator('#content .out-html')).toContainText('SHA-256');
+});
+
+test('모바일에서도 결과 전달 UI가 화면 너비 안에서 동작한다', async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 720 });
+  await page.goto('/#/tool/base64');
+  const io = page.locator('#content .io');
+  await io.locator('textarea.mono:not(.out)').fill('eyJtb2JpbGUiOnRydWV9');
+  await io.getByRole('button', { name: '디코딩', exact: true }).click();
+  await io.getByRole('button', { name: '다른 도구로 보내기' }).click();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(320);
+  await io.getByRole('button', { name: '보내기', exact: true }).click();
+  await expect(page).toHaveURL(/#\/tool\/json-format$/);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(320);
+});

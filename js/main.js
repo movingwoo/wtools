@@ -1,5 +1,5 @@
 // main.js — 라우터 / 사이드바 / 홈 화면
-import { tools, categories, h, stageToolInput } from './core.js';
+import { tools, categories, h, enhanceFileInputs, stageToolInput } from './core.js';
 import './tools/encoding.js';
 import './tools/dataformat.js';
 import './tools/devfmt-format.js';
@@ -400,8 +400,18 @@ function renderTool(id) {
     h('div', { class: 'tool-body' }));
   content.append(box);
   try {
-    const cleanup = t.render(box.querySelector('.tool-body'));
+    const body = box.querySelector('.tool-body');
+    if (t.externalRequest) {
+      const request = t.externalRequest;
+      body.append(h('aside', { class: 'external-request-notice', 'aria-label': '외부 서버 사용 안내' },
+        h('strong', null, '외부 서버 사용 안내'),
+        h('p', null, `조회 버튼을 누르면 ${request.service}로 다음 정보가 전송됩니다: ${request.sends}.`),
+        h('p', null, request.privacy),
+        request.cors ? h('p', null, '외부 서버의 CORS 허용 응답이 필요하므로 네트워크나 브라우저 정책에 따라 조회가 실패할 수 있습니다.') : null));
+    }
+    const cleanup = t.render(body);
     if (typeof cleanup === 'function') cleanupCurrentTool = cleanup;
+    enhanceFileInputs(box.querySelector('.tool-body'));
   } catch (e) {
     // 사용자에게는 안내 문구를 보여주되, 예외 자체는 콘솔에 남겨 진단·자동 검사가 가능하게 한다.
     console.error(`도구 "${t.id}" 렌더링 실패:`, e);
@@ -444,6 +454,7 @@ function route() {
 
 buildNav();
 window.addEventListener('hashchange', route);
+window.addEventListener('wtools:staged-input', route);
 route();
 
 if ('serviceWorker' in navigator) {

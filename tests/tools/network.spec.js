@@ -241,6 +241,13 @@ test('dns-lookup: A 레코드 응답 표시', async ({ page }) => {
     ] }),
   }));
   await openTool(page, 'dns-lookup');
+  const notice = page.locator('#content .external-request-notice');
+  await expect(notice).toContainText('외부 서버 사용 안내');
+  await expect(notice).toContainText('입력한 도메인과 선택한 레코드 타입');
+  await expect(notice).toContainText('접속 IP');
+  await expect(notice).toContainText('CORS 허용 응답');
+  expect(requests).toHaveLength(0);
+  expect(await notice.evaluate((element) => !!(element.compareDocumentPosition(document.querySelector('#content .io')) & Node.DOCUMENT_POSITION_FOLLOWING))).toBe(true);
   const io = ioSection(page);
   await fillInputs(io, 'example.com');
   await clickAction(io, '조회');
@@ -253,6 +260,18 @@ test('dns-lookup: A 레코드 응답 표시', async ({ page }) => {
   expect(requests).toHaveLength(1);
   expect(requests[0].searchParams.get('name')).toBe('example.com');
   expect(requests[0].searchParams.get('type')).toBe('A');
+});
+
+test('dns-lookup: 네트워크·CORS 연결 실패를 한국어로 안내', async ({ page }) => {
+  await page.addInitScript(() => {
+    const nativeFetch = window.fetch;
+    window.fetch = (input, init) => String(input).startsWith('https://cloudflare-dns.com/dns-query')
+      ? Promise.reject(new TypeError('Failed to fetch')) : nativeFetch(input, init);
+  });
+  await openTool(page, 'dns-lookup');
+  const io = ioSection(page);
+  await clickAction(io, '조회');
+  await expect(io.locator('.out-html .error')).toHaveText('DNS 조회 서버에 연결하지 못했습니다. 네트워크 연결 또는 CORS 정책을 확인하세요.');
 });
 
 test('dns-lookup: 레코드 타입 선택이 요청에 반영된다', async ({ page }) => {

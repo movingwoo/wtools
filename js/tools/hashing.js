@@ -256,6 +256,9 @@ tool({
   id: 'hmac', cat: CAT, name: 'HMAC 생성',
   desc: '비밀 키를 사용한 HMAC 메시지 인증 코드를 생성합니다.',
   keywords: 'hmac mac key',
+  transfer: {
+    outputs: [{ id: 'hash', label: 'HMAC 결과', type: 'hash', targets: ['hash-analyze'] }],
+  },
   render(root) {
     makeIO(root, {
       inputs: [
@@ -267,6 +270,7 @@ tool({
         { id: 'ofmt', label: '출력', type: 'select', values: [['hex', 'Hex'], ['base64', 'Base64']] },
       ],
       runOnLoad: true,
+      transferOutput: { id: 'hash', when: ({ result }) => !!String(result).trim() },
       process(v, o) {
         // CryptoJS.HmacSHA3는 Keccak 기반이라 표준 HMAC-SHA3와 다르다 — 직접 구현 사용
         if (o.alg === 'SHA3-256' || o.alg === 'SHA3-512') {
@@ -288,6 +292,7 @@ tool({
   id: 'hash-analyze', cat: CAT, name: '해시 분석기',
   desc: '해시 문자열의 형태로 사용된 알고리즘을 추정합니다.',
   keywords: 'hash identify analyze',
+  transfer: { inputs: [{ id: 'input', label: '해시 값', accepts: ['hash'] }] },
   render(root) {
     makeIO(root, {
       inputs: [{ id: 'input', label: '해시 값', rows: 3, placeholder: '5d41402abc4b2a76b9719d911017c592' }],

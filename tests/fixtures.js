@@ -136,12 +136,21 @@ export function makeTestPki() {
       '-addext', `subjectAltName=DNS:${PKI.san[0]},DNS:${PKI.san[1]},IP:${PKI.san[2]}`,
       '-addext', 'keyUsage=digitalSignature,keyEncipherment');
     run('ecparam', '-name', 'prime256v1', '-genkey', '-noout', '-out', 'ec.pem');
+    run('ecparam', '-name', 'secp384r1', '-genkey', '-noout', '-out', 'ec384.pem');
+    run('ecparam', '-name', 'secp521r1', '-genkey', '-noout', '-out', 'ec521.pem');
+    run('pkey', '-in', 'rsa.pem', '-pubout', '-out', 'rsa-public.pem');
+    run('pkey', '-in', 'ec.pem', '-pubout', '-out', 'ec-public.pem');
+    run('pkey', '-in', 'ec384.pem', '-pubout', '-out', 'ec384-public.pem');
+    run('pkey', '-in', 'ec521.pem', '-pubout', '-out', 'ec521-public.pem');
     // ecparam은 SEC1을 내놓는다. WebCrypto가 읽는 PKCS#8 형태도 함께 만들어 둔다.
     run('pkcs8', '-topk8', '-nocrypt', '-in', 'ec.pem', '-out', 'ec-pkcs8.pem');
     run('pkcs8', '-topk8', '-in', 'rsa.pem', '-out', 'rsa-enc.pem', '-v2', 'aes-256-cbc', '-passout', 'pass:' + PKI.passphrase);
     const read = (name) => readFileSync(join(dir, name), 'utf8');
     return {
       cert: read('cert.pem'), rsaKey: read('rsa.pem'), ecKey: read('ec.pem'),
+      rsaPublicKey: read('rsa-public.pem'), ecPublicKey: read('ec-public.pem'),
+      ec384Key: read('ec384.pem'), ec384PublicKey: read('ec384-public.pem'),
+      ec521Key: read('ec521.pem'), ec521PublicKey: read('ec521-public.pem'),
       ecPkcs8Key: read('ec-pkcs8.pem'), encryptedRsaKey: read('rsa-enc.pem'),
     };
   } finally {

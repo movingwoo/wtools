@@ -1,5 +1,5 @@
 // 코드 포맷팅 / 개발 유틸리티 — Diff / 정규식 테스트
-import { tool, makeIO, h, loadScript, LIB } from '../core.js';
+import { tool, makeIO, h, download, loadScript, LIB } from '../core.js';
 
 const CAT = '코드 포맷팅 / 개발 유틸리티';
 
@@ -50,28 +50,49 @@ tool({
 
 tool({
   id: 'text-diff', cat: CAT, name: '텍스트 Diff (라인 비교)',
-  desc: '두 텍스트를 라인 단위로 비교해 차이를 표시합니다.',
-  keywords: 'diff compare text patch difference 비교',
+  desc: '두 텍스트의 차이를 비교하고 통합 diff 파일로 내려받습니다.',
+  keywords: 'diff compare text patch unified whitespace difference 비교 공백',
   render(root) {
     makeIO(root, {
       inputs: [
         { id: 'a', label: '텍스트 A', rows: 8, value: '사과\n바나나\n체리' },
         { id: 'b', label: '텍스트 B', rows: 8, value: '사과\n블루베리\n체리\n두리안' },
       ],
-      options: [{ id: 'mode', label: '단위', type: 'select', values: [['lines', '라인'], ['words', '단어'], ['chars', '문자']] }],
+      options: [
+        { id: 'mode', label: '단위', type: 'select', values: [['lines', '라인'], ['words', '단어'], ['chars', '문자']] },
+        { id: 'ignoreWhitespace', label: '공백 차이 무시', type: 'checkbox' },
+      ],
       outputHTML: true,
       async process(v, o) {
         await loadScript(LIB.jsdiff);
         const fn = o.mode === 'words' ? Diff.diffWords : o.mode === 'chars' ? Diff.diffChars : Diff.diffLines;
-        const parts = fn(v.a, v.b);
+        const a = o.ignoreWhitespace && o.mode === 'chars' ? v.a.replace(/\s+/g, '') : v.a;
+        const b = o.ignoreWhitespace && o.mode === 'chars' ? v.b.replace(/\s+/g, '') : v.b;
+        const parts = fn(a, b, { ignoreWhitespace: o.ignoreWhitespace });
         const box = h('pre', { style: { margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-all' } });
         for (const p of parts) {
           const cls = p.added ? (o.mode === 'lines' ? 'diff-line-add' : 'diff-add')
             : p.removed ? (o.mode === 'lines' ? 'diff-line-del' : 'diff-del') : null;
           box.append(cls ? h('span', { class: cls }, p.value) : p.value);
         }
-        return box;
+        const patch = Diff.createTwoFilesPatch('텍스트 A.txt', '텍스트 B.txt', v.a, v.b, '', '', {
+          context: 3, ignoreWhitespace: o.ignoreWhitespace,
+        });
+        const changed = parts.some((part) => part.added || part.removed);
+        return h('div', null,
+          o.ignoreWhitespace && !changed
+            ? h('p', { class: 'note', style: { marginTop: 0 } }, '공백 차이를 제외하면 두 텍스트는 같습니다.') : null,
+          h('div', { class: 'btn-row', style: { marginBottom: '10px' } },
+            h('button', {
+              class: 'btn small', type: 'button',
+              onclick: () => download('text-diff.patch', patch, 'text/x-diff;charset=utf-8'),
+            }, '통합 diff 다운로드')),
+          box,
+          h('details', { style: { marginTop: '12px' } },
+            h('summary', { style: { cursor: 'pointer', fontWeight: '600' } }, '통합 diff 보기'),
+            h('pre', { class: 'unified-diff', style: { whiteSpace: 'pre-wrap', wordBreak: 'break-all' } }, patch)));
       },
+      note: '공백 차이 무시는 라인 비교와 통합 diff에서는 각 줄 앞뒤 공백을, 문자 비교에서는 모든 공백 문자를 비교 대상에서 제외합니다. 단어 비교는 원래 공백 간격을 구분하지 않습니다.',
     });
   },
 });

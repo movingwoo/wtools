@@ -73,12 +73,12 @@ python3 -m http.server 8000
 python3 scripts/validate_static.py
 ```
 
-브라우저 테스트는 별도의 패키지로 분리되어 있으며 `.node-version`에 고정된 Node.js 22(CI와 동일한 버전)가 필요합니다.  
-Node 26 등 더 높은 메이저에서는 Playwright 러너가 시작 단계에서 아무 출력 없이 멈춥니다.
+브라우저 테스트는 별도의 패키지로 분리되어 있으며 루트와 `tests/.node-version`에 고정된 Node.js 22(CI와 동일한 버전)가 필요합니다. `tests/.node-version`은 `cd tests` 뒤에도 버전 관리자가 Node 22를 선택하게 하며, 다른 메이저에서는 설치가 즉시 실패합니다. 의존성은 추적되는 `package-lock.json`을 기준으로 설치합니다.
 
 ```bash
 cd tests
-npm install
+npm ci
+npm run test:collect -- --project=chromium
 npx playwright install chromium
 npx playwright test --project=chromium
 ```

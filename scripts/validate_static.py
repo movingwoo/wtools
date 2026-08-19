@@ -145,6 +145,35 @@ def validate_document_assets(validation: Validation) -> set[Path]:
   return validation.checked_files
 
 
+def validate_node_versions(validation: Validation) -> None:
+  def read_version(path: Path) -> str:
+    try:
+      return path.read_text(encoding='utf-8').strip()
+    except OSError as error:
+      validation.error(f'{path.relative_to(ROOT)}: {error}')
+      return ''
+
+  root_version = read_version(ROOT / '.node-version')
+  test_version = read_version(ROOT / 'tests' / '.node-version')
+  if not root_version or not test_version:
+    return
+  if root_version != test_version:
+    validation.error(
+      f'Node.js version mismatch: .node-version={root_version}, '
+      f'tests/.node-version={test_version}'
+    )
+  try:
+    package = json.loads((ROOT / 'tests' / 'package.json').read_text(encoding='utf-8'))
+    expected_range = f'>={root_version.split(".")[0]} <{int(root_version.split(".")[0]) + 1}'
+    if package.get('engines', {}).get('node') != expected_range:
+      validation.error(
+        f'tests/package.json: engines.node must be {expected_range!r} '
+        f'to match .node-version'
+      )
+  except (json.JSONDecodeError, OSError, ValueError) as error:
+    validation.error(f'tests/package.json Node.js version policy: {error}')
+
+
 def validate_app_shell(validation: Validation) -> list[str]:
   source = (ROOT / 'sw.js').read_text(encoding='utf-8')
   match = re.search(r'const APP_SHELL = \[(.*?)\];', source, re.DOTALL)
@@ -201,6 +230,7 @@ def main() -> int:
   validate_tools(validation)
   validate_imports(validation)
   validate_document_assets(validation)
+  validate_node_versions(validation)
   refs = validate_app_shell(validation)
   if args.base_url:
     validate_http(validation, args.base_url, refs)

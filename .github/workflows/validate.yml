@@ -25,7 +25,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version-file: .node-version
 
       - name: Check JavaScript syntax
         shell: bash
@@ -63,11 +63,18 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version-file: .node-version
+          cache: npm
+          cache-dependency-path: tests/package-lock.json
 
       - name: Install test dependencies
         working-directory: tests
-        run: npm install --no-audit --no-fund
+        run: npm ci --no-audit --no-fund
+
+      - name: Verify Playwright starts and collects tests
+        working-directory: tests
+        timeout-minutes: 1
+        run: npm run test:collect -- --project=chromium
 
       # 도구가 지연 로드하는 CDN 라이브러리를 실행 간에 재사용한다.
       # CDN이 잠깐 안 잡혀도 테스트가 죽지 않고, 캐시가 맞으면 네트워크를 아예 타지 않는다.
@@ -104,11 +111,18 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version-file: .node-version
+          cache: npm
+          cache-dependency-path: tests/package-lock.json
 
       - name: Install test dependencies
         working-directory: tests
-        run: npm install --no-audit --no-fund
+        run: npm ci --no-audit --no-fund
+
+      - name: Verify Playwright starts and collects tests
+        working-directory: tests
+        timeout-minutes: 1
+        run: npm run test:collect -- --project=${{ matrix.browser }}
 
       # 병렬 잡이 같은 캐시 키를 동시에 저장하지 않도록 브라우저별 키를 사용한다.
       # 첫 실행에서는 기존 Chromium 캐시를 복원해 외부 CDN 요청을 최소화한다.

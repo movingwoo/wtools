@@ -45,7 +45,7 @@ python3 -m http.server 8000
 
 Then open `http://localhost:8000` and validate changes manually.
 
-CI (`.github/workflows/validate.yml`) checks JavaScript syntax, validates registrations and static assets, and runs the Playwright browser suite on every PR and every push to `main`. A second workflow, `.github/workflows/nightly.yml`, re-runs the Chromium suite once a day against the real CDN. To run the browser tests locally, use the Node version pinned in both `.node-version` and `tests/.node-version` (22, the same major CI uses). The test package rejects other Node majors, and `validate_static.py` keeps the two version files aligned. With `fnm` or `nvm` installed, the version switches automatically on entering either the repository or `tests/`.
+CI (`.github/workflows/validate.yml`) checks JavaScript syntax, validates registrations and static assets, and runs the Playwright browser suite on every PR and every push to `main`. A second workflow, `.github/workflows/nightly.yml`, re-runs the Chromium suite once a day against the real CDN. CI uses the digest-pinned official Playwright image whose version matches `tests/package.json`, so browsers and Linux dependencies are not downloaded during each job; `validate_static.py` keeps the image and package versions aligned. To run the browser tests locally, use the Node version pinned in both `.node-version` and `tests/.node-version` (22, the same major CI uses). The test package rejects other Node majors, and `validate_static.py` keeps the two version files aligned. With `fnm` or `nvm` installed, the version switches automatically on entering either the repository or `tests/`.
 
 ```bash
 cd tests
@@ -65,7 +65,7 @@ The suite has two layers:
 
 - `smoke.spec.js` and `tools-render.spec.js` cover the app shell, routing, search, and that every registered tool renders without console errors.
 - `tests/tools/<module>.spec.js` covers the output each tool produces, one spec per `js/tools/` module.
-- Chromium runs the entire suite. Firefox and WebKit run `smoke.spec.js`, `tools-render.spec.js`, and `tools/media.spec.js` in parallel CI jobs. Use `--project=chromium` for the normal local fast path.
+- Chromium runs the entire suite. Firefox and WebKit run `smoke.spec.js`, `tools-render.spec.js`, and `tools/media.spec.js` sequentially in the same containerized CI job. Use `--project=chromium` for the normal local fast path.
 
 Follow these conventions when adding cases:
 

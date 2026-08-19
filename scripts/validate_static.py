@@ -20,6 +20,10 @@ LOCAL_REF = re.compile(r"""(?:src|href)=["']([^"'#]+)["']""")
 IMPORT_REF = re.compile(r"""^\s*import(?:[\s\S]*?\sfrom\s*)?['"]([^'"]+)['"];?""", re.MULTILINE)
 TOOL_REF = re.compile(r"""(?:tool|symTool|pakoTool)\(\s*\{\s*id:\s*'([^']+)'""")
 CAT_REF = re.compile(r"""const CAT = '([^']+)';""")
+PLAYWRIGHT_CI_IMAGES = {
+  '1.50.1': 'mcr.microsoft.com/playwright:v1.50.1-noble@sha256:'
+            'ac7053180325ef75d31774c458d0bb9b55ac153ae1be3d104b80c6c1bb6a067c',
+}
 
 
 class Validation:
@@ -174,6 +178,58 @@ def validate_node_versions(validation: Validation) -> None:
     validation.error(f'tests/package.json Node.js version policy: {error}')
 
 
+def validate_playwright_ci(validation: Validation) -> None:
+  try:
+    package = json.loads((ROOT / 'tests' / 'package.json').read_text(encoding='utf-8'))
+    lock = json.loads((ROOT / 'tests' / 'package-lock.json').read_text(encoding='utf-8'))
+    versions = {
+      'tests/package.json': package['devDependencies']['@playwright/test'],
+      'tests/package-lock.json root': lock['packages']['']['devDependencies']['@playwright/test'],
+      'tests/package-lock.json package': lock['packages']['node_modules/@playwright/test']['version'],
+    }
+  except (KeyError, json.JSONDecodeError, OSError) as error:
+    validation.error(f'Playwright CI version policy: {error}')
+    return
+
+  if len(set(versions.values())) != 1:
+    details = ', '.join(f'{source}={version}' for source, version in versions.items())
+    validation.error(f'Playwright versions do not match: {details}')
+    return
+
+  version = next(iter(versions.values()))
+  expected_image = PLAYWRIGHT_CI_IMAGES.get(version)
+  if not expected_image:
+    validation.error(
+      f'Playwright {version}: add a reviewed, digest-pinned CI image to '
+      'PLAYWRIGHT_CI_IMAGES'
+    )
+    return
+
+  for relative_path in ('.github/workflows/validate.yml', '.github/workflows/nightly.yml'):
+    path = ROOT / relative_path
+    try:
+      source = path.read_text(encoding='utf-8')
+    except OSError as error:
+      validation.error(f'{relative_path}: {error}')
+      continue
+    images = re.findall(r'^\s*image:\s*(mcr\.microsoft\.com/playwright:\S+)\s*$', source, re.MULTILINE)
+    if images != [expected_image]:
+      validation.error(
+        f'{relative_path}: expected one Playwright CI image {expected_image!r}, got {images!r}'
+      )
+    if re.search(r'\bplaywright\s+install\b', source):
+      validation.error(
+        f'{relative_path}: Playwright browsers must come from the pinned CI image, '
+        'not a runtime install'
+      )
+    if relative_path == '.github/workflows/validate.yml' and not re.search(
+      r'^  browser-smoke:\s*$', source, re.MULTILINE
+    ):
+      validation.error(
+        f'{relative_path}: browser-smoke job id is required by the main branch ruleset'
+      )
+
+
 def validate_app_shell(validation: Validation) -> list[str]:
   source = (ROOT / 'sw.js').read_text(encoding='utf-8')
   match = re.search(r'const APP_SHELL = \[(.*?)\];', source, re.DOTALL)
@@ -231,6 +287,7 @@ def main() -> int:
   validate_imports(validation)
   validate_document_assets(validation)
   validate_node_versions(validation)
+  validate_playwright_ci(validation)
   refs = validate_app_shell(validation)
   if args.base_url:
     validate_http(validation, args.base_url, refs)

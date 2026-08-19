@@ -268,9 +268,22 @@ test('파일 입력 공통 UI가 끌어놓기와 클립보드 붙여넣기를 �
   await page.goto('/#/tool/checksum-file');
   const content = page.locator('#content');
   const zone = content.locator('.file-drop-zone');
+  const input = content.getByLabel('파일 선택 (여러 개 가능, 브라우저 밖으로 전송되지 않습니다)');
+  await expect(input).toBeHidden();
+  await expect(input).toHaveAttribute('hidden', '');
+  await expect(zone).toHaveAttribute('role', 'group');
+  await expect(zone).toHaveAttribute('aria-describedby', /wtools-file-drop-description-/);
+  await expect(zone.locator('.sr-only')).toHaveText('파일 선택 (여러 개 가능, 브라우저 밖으로 전송되지 않습니다) 입력');
   await expect(zone).toContainText('파일을 여기에 끌어놓거나');
   await expect(zone).toContainText('파일 내용은 브라우저 밖으로 전송되지 않습니다.');
   await expect(zone.getByRole('button', { name: '클립보드 파일 붙여넣기' })).toBeVisible();
+
+  const chooserPromise = page.waitForEvent('filechooser');
+  await zone.getByRole('button', { name: '파일 찾아보기' }).click();
+  const chooser = await chooserPromise;
+  await chooser.setFiles({ name: 'browse.txt', mimeType: 'text/plain', buffer: Buffer.from('browse') });
+  await expect(content).toContainText('browse.txt (6 bytes)');
+  await expect(zone.locator('.file-drop-status')).toContainText('선택한 파일: browse.txt');
 
   await zone.evaluate((element) => {
     const transfer = new DataTransfer();

@@ -62,6 +62,7 @@ export function h(tag, attrs, ...kids) {
 }
 
 let fieldId = 0;
+let fileDropId = 0;
 export function formLabel(control, text, attrs = {}) {
   if (!control.id) control.id = `wtools-field-${++fieldId}`;
   return h('label', { ...attrs, for: control.id }, text);
@@ -90,13 +91,20 @@ export function enhanceFileInputs(root) {
   let fileInputIndex = 0;
   for (const input of root.querySelectorAll('input[type="file"]:not([data-file-enhanced])')) {
     input.dataset.fileEnhanced = 'true';
+    const inputLabel = input.getAttribute('aria-label')?.trim()
+      || [...(input.labels || [])].map((label) => label.textContent.trim()).filter(Boolean).join(' ')
+      || (input.multiple ? '여러 파일 선택' : '파일 선택');
+    input.hidden = true;
     const status = h('span', { class: 'file-drop-status', 'aria-live': 'polite' });
     const browse = h('button', { class: 'btn small', type: 'button' }, '파일 찾아보기');
     const paste = h('button', { class: 'btn small', type: 'button' }, '클립보드 파일 붙여넣기');
+    const description = h('span', { class: 'sr-only', id: `wtools-file-drop-description-${++fileDropId}` }, `${inputLabel} 입력`);
     const zone = h('div', {
-      class: 'file-drop-zone', tabindex: 0,
+      class: 'file-drop-zone', role: 'group', tabindex: 0,
       'aria-label': `파일 끌어놓기 및 클립보드 붙여넣기 영역 ${++fileInputIndex}`,
+      'aria-describedby': description.id,
     },
+    description,
     h('span', { class: 'file-drop-instruction' }, input.multiple
       ? '파일을 여기에 끌어놓거나 이 영역에서 Ctrl/Cmd+V로 붙여넣으세요. 여러 파일을 받을 수 있습니다.'
       : '파일을 여기에 끌어놓거나 이 영역에서 Ctrl/Cmd+V로 붙여넣으세요.'),

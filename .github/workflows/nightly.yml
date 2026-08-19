@@ -25,11 +25,18 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version-file: .node-version
+          cache: npm
+          cache-dependency-path: tests/package-lock.json
 
       - name: Install test dependencies
         working-directory: tests
-        run: npm install --no-audit --no-fund
+        run: npm ci --no-audit --no-fund
+
+      - name: Verify Playwright starts and collects tests
+        working-directory: tests
+        timeout-minutes: 1
+        run: npm run test:collect -- --project=chromium
 
       - name: Install Playwright Chromium
         working-directory: tests

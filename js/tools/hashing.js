@@ -334,52 +334,309 @@ tool({
   },
 });
 
+const FILE_CHECKSUM_ALGORITHMS = {
+  'MD5': { length: 32, digest: (wordArray) => CryptoJS.MD5(wordArray).toString() },
+  'SHA-1': { length: 40, digest: (wordArray) => CryptoJS.SHA1(wordArray).toString() },
+  'SHA-256': { length: 64, digest: (wordArray) => CryptoJS.SHA256(wordArray).toString() },
+  'SHA-512': { length: 128, digest: (wordArray) => CryptoJS.SHA512(wordArray).toString() },
+};
+
+const CHECKSUM_ALGORITHM_BY_LENGTH = Object.fromEntries(
+  Object.entries(FILE_CHECKSUM_ALGORITHMS).map(([name, cfg]) => [cfg.length, name]));
+
+function normalizeChecksumAlgorithm(value) {
+  const compact = value.toUpperCase().replace(/[^A-Z0-9]/g, '');
+  return { MD5: 'MD5', SHA1: 'SHA-1', SHA256: 'SHA-256', SHA512: 'SHA-512' }[compact] || null;
+}
+
+function unescapeChecksumFilename(value) {
+  return value.replace(/\\([\\n])/g, (_, escaped) => escaped === 'n' ? '\n' : '\\');
+}
+
+function parseChecksumText(text) {
+  const entries = [];
+  const errors = [];
+  const seen = new Map();
+  const add = (algorithm, hash, filename, lineNumber) => {
+    const expectedLength = FILE_CHECKSUM_ALGORITHMS[algorithm]?.length;
+    if (!expectedLength || hash.length !== expectedLength) {
+      errors.push(`${lineNumber}행: ${algorithm} 체크섬은 ${expectedLength || '지원되는'}자리 Hex여야 합니다.`);
+      return;
+    }
+    const entry = { algorithm, hash: hash.toLowerCase(), filename, lineNumber };
+    const key = `${algorithm}\0${filename ?? ''}`;
+    const previous = seen.get(key);
+    if (previous && previous.hash !== entry.hash) {
+      errors.push(`${lineNumber}행: 같은 파일과 알고리즘에 서로 다른 체크섬이 있습니다.`);
+      return;
+    }
+    if (!previous) {
+      seen.set(key, entry);
+      entries.push(entry);
+    }
+  };
+
+  text.replace(/^\uFEFF/, '').split(/\r?\n/).forEach((rawLine, index) => {
+    const lineNumber = index + 1;
+    const trimmed = rawLine.trim();
+    if (!trimmed || trimmed.startsWith('#')) return;
+
+    // GNU coreutils 형식: "<hash>  <filename>" 또는 "<hash> *<filename>".
+    const escaped = rawLine.startsWith('\\');
+    const gnuLine = escaped ? rawLine.slice(1) : rawLine;
+    const gnu = gnuLine.match(/^([0-9a-f]+)[ \t]([ *])(.+)$/i);
+    if (gnu) {
+      const algorithm = CHECKSUM_ALGORITHM_BY_LENGTH[gnu[1].length];
+      if (!algorithm) errors.push(`${lineNumber}행: 지원하지 않는 길이의 GNU 체크섬입니다.`);
+      else add(algorithm, gnu[1], escaped ? unescapeChecksumFilename(gnu[3]) : gnu[3], lineNumber);
+      return;
+    }
+
+    // BSD/OpenSSL 형식: "SHA256 (filename) = <hash>".
+    const bsd = trimmed.match(/^([a-z0-9-]+)\s*\((.*)\)\s*=\s*([0-9a-f]+)$/i);
+    if (bsd) {
+      const algorithm = normalizeChecksumAlgorithm(bsd[1]);
+      if (!algorithm) errors.push(`${lineNumber}행: 지원하지 않는 알고리즘 '${bsd[1]}'입니다.`);
+      else add(algorithm, bsd[3], bsd[2], lineNumber);
+      return;
+    }
+
+    // 파일명이 없는 단일 Hex 값은 선택한 파일이 하나일 때 사용한다.
+    if (/^[0-9a-f]+$/i.test(trimmed)) {
+      const algorithm = CHECKSUM_ALGORITHM_BY_LENGTH[trimmed.length];
+      if (!algorithm) errors.push(`${lineNumber}행: 지원하지 않는 길이의 체크섬입니다.`);
+      else add(algorithm, trimmed, null, lineNumber);
+      return;
+    }
+
+    errors.push(`${lineNumber}행: GNU 또는 BSD 체크섬 형식으로 읽을 수 없습니다.`);
+  });
+  if (!entries.length && !errors.length) errors.push('검증할 체크섬을 입력하세요.');
+  return { entries, errors };
+}
+
+function normalizeChecksumPath(value) {
+  return value.replace(/\\/g, '/').replace(/^\.\/+/, '');
+}
+
+function verifyFileChecksums(records, parsed) {
+  const errors = [...parsed.errors];
+  const unnamed = parsed.entries.filter((entry) => entry.filename == null);
+  if (unnamed.length && records.length !== 1)
+    errors.push('파일명이 없는 체크섬은 검증할 파일을 하나만 선택했을 때 사용할 수 있습니다.');
+
+  const duplicateNames = records.map((record) => record.name)
+    .filter((name, index, names) => names.indexOf(name) !== index);
+  if (duplicateNames.length)
+    errors.push(`같은 이름의 파일을 두 개 이상 선택했습니다: ${[...new Set(duplicateNames)].join(', ')}`);
+  if (errors.length) return { errors, rows: [], matched: 0, mismatched: 0, missing: 0, extra: 0 };
+
+  const namedEntries = parsed.entries.filter((entry) => entry.filename != null);
+  const basenamePaths = new Map();
+  for (const entry of namedEntries) {
+    const path = normalizeChecksumPath(entry.filename);
+    const basename = path.split('/').pop();
+    if (!basenamePaths.has(basename)) basenamePaths.set(basename, new Set());
+    basenamePaths.get(basename).add(path);
+  }
+
+  const used = new Set();
+  const rows = [];
+  let matched = 0, mismatched = 0, extra = 0;
+  for (const record of records) {
+    const recordPath = normalizeChecksumPath(record.path);
+    const matches = parsed.entries.filter((entry) => {
+      if (entry.filename == null) return records.length === 1;
+      const expectedPath = normalizeChecksumPath(entry.filename);
+      const basename = expectedPath.split('/').pop();
+      return expectedPath === recordPath || expectedPath === record.name
+        || (basename === record.name && basenamePaths.get(basename)?.size === 1);
+    });
+    if (!matches.length) {
+      extra++;
+      rows.push({ status: '추가', filename: record.name, algorithm: '—', expected: '—', actual: '—' });
+      continue;
+    }
+    for (const entry of matches) {
+      used.add(entry);
+      const actual = record.hashes[entry.algorithm];
+      const ok = actual === entry.hash;
+      if (ok) matched++;
+      else mismatched++;
+      rows.push({
+        status: ok ? '일치' : '불일치', filename: record.name, algorithm: entry.algorithm,
+        expected: entry.hash, actual,
+      });
+    }
+  }
+
+  const missingFiles = new Set();
+  for (const entry of namedEntries) {
+    if (used.has(entry)) continue;
+    missingFiles.add(entry.filename);
+    rows.push({
+      status: '누락', filename: entry.filename, algorithm: entry.algorithm,
+      expected: entry.hash, actual: '—',
+    });
+  }
+  return { errors, rows, matched, mismatched, missing: missingFiles.size, extra };
+}
+
+function checksumVerificationView(result) {
+  if (result.errors.length) return h('section', { class: 'checksum-verification' },
+    h('h3', null, '체크섬 검증'),
+    h('div', { class: 'error' }, result.errors.join('\n')));
+
+  const failed = result.mismatched + result.missing + result.extra;
+  const summary = failed
+    ? `검증 실패: 불일치 체크섬 ${result.mismatched}개, 누락 파일 ${result.missing}개, 추가 파일 ${result.extra}개`
+    : `검증 성공: 체크섬 ${result.matched}개가 모두 일치합니다.`;
+  return h('section', { class: 'checksum-verification' },
+    h('h3', null, '체크섬 검증'),
+    h('p', { class: `checksum-summary ${failed ? 'bad' : 'ok'}` }, summary),
+    h('table', { class: 'grid checksum-results' },
+      h('thead', null, h('tr', null,
+        ['상태', '파일', '알고리즘', '기대값', '실제값'].map((label) => h('th', { scope: 'col' }, label)))),
+      h('tbody', null, result.rows.map((row) => h('tr', { class: `checksum-row-${row.status === '일치' ? 'ok' : 'bad'}` },
+        h('td', { 'data-label': '상태' }, row.status), h('td', { 'data-label': '파일' }, row.filename),
+        h('td', { 'data-label': '알고리즘' }, row.algorithm),
+        h('td', { class: 'mono', 'data-label': '기대값' }, row.expected),
+        h('td', { class: 'mono', 'data-label': '실제값' }, row.actual))))));
+}
+
 tool({
   id: 'checksum-file', cat: CAT, name: '파일 해시 (체크섬)',
-  desc: '파일을 선택해 MD5, SHA-1, SHA-256, SHA-512 체크섬을 계산합니다.',
-  keywords: 'file checksum verify download digest integrity sha md5',
+  desc: '파일의 체크섬을 계산하고 GNU/BSD 체크섬 목록과 일치하는지 검증합니다.',
+  keywords: 'file checksum verify manifest gnu bsd download digest integrity sha md5 검증',
   render(root) {
     const out = h('div');
     const status = h('div', {
       class: 'io-status', role: 'status', 'aria-live': 'polite', 'aria-atomic': 'true',
     });
     const file = h('input', { type: 'file', multiple: true });
+    const expected = h('textarea', {
+      class: 'mono', rows: 5,
+      placeholder: '예: ba7816bf...  abc.txt\n또는 SHA256 (abc.txt) = ba7816bf...',
+    });
+    const manifest = h('input', {
+      type: 'file',
+    });
+    let records = [];
+
+    const showResults = () => {
+      const frag = h('div');
+      let verification = null;
+      if (expected.value.trim()) {
+        verification = verifyFileChecksums(records, parseChecksumText(expected.value));
+        frag.append(checksumVerificationView(verification));
+      }
+      for (const record of records) {
+        frag.append(h('div', { class: 'checksum-file-result' }, kvTable([
+          ['파일', `${record.name} (${record.size.toLocaleString()} bytes)`],
+          ...Object.entries(record.hashes),
+        ])));
+      }
+      out.replaceChildren(frag);
+      if (!records.length) return;
+      if (!verification) {
+        status.className = 'io-status active';
+        status.textContent = '처리가 완료되었습니다.';
+      } else if (verification.errors.length || verification.mismatched || verification.missing || verification.extra) {
+        status.className = 'io-status active error';
+        status.textContent = verification.errors.length
+          ? '체크섬은 계산했지만 검증 입력을 확인해야 합니다.'
+          : '체크섬 검증에서 일치하지 않는 항목을 발견했습니다.';
+      } else {
+        status.className = 'io-status active';
+        status.textContent = '체크섬 검증이 완료되었으며 모든 항목이 일치합니다.';
+      }
+    };
+
     const wrap = h('div', { class: 'io', 'aria-busy': 'false' },
       formLabel(file, '파일 선택 (여러 개 가능, 브라우저 밖으로 전송되지 않습니다)', { class: 'io-label' }),
-      file, status, out);
+      file,
+      h('div', { class: 'note' },
+        '선택 사항: 기대 체크섬을 직접 붙여넣거나 GNU/BSD 형식의 체크섬 파일을 불러오면 일치 여부를 함께 검증합니다.'),
+      formLabel(expected, '기대 체크섬 또는 체크섬 목록 (선택)', { class: 'io-label' }),
+      expected,
+      formLabel(manifest, '체크섬 파일 가져오기 (선택, 최대 1MB)', { class: 'io-label' }),
+      manifest, status, out);
     file.addEventListener('change', async () => {
       const list = [...file.files];
       if (!list.length) return;
       file.disabled = true;
+      manifest.disabled = true;
+      expected.disabled = true;
       wrap.setAttribute('aria-busy', 'true');
       status.className = 'io-status active';
       status.textContent = '처리 중…';
-      const frag = h('div');
       try {
+        const nextRecords = [];
         for (let i = 0; i < list.length; i++) {
           const f = list[i];
           status.textContent = list.length > 1 ? `처리 중… (${i + 1}/${list.length})` : '처리 중…';
           await new Promise((res) => setTimeout(res)); // 진행 표시가 그려지도록 양보
           const buf = new Uint8Array(await f.arrayBuffer());
           const wa = CryptoJS.lib.WordArray.create(buf);
-          frag.append(h('div', { style: { marginBottom: '14px' } }, kvTable([
-            ['파일', `${f.name} (${f.size.toLocaleString()} bytes)`],
-            ['MD5', CryptoJS.MD5(wa).toString()],
-            ['SHA-1', CryptoJS.SHA1(wa).toString()],
-            ['SHA-256', CryptoJS.SHA256(wa).toString()],
-            ['SHA-512', CryptoJS.SHA512(wa).toString()],
-          ])));
+          nextRecords.push({
+            name: f.name, path: f.webkitRelativePath || f.name, size: f.size,
+            hashes: Object.fromEntries(Object.entries(FILE_CHECKSUM_ALGORITHMS)
+              .map(([name, cfg]) => [name, cfg.digest(wa)])),
+          });
         }
-        out.innerHTML = '';
-        out.append(frag);
-        status.textContent = '처리가 완료되었습니다.';
+        records = nextRecords;
+        if (wrap.isConnected) showResults();
       } catch (e) {
-        out.innerHTML = '';
-        out.append(h('span', { class: 'error' }, e?.message || String(e)));
+        records = [];
+        out.replaceChildren(h('span', { class: 'error' }, e?.message || String(e)));
         status.className = 'io-status active error';
         status.textContent = '처리 실패: ' + (e?.message || String(e));
       } finally {
         file.disabled = false;
+        manifest.disabled = false;
+        expected.disabled = false;
+        wrap.setAttribute('aria-busy', 'false');
+      }
+    });
+    expected.addEventListener('input', () => {
+      if (records.length) showResults();
+    });
+    manifest.addEventListener('change', async () => {
+      const selected = manifest.files?.[0];
+      if (!selected) return;
+      if (selected.size > 1024 * 1024) {
+        status.className = 'io-status active error';
+        status.textContent = '체크섬 파일은 1MB 이하만 불러올 수 있습니다.';
+        manifest.value = '';
+        return;
+      }
+      file.disabled = true;
+      manifest.disabled = true;
+      expected.disabled = true;
+      wrap.setAttribute('aria-busy', 'true');
+      status.className = 'io-status active';
+      status.textContent = '체크섬 파일을 읽는 중…';
+      try {
+        const text = await selected.text();
+        if (!text.trim()) {
+          expected.value = '';
+          status.className = 'io-status active error';
+          status.textContent = '체크섬 파일이 비어 있습니다.';
+          return;
+        }
+        expected.value = text;
+        if (records.length) showResults();
+        else {
+          status.className = 'io-status active';
+          status.textContent = '체크섬 파일을 불러왔습니다. 검증할 파일을 선택하세요.';
+        }
+      } catch (e) {
+        status.className = 'io-status active error';
+        status.textContent = '체크섬 파일을 읽지 못했습니다: ' + (e?.message || String(e));
+      } finally {
+        file.disabled = false;
+        manifest.disabled = false;
+        expected.disabled = false;
         wrap.setAttribute('aria-busy', 'false');
       }
     });

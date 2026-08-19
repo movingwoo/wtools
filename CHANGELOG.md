@@ -3,6 +3,18 @@
 이 프로젝트는 [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/) 형식과
 [Semantic Versioning](https://semver.org/lang/ko/)을 따릅니다.
 
+## [Unreleased]
+
+### 추가됨
+
+- 파일 해시에 기대 체크섬 직접 입력과 GNU/BSD 체크섬 목록 가져오기를 추가하고, 여러 파일의 일치·불일치·누락·추가 상태를 일괄 표시
+- GitHub 저장소에 Sponsors 후원 버튼 추가
+
+### 테스트
+
+- Node.js 22 정책과 잠금 파일, `npm ci`, Playwright 수집 검사를 로컬·PR·nightly에 일치시켜 브라우저 테스트 설치와 기동을 재현 가능하게 고정
+- 원시 체크섬과 GNU/BSD 형식 판독, 다중 파일 검증 및 잘못된 입력에 대한 Chromium 회귀 테스트 추가
+
 ## [1.2.0] - 2026-08-12
 
 도구 간 작업 흐름을 연결하고 JWT, Cron, QR/바코드, 압축, 토큰 및 이미지 도구의

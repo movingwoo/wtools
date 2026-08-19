@@ -267,7 +267,7 @@ test('Base64 도구가 입력을 변환한다', async ({ page }) => {
 test('파일 입력 공통 UI가 끌어놓기와 클립보드 붙여넣기를 처리한다', async ({ page }) => {
   await page.goto('/#/tool/checksum-file');
   const content = page.locator('#content');
-  const zone = content.locator('.file-drop-zone');
+  const zone = content.locator('.file-drop-zone').first();
   const input = content.getByLabel('파일 선택 (여러 개 가능, 브라우저 밖으로 전송되지 않습니다)');
   await expect(input).toBeHidden();
   await expect(input).toHaveAttribute('hidden', '');

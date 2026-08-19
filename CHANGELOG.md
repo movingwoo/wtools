@@ -3,6 +3,13 @@
 이 프로젝트는 [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/) 형식과
 [Semantic Versioning](https://semver.org/lang/ko/)을 따릅니다.
 
+## [Unreleased]
+
+### 추가됨
+
+- GitHub Release 발행 시 플랫폼 독립적인 정적 호스팅 ZIP과 SHA-256 체크섬을 자동으로 첨부
+- 릴리즈 ZIP을 다시 풀어 HTTP로 제공한 뒤 앱 셸 전체를 검사하는 배포 산출물 검증 추가
+
 ## [1.2.1] - 2026-08-20
 
 파일 체크섬 검증 흐름과 공통 파일 입력을 다듬고, 브라우저 테스트 환경을

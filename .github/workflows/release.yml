@@ -1,0 +1,64 @@
+name: Publish static hosting archive
+
+on:
+  release:
+    types:
+      - published
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.event.release.tag_name }}
+  cancel-in-progress: false
+
+jobs:
+  publish-static-archive:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      RELEASE_TAG: ${{ github.event.release.tag_name }}
+
+    steps:
+      - name: Check out release tag
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.release.tag_name }}
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+
+      - name: Check JavaScript syntax
+        shell: bash
+        run: |
+          while IFS= read -r file; do
+            node --input-type=module --check < "$file"
+          done < <(find js -name '*.js' -type f | sort)
+          node --check sw.js
+
+      - name: Validate source tree
+        run: python3 scripts/validate_static.py
+
+      - name: Build static hosting archive
+        run: python3 scripts/build_static_release.py --version "$RELEASE_TAG" --output-dir dist
+
+      - name: Verify extracted app shell over HTTP
+        shell: bash
+        run: |
+          python3 -m zipfile -e "dist/wtools-${RELEASE_TAG}-static.zip" "$RUNNER_TEMP/wtools-release"
+          python3 -m http.server 8000 --directory "$RUNNER_TEMP/wtools-release/wtools-${RELEASE_TAG}" > "$RUNNER_TEMP/wtools-http.log" 2>&1 &
+          server_pid=$!
+          trap 'kill "$server_pid"' EXIT
+          python3 scripts/validate_static.py --base-url http://127.0.0.1:8000
+
+      - name: Attach archive and checksum to GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release upload "$RELEASE_TAG" \
+            "dist/wtools-${RELEASE_TAG}-static.zip" \
+            "dist/wtools-${RELEASE_TAG}-static.zip.sha256" \
+            --clobber \
+            --repo "$GITHUB_REPOSITORY"

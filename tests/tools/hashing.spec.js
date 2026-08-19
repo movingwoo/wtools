@@ -160,6 +160,85 @@ test('checksum-file: 여러 파일을 한 번에 처리', async ({ page }) => {
   await expect(content).toContainText('d41d8cd98f00b204e9800998ecf8427e');
 });
 
+test('checksum-file: 직접 입력한 체크섬의 일치와 불일치를 검증', async ({ page }) => {
+  await openTool(page, 'checksum-file');
+  const content = page.locator('#content');
+  const expected = content.getByLabel('기대 체크섬 또는 체크섬 목록 (선택)', { exact: true });
+  await expected.fill('ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad');
+  await uploadFile(content, '파일 선택 (여러 개 가능, 브라우저 밖으로 전송되지 않습니다)',
+    { name: 'abc.txt', mimeType: 'text/plain', buffer: Buffer.from('abc') });
+
+  await expect(content.locator('.checksum-summary')).toHaveText('검증 성공: 체크섬 1개가 모두 일치합니다.');
+  await expect(content.locator('.checksum-results tbody tr')).toContainText(['일치abc.txtSHA-256']);
+
+  await expected.fill('aa7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad');
+  await expect(content.locator('.checksum-summary')).toContainText('불일치 체크섬 1개');
+  await expect(content.locator('.checksum-results tbody tr')).toContainText(['불일치abc.txtSHA-256']);
+});
+
+test('checksum-file: GNU 목록에서 일치·누락·추가 파일을 일괄 보고', async ({ page }) => {
+  await openTool(page, 'checksum-file');
+  const content = page.locator('#content');
+  await content.getByLabel('기대 체크섬 또는 체크섬 목록 (선택)', { exact: true }).fill([
+    'ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad  releases/a.txt',
+    '900150983cd24fb0d6963f7d28e17f72  releases/a.txt',
+    'cf83e1357eefb8bdf1542850d66d8007d620e4050b5715dc83f4a921d36ce9ce47d0d13c5d85f2b0ff8318d2877eec2f63b931bd47417a81a538327af927da3e *b.txt',
+  ].join('\n'));
+  await uploadFile(content, '파일 선택 (여러 개 가능, 브라우저 밖으로 전송되지 않습니다)', [
+    { name: 'a.txt', mimeType: 'text/plain', buffer: Buffer.from('abc') },
+    { name: 'extra.txt', mimeType: 'text/plain', buffer: Buffer.from('extra') },
+  ]);
+
+  await expect(content.locator('.checksum-summary'))
+    .toHaveText('검증 실패: 불일치 체크섬 0개, 누락 파일 1개, 추가 파일 1개');
+  const rows = content.locator('.checksum-results tbody tr');
+  await expect(rows.filter({ has: page.getByRole('cell', { name: 'a.txt', exact: true }) })).toHaveCount(2);
+  await expect(rows.filter({ has: page.getByRole('cell', { name: 'b.txt', exact: true }) })).toContainText('누락');
+  await expect(rows.filter({ has: page.getByRole('cell', { name: 'extra.txt', exact: true }) })).toContainText('추가');
+});
+
+test('checksum-file: BSD 형식 체크섬 파일을 가져와 검증', async ({ page }) => {
+  await openTool(page, 'checksum-file');
+  const content = page.locator('#content');
+  await uploadFile(content, '파일 선택 (여러 개 가능, 브라우저 밖으로 전송되지 않습니다)',
+    { name: 'abc.txt', mimeType: 'text/plain', buffer: Buffer.from('abc') });
+  await uploadFile(content, '체크섬 파일 가져오기 (선택, 최대 1MB)', {
+    name: 'SHA256SUMS.txt', mimeType: 'text/plain',
+    buffer: Buffer.from('SHA256 (abc.txt) = ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad\n'),
+  });
+
+  await expect(content.getByLabel('기대 체크섬 또는 체크섬 목록 (선택)', { exact: true })).toHaveValue(/SHA256 \(abc\.txt\)/);
+  await expect(content.locator('.checksum-summary')).toHaveText('검증 성공: 체크섬 1개가 모두 일치합니다.');
+});
+
+test('checksum-file: 빈 체크섬 파일을 거부', async ({ page }) => {
+  await openTool(page, 'checksum-file');
+  const content = page.locator('#content');
+  await uploadFile(content, '체크섬 파일 가져오기 (선택, 최대 1MB)', {
+    name: 'SHA256SUMS', mimeType: 'application/octet-stream', buffer: Buffer.alloc(0),
+  });
+  await expect(content.locator('.io-status')).toHaveText('체크섬 파일이 비어 있습니다.');
+  await expect(content.locator('.io')).toHaveAttribute('aria-busy', 'false');
+});
+
+test('checksum-file: 잘못된 목록과 여러 파일에 대한 무파일명 체크섬을 거부', async ({ page }) => {
+  await openTool(page, 'checksum-file');
+  const content = page.locator('#content');
+  const expected = content.getByLabel('기대 체크섬 또는 체크섬 목록 (선택)', { exact: true });
+  await expected.fill('체크섬 아님');
+  await uploadFile(content, '파일 선택 (여러 개 가능, 브라우저 밖으로 전송되지 않습니다)',
+    { name: 'abc.txt', mimeType: 'text/plain', buffer: Buffer.from('abc') });
+  await expect(content.locator('.checksum-verification .error')).toHaveText('1행: GNU 또는 BSD 체크섬 형식으로 읽을 수 없습니다.');
+
+  await expected.fill('ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad');
+  await uploadFile(content, '파일 선택 (여러 개 가능, 브라우저 밖으로 전송되지 않습니다)', [
+    { name: 'a.txt', mimeType: 'text/plain', buffer: Buffer.from('abc') },
+    { name: 'b.txt', mimeType: 'text/plain', buffer: Buffer.from('abc') },
+  ]);
+  await expect(content.locator('.checksum-verification .error'))
+    .toHaveText('파일명이 없는 체크섬은 검증할 파일을 하나만 선택했을 때 사용할 수 있습니다.');
+});
+
 test('checksum-crc: 파일 체크섬도 표준 check value', async ({ page }) => {
   await openTool(page, 'checksum-crc');
   const content = page.locator('#content');

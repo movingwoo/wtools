@@ -17,6 +17,9 @@ jobs:
   live-cdn:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    container:
+      image: mcr.microsoft.com/playwright:v1.50.1-noble@sha256:ac7053180325ef75d31774c458d0bb9b55ac153ae1be3d104b80c6c1bb6a067c
+      options: --user 1001
 
     steps:
       - name: Check out repository
@@ -37,10 +40,6 @@ jobs:
         working-directory: tests
         timeout-minutes: 1
         run: npm run test:collect -- --project=chromium
-
-      - name: Install Playwright Chromium
-        working-directory: tests
-        run: npx playwright install --with-deps chromium
 
       - name: Run browser tests against the real CDN
         working-directory: tests

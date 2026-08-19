@@ -54,7 +54,10 @@ jobs:
 
   browser-smoke:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
+    container:
+      image: mcr.microsoft.com/playwright:v1.50.1-noble@sha256:ac7053180325ef75d31774c458d0bb9b55ac153ae1be3d104b80c6c1bb6a067c
+      options: --user 1001
 
     steps:
       - name: Check out repository
@@ -74,7 +77,7 @@ jobs:
       - name: Verify Playwright starts and collects tests
         working-directory: tests
         timeout-minutes: 1
-        run: npm run test:collect -- --project=chromium
+        run: npm run test:collect
 
       # 도구가 지연 로드하는 CDN 라이브러리를 실행 간에 재사용한다.
       # CDN이 잠깐 안 잡혀도 테스트가 죽지 않고, 캐시가 맞으면 네트워크를 아예 타지 않는다.
@@ -85,60 +88,16 @@ jobs:
           key: cdn-libs-${{ hashFiles('js/**/*.js', 'index.html') }}
           restore-keys: cdn-libs-
 
-      - name: Install Playwright Chromium
+      - name: Run Chromium full suite
         working-directory: tests
-        run: npx playwright install --with-deps chromium
+        run: npm test -- --project=chromium
 
-      - name: Run browser smoke tests
+      - name: Run Firefox smoke suite
+        if: ${{ !cancelled() }}
         working-directory: tests
-        run: npx playwright test --project=chromium
+        run: npm test -- --project=firefox
 
-  cross-browser-smoke:
-    name: Cross-browser smoke (${{ matrix.browser }})
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    strategy:
-      fail-fast: false
-      matrix:
-        browser:
-          - firefox
-          - webkit
-
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@v4
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version-file: .node-version
-          cache: npm
-          cache-dependency-path: tests/package-lock.json
-
-      - name: Install test dependencies
+      - name: Run WebKit smoke suite
+        if: ${{ !cancelled() }}
         working-directory: tests
-        run: npm ci --no-audit --no-fund
-
-      - name: Verify Playwright starts and collects tests
-        working-directory: tests
-        timeout-minutes: 1
-        run: npm run test:collect -- --project=${{ matrix.browser }}
-
-      # 병렬 잡이 같은 캐시 키를 동시에 저장하지 않도록 브라우저별 키를 사용한다.
-      # 첫 실행에서는 기존 Chromium 캐시를 복원해 외부 CDN 요청을 최소화한다.
-      - name: Restore CDN library cache
-        uses: actions/cache@v4
-        with:
-          path: tests/.lib-cache
-          key: cdn-libs-${{ matrix.browser }}-${{ hashFiles('js/**/*.js', 'index.html') }}
-          restore-keys: |
-            cdn-libs-${{ matrix.browser }}-
-            cdn-libs-
-
-      - name: Install Playwright ${{ matrix.browser }}
-        working-directory: tests
-        run: npx playwright install --with-deps ${{ matrix.browser }}
-
-      - name: Run cross-browser smoke tests
-        working-directory: tests
-        run: npx playwright test --project=${{ matrix.browser }}
+        run: npm test -- --project=webkit

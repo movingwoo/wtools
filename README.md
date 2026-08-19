@@ -73,7 +73,7 @@ python3 -m http.server 8000
 python3 scripts/validate_static.py
 ```
 
-브라우저 테스트는 별도의 패키지로 분리되어 있으며 루트와 `tests/.node-version`에 고정된 Node.js 22(CI와 동일한 버전)가 필요합니다. `tests/.node-version`은 `cd tests` 뒤에도 버전 관리자가 Node 22를 선택하게 하며, 다른 메이저에서는 설치가 즉시 실패합니다. 의존성은 추적되는 `package-lock.json`을 기준으로 설치합니다.
+브라우저 테스트는 별도의 패키지로 분리되어 있으며 루트와 `tests/.node-version`에 고정된 Node.js 22(CI와 동일한 버전)가 필요합니다. `tests/.node-version`은 `cd tests` 뒤에도 버전 관리자가 Node 22를 선택하게 하며, 다른 메이저에서는 설치가 즉시 실패합니다. 의존성은 추적되는 `package-lock.json`을 기준으로 설치합니다. CI는 Playwright 버전과 digest가 고정된 공식 컨테이너를 사용해 브라우저와 Linux 의존성을 실행 중에 다시 내려받지 않습니다.
 
 ```bash
 cd tests
@@ -85,7 +85,7 @@ npx playwright test --project=chromium
 
 CI와 동일한 세 브라우저 구성을 검사하려면 `npx playwright install chromium firefox webkit`으로 브라우저를 설치한 뒤 `npx playwright test`를 실행합니다.
 
-GitHub Actions는 모든 PR과 `main` 브랜치 푸시에서 정적 검사, JavaScript 구문 검사, 공백 오류 검사, HTTP 앱 셸 스모크 테스트, Chromium 전체 Playwright 테스트, Firefox 및 WebKit 핵심 스모크 테스트를 병렬로 실행합니다.
+GitHub Actions는 모든 PR과 `main` 브랜치 푸시에서 정적 검사, JavaScript 구문 검사, 공백 오류 검사와 HTTP 앱 셸 스모크 테스트를 실행합니다. 브라우저 검사는 하나의 고정된 컨테이너에서 Chromium 전체 테스트와 Firefox 및 WebKit 핵심 스모크 테스트를 순차적으로 실행합니다.
 
 도구가 지연 로드하는 CDN 라이브러리는 로컬 캐시에서 공급되므로 일시적인 CDN 장애가 PR 검사를 중단시키지 않습니다.  
 실제 CDN 상태는 하루에 한 번 실행되는 Chromium nightly 워크플로에서 확인합니다.

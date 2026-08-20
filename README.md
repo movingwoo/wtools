@@ -65,6 +65,14 @@ python3 -m http.server 8000
 # 브라우저에서 http://localhost:8000에 접속합니다.
 ```
 
+## 릴리즈 파일
+
+[GitHub Releases](https://github.com/movingwoo/wtools/releases)에는 앞으로 발행되는 릴리즈부터
+소스 압축 파일과 별도로 `wtools-vX.Y.Z-static.zip` 정적 호스팅 묶음과 SHA-256 체크섬을
+제공합니다. 운영체제와 관계없이 같은 ZIP을 사용할 수 있으며, 압축을 푼 뒤 정적 웹 서버
+또는 HTTPS 호스팅에 그대로 배포합니다. 자세한 실행 조건과 무결성 확인 방법은
+[STATIC_HOSTING.md](STATIC_HOSTING.md)를 참고하세요.
+
 ## 검사
 
 다음 명령은 외부 패키지 없이 도구 ID와 카테고리, 로컬 모듈 가져오기, 정적 자산 및 서비스 워커 앱 셸을 검사합니다.

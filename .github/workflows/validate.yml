@@ -38,6 +38,17 @@ jobs:
       - name: Validate registrations and static assets
         run: python3 scripts/validate_static.py
 
+      - name: Verify static release archive
+        shell: bash
+        run: |
+          release_dir="$RUNNER_TEMP/wtools-static-release"
+          python3 scripts/build_static_release.py --version v0.0.0-ci --output-dir "$release_dir"
+          python3 -m zipfile -e "$release_dir/wtools-v0.0.0-ci-static.zip" "$release_dir/extracted"
+          python3 -m http.server 8001 --directory "$release_dir/extracted/wtools-v0.0.0-ci" > "$RUNNER_TEMP/wtools-release-http.log" 2>&1 &
+          server_pid=$!
+          trap 'kill "$server_pid"' EXIT
+          python3 scripts/validate_static.py --base-url http://127.0.0.1:8001
+
       - name: Check whitespace
         shell: bash
         run: |

@@ -1,6 +1,7 @@
 .claude/
 .codex/
 .DS_Store
+/dist/
 
 TODO.md
 SECURITY_HEADERS.md

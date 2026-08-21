@@ -3,7 +3,10 @@
 이 프로젝트는 [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/) 형식과
 [Semantic Versioning](https://semver.org/lang/ko/)을 따릅니다.
 
-## [Unreleased]
+## [1.2.2] - 2026-08-21
+
+실행 의존성 무결성과 오프라인 복구를 강화하고, 정적 배포 산출물 및
+운영 보안 검증을 추가한 패치 릴리즈입니다.
 
 ### 추가됨
 

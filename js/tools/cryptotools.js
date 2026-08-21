@@ -1089,7 +1089,7 @@ tool({
         '모든 결과는 crypto.getRandomValues와 편향 없는 거절 샘플링으로 브라우저 안에서 생성됩니다. 패스프레이즈는 ',
         h('a', { href: 'https://www.eff.org/files/2016/09/08/eff_short_wordlist_1.txt', target: '_blank', rel: 'noopener noreferrer' }, 'EFF 짧은 단어 목록 1'),
         '(1,296개, ',
-        h('a', { href: 'https://creativecommons.org/licenses/by/3.0/us/', target: '_blank', rel: 'noopener noreferrer' }, 'CC BY 3.0 US'),
+        h('a', { href: 'https://creativecommons.org/licenses/by/4.0/', target: '_blank', rel: 'noopener noreferrer' }, 'CC BY 4.0'),
         ')을 사용합니다.'),
     });
     root.append(entropyInfo);

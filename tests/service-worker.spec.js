@@ -65,6 +65,61 @@ test('설치 시 검증된 자산만 캐시하고 이전 버전 캐시를 삭제
   await expect(io.locator('textarea.out')).toHaveValue('{\n  "name": "offline"\n}');
 });
 
+test('오프라인에서 직접 도구 URL 새로고침과 navigation fallback을 복구한다', async ({ page, context }) => {
+  await page.goto('/#/tool/base64');
+  await waitForControl(page);
+  await expect(page.locator('#content .tool-header h1')).toHaveText('Base64 인코딩/디코딩');
+
+  await context.setOffline(true);
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await expect(page.locator('#content .tool-header h1')).toHaveText('Base64 인코딩/디코딩');
+
+  await page.goto('/#/', { waitUntil: 'domcontentloaded' });
+  await expect(page.locator('#content .home h1')).toHaveText('W-Tools');
+
+  // 앱 셸에 없는 navigation 요청은 캐시된 index.html로 돌아오고 해시 라우팅을 유지해야 한다.
+  await page.goto('/offline-navigation#/tool/data-convert', { waitUntil: 'domcontentloaded' });
+  await expect(page.locator('#content .tool-header h1')).toHaveText('JSON ↔ YAML ↔ XML ↔ CSV ↔ TOML ↔ ENV');
+  await expect(page.locator('#content .io')).toBeVisible();
+});
+
+test('대기 중인 새 Worker를 적용하면 페이지를 정확히 한 번 새로고침한다', async ({ page }) => {
+  await page.addInitScript(() => {
+    const count = Number(sessionStorage.getItem('wtools-update-test-loads') || '0') + 1;
+    sessionStorage.setItem('wtools-update-test-loads', String(count));
+  });
+  await page.goto('/');
+  await waitForControl(page);
+
+  // 같은 scope에 쿼리가 다른 스크립트 URL을 등록해 실제 updatefound/waiting 흐름을 만든다.
+  await page.evaluate(async () => {
+    const registration = await navigator.serviceWorker.register('/sw.js?update-flow=1', { updateViaCache: 'none' });
+    if (registration.waiting) return;
+    await new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => reject(new Error('새 Worker가 대기 상태가 되지 않았습니다.')), 10_000);
+      const watch = (worker) => worker?.addEventListener('statechange', () => {
+        if (worker.state === 'installed' && registration.waiting) {
+          clearTimeout(timeout);
+          resolve();
+        }
+      });
+      registration.addEventListener('updatefound', () => watch(registration.installing));
+      watch(registration.installing);
+    });
+  });
+
+  const notice = page.locator('#update-notice');
+  await expect(notice).toBeVisible();
+  await Promise.all([
+    page.waitForNavigation({ waitUntil: 'load' }),
+    notice.getByRole('button', { name: '새 버전 적용' }).click(),
+  ]);
+  await expect.poll(() => page.evaluate(() => Number(sessionStorage.getItem('wtools-update-test-loads'))))
+    .toBe(2);
+  await page.waitForTimeout(1_000);
+  expect(await page.evaluate(() => Number(sessionStorage.getItem('wtools-update-test-loads')))).toBe(2);
+});
+
 test('변조된 제3자 응답과 캐시를 폐기하고 한국어 오류를 반환한다', async ({ page }) => {
   await page.goto('/');
   await waitForControl(page);
@@ -83,8 +138,9 @@ test('변조된 제3자 응답과 캐시를 폐기하고 한국어 오류를 반
     const cached = await verifiedCached(corruptCache, 'https://example.com/library.js', integrity);
 
     let fetchedDeleted = false;
+    let putCalled = false;
     const networkCache = {
-      put: async () => {},
+      put: async () => { putCalled = true; },
       delete: async () => { fetchedDeleted = true; },
     };
     let integrityError = false;
@@ -100,6 +156,7 @@ test('변조된 제3자 응답과 캐시를 폐기하고 한국어 오류를 반
       cached,
       cachedDeleted,
       fetchedDeleted,
+      putCalled,
       integrityError,
     };
   });
@@ -108,5 +165,6 @@ test('변조된 제3자 응답과 캐시를 폐기하고 한국어 오류를 반
   expect(result.cached).toBeNull();
   expect(result.cachedDeleted).toBe(true);
   expect(result.fetchedDeleted).toBe(true);
+  expect(result.putCalled).toBe(false);
   expect(result.integrityError).toBe(true);
 });

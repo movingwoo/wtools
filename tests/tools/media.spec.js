@@ -333,8 +333,11 @@ test('image-convert: 포맷 한계와 재인코딩 방식을 UI에 표시', asyn
   await expect(format.locator('option[value="original"]')).toHaveText('원본 포맷 유지 (재인코딩)');
   await expect(format.locator('option[value="image/gif"]')).toHaveText('GIF (단일 프레임)');
   await expect(format.locator('option[value="image/svg+xml"]')).toHaveText('SVG (PNG 포함)');
-  await expect(content.locator('.note').last()).toContainText('애니메이션 입력도 정지 이미지 한 장으로 바뀝니다.');
-  await expect(content.locator('.note').last()).toContainText('벡터화가 아니라 PNG 이미지를 포함한 SVG 파일입니다.');
+  const note = content.locator('.image-convert-note');
+  await expect(note).toHaveCount(1);
+  await expect(note).toContainText('EXIF 방향 정보는 파일을 읽을 때 픽셀에 한 번 적용');
+  await expect(note).toContainText('애니메이션 입력도 정지 이미지 한 장으로 바뀝니다.');
+  await expect(note).toContainText('벡터화가 아니라 PNG 이미지를 포함한 SVG 파일입니다.');
   await expect(content.getByLabel('JPEG/GIF/BMP 배경색')).toHaveValue('#ffffff');
 });
 

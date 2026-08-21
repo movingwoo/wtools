@@ -133,6 +133,10 @@ self.addEventListener('fetch', (event) => {
     }
     try {
       const response = await fetch(request);
+      if (request.mode === 'navigate' && response.status === 404) {
+        const fallback = await caches.match(new URL('./index.html', self.registration.scope));
+        if (fallback) return fallback;
+      }
       if (response.ok) {
         const cache = await caches.open(CACHE_NAME);
         await cache.put(request, response.clone());

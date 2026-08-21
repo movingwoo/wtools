@@ -181,6 +181,15 @@ const cases = [
 
 toolCases('cryptotools', cases);
 
+test('token-gen: EFF 단어 목록의 출처와 라이선스를 표시', async ({ page }) => {
+  await openTool(page, 'token-gen');
+  const content = page.locator('#content');
+  await expect(content.getByRole('link', { name: 'EFF 짧은 단어 목록 1' }))
+    .toHaveAttribute('href', 'https://www.eff.org/files/2016/09/08/eff_short_wordlist_1.txt');
+  await expect(content.getByRole('link', { name: 'CC BY 4.0' }))
+    .toHaveAttribute('href', 'https://creativecommons.org/licenses/by/4.0/');
+});
+
 test('token-gen: 대문자·소문자·숫자·기호 최소 개수를 모두 보장', async ({ page }) => {
   await openTool(page, 'token-gen');
   const io = ioSection(page);

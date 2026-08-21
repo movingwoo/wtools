@@ -1,5 +1,5 @@
 // 데이터 포맷 변환
-import { tool, makeIO, h, kvTable, loadScript, loadModule, LIB } from '../core.js';
+import { tool, makeIO, h, kvTable, loadScript, loadModule, vendorUrl, LIB } from '../core.js';
 
 const CAT = '데이터 포맷 변환';
 
@@ -550,7 +550,7 @@ function objectsToRows(arr) {
 
 let tomlMod = null;
 async function toml() {
-  return (tomlMod ??= await loadModule('https://cdn.jsdelivr.net/npm/smol-toml@1.2.2/+esm'));
+  return (tomlMod ??= await loadModule(vendorUrl('smolToml')));
 }
 
 tool({

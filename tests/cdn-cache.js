@@ -4,8 +4,8 @@
 // 실제로 CI에서 재시도까지 함께 실패한 적이 있어서, 한 번 받은 응답은 파일로 두고 다음
 // 실행부터는 네트워크를 타지 않게 한다. CI에서는 actions/cache가 이 디렉터리를 넘겨준다.
 //
-// 캐시된 응답도 브라우저가 core.js의 SRI(integrity) 해시로 검증하므로, 캐시본이 핀과
-// 다르면 그대로 로드 실패한다. 캐시가 조용히 썩는 것은 막힌다.
+// 외부 classic script/CSS는 브라우저가 dependencies.js의 SRI 해시로 검증한다.
+// 동적 ESM/WASM은 검토한 로컬 자산이므로 이 픽스처를 거치지 않는다.
 //
 // WTOOLS_LIVE_CDN=1이면 가로채지 않고 실제 CDN을 그대로 쓴다. 핀이 죽었거나 패키지가
 // 내려간 경우를 잡기 위한 nightly 잡용.
@@ -75,11 +75,12 @@ const blockServiceWorker = () => {
 
 // 다른 spec의 test 객체에 그대로 펼쳐 넣는다: base.extend({ ...cdnCache, ... })
 export const cdnCache = {
-  _cdnCache: [async ({ page, baseURL }, use) => {
+  allowServiceWorker: [false, { option: true }],
+  _cdnCache: [async ({ page, baseURL, allowServiceWorker }, use) => {
     if (!LIVE) {
       const origin = new URL(baseURL).origin;
       const external = (url) => (url.protocol === 'http:' || url.protocol === 'https:') && !url.href.startsWith(origin);
-      await page.addInitScript(blockServiceWorker);
+      if (!allowServiceWorker) await page.addInitScript(blockServiceWorker);
       await page.route(external, handle);
     }
     try {

@@ -1,4 +1,5 @@
 // core.js — 도구 등록 프레임워크 + 공통 유틸리티
+import './dependencies.js';
 
 export const categories = [
   '인코딩 / 디코딩',
@@ -376,39 +377,29 @@ export function loadCss(lib) {
 
 const loadedModules = {};
 export function loadModule(url) {
-  return (loadedModules[url] ??= import(url).catch(() => {
-    delete loadedModules[url];
+  const resolved = new URL(url, import.meta.url);
+  if (resolved.origin !== location.origin) {
+    return Promise.reject(new Error('검증되지 않은 외부 모듈은 실행할 수 없습니다.'));
+  }
+  return (loadedModules[resolved.href] ??= import(resolved.href).catch(() => {
+    delete loadedModules[resolved.href];
     throw new Error('외부 라이브러리를 불러오지 못했습니다. 네트워크 연결을 확인하세요.');
   }));
 }
 
-// SRI(Subresource Integrity)로 CDN 손상·변조 시 로드를 차단한다. 버전을 올릴 때 해시도 함께 갱신해야 한다.
-export const LIB = {
-  jsrsasign: { url: 'https://cdn.jsdelivr.net/npm/jsrsasign@11.1.0/lib/jsrsasign-all-min.js', integrity: 'sha384-vbfVWK2rJ9x1Xsycv0IIV02oWFwkOZ5Ohb/cQGU2ldysPOlCR4OtdM1nvOZFbpzk' },
-  marked: { url: 'https://cdn.jsdelivr.net/npm/marked@12.0.2/marked.min.js', integrity: 'sha384-/TQbtLCAerC3jgaim+N78RZSDYV7ryeoBCVqTuzRrFec2akfBkHS7ACQ3PQhvMVi' },
-  hljs: { url: 'https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js', integrity: 'sha384-F/bZzf7p3Joyp5psL90p/p89AZJsndkSoGwRpXcZhleCWhd8SnRuoYo4d0yirjJp' },
-  hljsCss: { url: 'https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark-dimmed.min.css', integrity: 'sha384-PiLidnnRuzFgp4qiN8oGNmktrV8ETL+6a8heAxljUX4A+3XWlocwaMn9duBUepfK' },
-  qrcode: { url: 'https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js', integrity: 'sha384-lQXOAyZwHXE55JFyrOMB7nY2Wv+m5ZWNtJcHrd1rceRQXAYNLak8ukN5TjBTcIwz' },
-  uaparser: { url: 'https://cdn.jsdelivr.net/npm/ua-parser-js@1.0.38/dist/ua-parser.min.js', integrity: 'sha384-yT+3Fq5fjwzDR/suVYN+YMuGERziAMutX4NZ7W9Rz3mzuHipPpY7oe04Fd6wFJZB' },
-  beautifyJs: { url: 'https://cdn.jsdelivr.net/npm/js-beautify@1.15.1/js/lib/beautify.min.js', integrity: 'sha384-FVx1WK8VHSskkzcjxDxmZKSJ3KQ8vYOZo+sirXFdjOxUq4Y4+9IrtCG8iiisHHfj' },
-  beautifyCss: { url: 'https://cdn.jsdelivr.net/npm/js-beautify@1.15.1/js/lib/beautify-css.min.js', integrity: 'sha384-YkGkitXFTTE2YT+poOaBOfObka+86Q4ianXfq8SwPtTSW3SIFE4Ha5u33+xVK65+' },
-  beautifyHtml: { url: 'https://cdn.jsdelivr.net/npm/js-beautify@1.15.1/js/lib/beautify-html.min.js', integrity: 'sha384-j7zhOGXtPN67K2CFiNW3h/EvKRoW14dRbO8Pj4f2089y8m2RoxS2l627sobb19d3' },
-  sqlFormatter: { url: 'https://cdn.jsdelivr.net/npm/sql-formatter@15.3.2/dist/sql-formatter.min.js', integrity: 'sha384-7mUXtMlypVs4NSv+ZCUHAniscLZNgJXAaaOQrdOuYqKA6LvRVSlgbYyiMX0xyHuz' },
-  jsdiff: { url: 'https://cdn.jsdelivr.net/npm/diff@5.2.0/dist/diff.min.js', integrity: 'sha384-lJJVaUgxmk/PVfQnAsGN1QuJZrE+n6bg2EMu33yVZOJ2av/3UzTHbmnPCI7ENJYa' },
-  figlet: { url: 'https://cdn.jsdelivr.net/npm/figlet@1.7.0/lib/figlet.js', integrity: 'sha384-pX+W+tDvxyLP633VSCBwPlKIlXhOLmq+yYw7Vm2bo/NYS9bp8bzjV50qUlXVC1Qp' },
-  pako: { url: 'https://cdn.jsdelivr.net/npm/pako@2.1.0/dist/pako.min.js', integrity: 'sha384-rNlaE5fs9dGIjmxWDALQh/RBAaGRYT5ChrzHo6tRfgrZ36iRFAiquP5g41Jsv+0j' },
-  fflate: { url: 'https://cdn.jsdelivr.net/npm/fflate@0.8.2/umd/index.js', integrity: 'sha384-DT0Ls0mO7JmjTnT+oBuMhEJzYJO1zUqzuuMXNdnOmOQRIpN2BgSjvBV/j50NngIT' },
-  lzma: { url: 'https://cdn.jsdelivr.net/npm/lzma@2.3.2/src/lzma_worker.min.js', integrity: 'sha384-i0BmxJgY8ewnjHQFgeqUwAtroLPzl8tRN6M8tMYoR8fZPzUogiI6Uo8bUbzxKa9t' },
-  md4: { url: 'https://cdn.jsdelivr.net/npm/js-md4@0.3.2/build/md4.min.js', integrity: 'sha384-MoZ9k3YaW/GZNhasK9XhYqny3gz3Ht9G2Hy3VLx4oEJMq2WZAivb7Tu2yqIpQ9mR' },
-  jsqr: { url: 'https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js', integrity: 'sha384-b5Ya4Bq3qCyz39m2ISh+4DxjAIljdeFwK/BsXLuj9gugaNwAcj/ia15fxNZL9Nlx' },
-  jsonpath: { url: 'https://unpkg.com/jsonpath-plus@10.3.0/dist/index-browser-umd.min.cjs', integrity: 'sha384-hGQPqOxTPM4foQNgrQgUmEiH4XmDBHG/JM6hBfraI4LJ9LA9V/tDGADiGRXeC9/c' },
-  jmespath: { url: 'https://cdn.jsdelivr.net/npm/jmespath@0.16.0/jmespath.min.js', integrity: 'sha384-gWcKrbXrrv/Qu9WrcJK8aDvaUwv8LMxpzdBtpRCNn3eoq7D6uOySOdo2YFvhaYrx' },
-  zSchema: { url: 'https://cdn.jsdelivr.net/npm/z-schema@12.4.0/umd/ZSchema.min.js', integrity: 'sha384-uwH59hDi0evUZU9ySSP5KjCl0MAXZiFlA4eWOswSbiuGdLZKBmE7iztFuOFv42Gt' },
-  bcrypt: { url: 'https://cdn.jsdelivr.net/npm/bcryptjs@2.4.3/dist/bcrypt.min.js', integrity: 'sha384-qGFE4FIJLgCFuYs3nzg39XpCtvT5AZUhaBdjB3e1+vpKQa03AkyWOyBSFb9OcQ/g' },
-  // WASM을 base64로 품고 있어 별도 .wasm 요청이 없다. SRI 한 줄로 전체가 검증된다.
-  hashWasm: { url: 'https://cdn.jsdelivr.net/npm/hash-wasm@4.12.0/dist/index.umd.js', integrity: 'sha384-xqpAfTvjqeQXohcBXlcJLUDhn4Y4oFz8WBkp7H1Lak1kldyrkEwU8/q0pOfbYVn2' },
-  tweetnacl: { url: 'https://cdn.jsdelivr.net/npm/tweetnacl@1.0.3/nacl-fast.min.js', integrity: 'sha384-05+sicyRJQ56XpL4U9HJ8YbtSzFDvAg7apPKOGV6A0JsAJKFM68jp5oLnUjG5mEp' },
-};
+const dependencies = globalThis.WTOOLS_DEPENDENCIES;
+if (!dependencies) throw new Error('제3자 라이브러리 등록부를 불러오지 못했습니다.');
+
+// SRI로 CDN 응답을 검증한다. 메타데이터는 서비스 워커와 같은 등록부를 사용한다.
+export const LIB = Object.fromEntries(Object.entries(dependencies.cdn)
+  .map(([id, { url, integrity }]) => [id, { url, integrity }]));
+
+// 동적 ESM/WASM은 검토한 로컬 사본만 사용하며 정적 검사에서 SHA-384를 대조한다.
+export function vendorUrl(id) {
+  const entry = dependencies.vendored[id];
+  if (!entry) throw new Error(`등록되지 않은 제3자 모듈입니다: ${id}`);
+  return new URL('../' + entry.path, import.meta.url).href;
+}
 
 /* ---------- 공통 도구 UI 빌더 ----------
 cfg = {

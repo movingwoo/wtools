@@ -1,5 +1,5 @@
 // 압축 / 아카이브
-import { tool, makeIO, h, formLabel, kvTable, strToBytes, bytesToStr, bytesToB64, b64ToBytes, bytesToHex, hexToBytes, decodeInput, loadScript, loadModule, LIB, download } from '../core.js';
+import { tool, makeIO, h, formLabel, kvTable, strToBytes, bytesToStr, bytesToB64, b64ToBytes, bytesToHex, hexToBytes, decodeInput, loadScript, loadModule, vendorUrl, LIB, download } from '../core.js';
 
 const CAT = '압축 / 아카이브';
 
@@ -122,11 +122,11 @@ tool({
 
 /* ---------- Worker 기반 Brotli / Zstandard 및 Bzip2 해제 ---------- */
 const CODEC_URLS = {
-  brotliCompress: 'https://cdn.jsdelivr.net/npm/brotli-compress@1.3.3/index.mjs',
-  brotliDecompress: 'https://cdn.jsdelivr.net/npm/brotli@1.3.3/decompress.js/+esm',
-  zstdCompress: 'https://cdn.jsdelivr.net/npm/@bokuweb/zstd-wasm@0.0.27/+esm',
-  zstdDecompress: 'https://cdn.jsdelivr.net/npm/fzstd@0.1.1/+esm',
-  bzip2Decompress: 'https://cdn.jsdelivr.net/npm/seek-bzip@2.0.0/+esm',
+  brotliCompress: vendorUrl('brotliCompress'),
+  brotliDecompress: vendorUrl('brotliDecompress'),
+  zstdCompress: vendorUrl('zstdCompress'),
+  zstdDecompress: vendorUrl('zstdDecompress'),
+  bzip2Decompress: vendorUrl('bzip2Decompress'),
 };
 const CODEC_WORKER_SOURCE = `
 const URLS = ${JSON.stringify(CODEC_URLS)};
@@ -340,7 +340,7 @@ tool({
       actions: [{ id: 'comp', label: '압축' }, { id: 'decomp', label: '해제' }],
       autorun: false,
       async process(text, o, action) {
-        const mod = await loadModule('https://cdn.jsdelivr.net/npm/lz4js@0.2.0/+esm');
+        const mod = await loadModule(vendorUrl('lz4'));
         const lz4 = mod.default && mod.default.compress ? mod.default : mod;
         const input = decodeInput(text, o.ifmt);
         if (action === 'decomp') {

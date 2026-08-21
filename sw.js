@@ -1,13 +1,23 @@
 // sw.js — 자체 앱 셸을 사전 캐시하고, 온라인에서는 최신 파일로 갱신한다.
+importScripts('./js/dependencies.js');
+importScripts('./js/sw-integrity.js');
+
 const CACHE_PREFIX = 'wtools-';
-const CACHE_NAME = CACHE_PREFIX + 'shell-v9';
+const CACHE_NAME = CACHE_PREFIX + 'shell-v10';
 const EXTERNAL_CACHE_PREFIX = CACHE_PREFIX + 'external-';
-const EXTERNAL_CACHE_NAME = EXTERNAL_CACHE_PREFIX + 'v1';
-const EXTERNAL_HOSTS = new Set([
-  'cdnjs.cloudflare.com',
-  'cdn.jsdelivr.net',
-  'unpkg.com',
-]);
+const EXTERNAL_CACHE_NAME = EXTERNAL_CACHE_PREFIX + 'v2';
+const dependencies = self.WTOOLS_DEPENDENCIES;
+const externalIntegrity = new Map(Object.values(dependencies.cdn)
+  .map(({ url, integrity }) => [url, integrity]));
+const vendoredIntegrity = new Map(Object.values(dependencies.vendored)
+  .map(({ path, integrity }) => [new URL('./' + path, self.registration.scope).href, integrity]));
+const {
+  responseMatches,
+  verifiedCached,
+  fetchVerified,
+  IntegrityError,
+  integrityErrorResponse,
+} = self.WTOOLS_INTEGRITY;
 const APP_SHELL = [
   './',
   './index.html',
@@ -18,8 +28,21 @@ const APP_SHELL = [
   './assets/favicon-512.png',
   './assets/favicon-512-maskable.png',
   './assets/eff-short-wordlist-1.txt',
+  './assets/vendor/base64-js-1.5.1.mjs',
+  './assets/vendor/brotli-compress-1.3.3.mjs',
+  './assets/vendor/brotli-decompress-1.3.3.mjs',
+  './assets/vendor/fzstd-0.1.1.mjs',
+  './assets/vendor/gifenc-1.0.3.mjs',
+  './assets/vendor/lz4js-0.2.0.mjs',
+  './assets/vendor/openpgp-5.11.1.min.mjs',
+  './assets/vendor/seek-bzip-2.0.0.mjs',
+  './assets/vendor/smol-toml-1.2.2.mjs',
+  './assets/vendor/zstd-compress-0.0.27.mjs',
+  './assets/vendor/zstd-wasm-0.0.27.wasm',
   './js/core.js',
+  './js/dependencies.js',
   './js/main.js',
+  './js/sw-integrity.js',
   './js/theme.js',
   './js/tools/archive.js',
   './js/tools/cryptotools.js',
@@ -39,9 +62,19 @@ const APP_SHELL = [
 ];
 
 self.addEventListener('install', (event) => {
-  event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => cache.addAll(APP_SHELL)),
-  );
+  event.waitUntil((async () => {
+    const cache = await caches.open(CACHE_NAME);
+    await Promise.all(APP_SHELL.map(async (ref) => {
+      const request = new Request(new URL(ref, self.registration.scope), { cache: 'reload' });
+      const response = await fetch(request);
+      if (!response.ok) throw new Error(`앱 셸을 가져오지 못했습니다: ${ref}`);
+      const integrity = vendoredIntegrity.get(request.url);
+      if (integrity && !await responseMatches(response, integrity)) {
+        throw new Error(`제3자 자산 무결성 검증에 실패했습니다: ${ref}`);
+      }
+      await cache.put(request, response);
+    }));
+  })());
 });
 
 self.addEventListener('activate', (event) => {
@@ -67,24 +100,37 @@ self.addEventListener('fetch', (event) => {
   const url = new URL(request.url);
 
   if (url.origin !== self.location.origin) {
-    if (!EXTERNAL_HOSTS.has(url.hostname)) return;
+    const integrity = externalIntegrity.get(url.href);
+    if (!integrity) return;
     event.respondWith((async () => {
       const cache = await caches.open(EXTERNAL_CACHE_NAME);
-      const cached = await cache.match(request);
-      const refresh = fetch(request).then(async (response) => {
-        if (response.ok || response.type === 'opaque') await cache.put(request, response.clone());
-        return response;
-      });
+      const cached = await verifiedCached(cache, request, integrity);
+      const refresh = fetchVerified(cache, request, integrity);
       if (cached) {
         event.waitUntil(refresh.catch(() => undefined));
         return cached;
       }
-      return refresh;
+      try {
+        return await refresh;
+      } catch {
+        return integrityErrorResponse();
+      }
     })());
     return;
   }
 
   event.respondWith((async () => {
+    const integrity = vendoredIntegrity.get(url.href);
+    if (integrity) {
+      const cache = await caches.open(CACHE_NAME);
+      try {
+        return await fetchVerified(cache, request, integrity);
+      } catch (error) {
+        if (error instanceof IntegrityError) return integrityErrorResponse();
+        const cached = await verifiedCached(cache, request, integrity);
+        return cached || integrityErrorResponse();
+      }
+    }
     try {
       const response = await fetch(request);
       if (response.ok) {

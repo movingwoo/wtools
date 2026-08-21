@@ -1,8 +1,9 @@
-name: Nightly live-CDN check
+name: Nightly production and dependency check
 
 # PR CI는 CDN 라이브러리를 캐시에서 읽는다(tests/cdn-cache.js). 덕분에 CDN이 잠깐
 # 안 잡혀도 PR이 막히지 않지만, 대신 핀이 죽었거나 패키지가 내려간 경우를 못 잡는다.
-# 그 검증을 하루 한 번으로 옮긴다. 실패는 PR을 막지 않고 여기서만 드러난다.
+# 운영 보안 헤더, 로컬 고정 ESM/WASM 원본과 실제 CDN을 하루 한 번 함께 검사한다.
+# 실패는 PR을 막지 않고 여기서만 드러난다.
 
 on:
   schedule:
@@ -24,6 +25,12 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
+
+      - name: Check production security headers
+        run: python3 scripts/check_security_headers.py
+
+      - name: Verify vendored ESM and WASM sources
+        run: python3 scripts/vendor_dependencies.py --check
 
       - name: Set up Node.js
         uses: actions/setup-node@v4

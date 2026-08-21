@@ -4,6 +4,8 @@
 from __future__ import annotations
 
 import argparse
+import base64
+import hashlib
 import json
 import re
 import sys
@@ -24,6 +26,18 @@ PLAYWRIGHT_CI_IMAGES = {
   '1.50.1': 'mcr.microsoft.com/playwright:v1.50.1-noble@sha256:'
             'ac7053180325ef75d31774c458d0bb9b55ac153ae1be3d104b80c6c1bb6a067c',
 }
+DEPENDENCY_REGISTRY_PATTERN = re.compile(
+  r'globalThis\.WTOOLS_DEPENDENCIES = (\{.*?\});\n\nObject\.freeze',
+  re.DOTALL,
+)
+SRI_PATTERN = re.compile(r'sha384-[A-Za-z0-9+/]{64}')
+VERSIONED_URL_PATTERN = re.compile(r'(?:@|/)\d+\.\d+\.\d+(?:[./+-]|$)')
+EXTERNAL_EXECUTABLE_CALL = re.compile(
+  r'(?:loadScript|loadCss|loadModule|import|importScripts|new\s+Worker)'
+  r'\s*\(\s*["\'](https?://[^"\']+)',
+)
+SCRIPT_TAG_PATTERN = re.compile(r'<script\b([^>]*)>', re.IGNORECASE)
+HTML_ATTR_PATTERN = re.compile(r'([\w-]+)=["\']([^"\']*)["\']')
 
 
 class Validation:
@@ -129,6 +143,153 @@ def validate_imports(validation: Validation) -> None:
         validation.require_file(target, str(path.relative_to(ROOT)))
 
 
+def sha384(data: bytes) -> str:
+  digest = hashlib.sha384(data).digest()
+  return 'sha384-' + base64.b64encode(digest).decode('ascii')
+
+
+def load_dependencies(validation: Validation) -> dict:
+  path = ROOT / 'js' / 'dependencies.js'
+  try:
+    source = path.read_text(encoding='utf-8')
+  except OSError as error:
+    validation.error(f'js/dependencies.js: {error}')
+    return {'cdn': {}, 'vendored': {}}
+  match = DEPENDENCY_REGISTRY_PATTERN.search(source)
+  if not match:
+    validation.error('js/dependencies.js: dependency registry not found')
+    return {'cdn': {}, 'vendored': {}}
+  try:
+    dependencies = json.loads(match.group(1))
+  except json.JSONDecodeError as error:
+    validation.error(f'js/dependencies.js: invalid dependency registry: {error}')
+    return {'cdn': {}, 'vendored': {}}
+  if set(dependencies) != {'cdn', 'vendored', 'reviewed'}:
+    validation.error('js/dependencies.js: registry must contain cdn, vendored, and reviewed')
+  reviewed = dependencies.get('reviewed')
+  try:
+    time.strptime(reviewed, '%Y-%m-%d')
+  except (TypeError, ValueError):
+    validation.error('js/dependencies.js: reviewed must be an ISO date (YYYY-MM-DD)')
+  return dependencies
+
+
+def validate_dependencies(validation: Validation) -> set[Path]:
+  dependencies = load_dependencies(validation)
+  cdn = dependencies.get('cdn', {})
+  vendored = dependencies.get('vendored', {})
+  urls: set[str] = set()
+  paths: set[Path] = set()
+
+  for asset_id, entry in cdn.items():
+    source = f'js/dependencies.js cdn.{asset_id}'
+    if set(entry) != {'url', 'integrity', 'license', 'kind', 'tools'}:
+      validation.error(f'{source}: fields must be url, integrity, license, kind, tools')
+      continue
+    url = entry['url']
+    if url in urls:
+      validation.error(f'{source}: duplicate URL: {url}')
+    urls.add(url)
+    if not VERSIONED_URL_PATTERN.search(url):
+      validation.error(f'{source}: URL does not pin a semantic version: {url}')
+    if not SRI_PATTERN.fullmatch(entry['integrity']):
+      validation.error(f'{source}: invalid SHA-384 integrity')
+    if entry['kind'] not in {'script', 'style'}:
+      validation.error(f'{source}: kind must be script or style')
+    if not entry['license'] or not entry['tools']:
+      validation.error(f'{source}: license and tools are required')
+    for tool_path in entry['tools']:
+      validation.require_file(ROOT / tool_path, source)
+
+  for asset_id, entry in vendored.items():
+    source = f'js/dependencies.js vendored.{asset_id}'
+    required = {'path', 'integrity', 'source', 'sourceIntegrity', 'license', 'tools'}
+    if set(entry) != required:
+      validation.error(f'{source}: fields must be {", ".join(sorted(required))}')
+      continue
+    if entry['source'] in urls:
+      validation.error(f'{source}: duplicate source URL: {entry["source"]}')
+    urls.add(entry['source'])
+    if not VERSIONED_URL_PATTERN.search(entry['source']):
+      validation.error(f'{source}: source URL does not pin a semantic version')
+    if not SRI_PATTERN.fullmatch(entry['integrity']) or not SRI_PATTERN.fullmatch(entry['sourceIntegrity']):
+      validation.error(f'{source}: invalid SHA-384 integrity')
+    if not entry['license'] or not entry['tools']:
+      validation.error(f'{source}: license and tools are required')
+    relative = Path(entry['path'])
+    if relative.is_absolute() or '..' in relative.parts or relative.parts[:2] != ('assets', 'vendor'):
+      validation.error(f'{source}: path must stay under assets/vendor: {relative}')
+      continue
+    path = (ROOT / relative).resolve()
+    if path in paths:
+      validation.error(f'{source}: duplicate local path: {relative}')
+    paths.add(path)
+    validation.require_file(path, source)
+    if path.is_file() and sha384(path.read_bytes()) != entry['integrity']:
+      validation.error(f'{source}: local SHA-384 mismatch: {relative}')
+    if path.is_file() and path.suffix == '.mjs':
+      module_source = path.read_text(encoding='utf-8')
+      if re.search(
+        r'''(?:\bfrom|\bimport\s*\(|new\s+URL\s*\()\s*["'](?:https?://|/)''',
+        module_source,
+      ):
+        validation.error(f'{source}: vendored module contains an absolute executable subresource')
+      for ref in re.findall(
+        r'''(?:\bfrom|new\s+URL\s*\()\s*["'](\./[^"']+)["']''',
+        module_source,
+      ):
+        target = (path.parent / ref).resolve()
+        if target not in paths and target not in {
+          (ROOT / item['path']).resolve() for item in vendored.values()
+        }:
+          validation.error(f'{source}: unregistered local subresource: {ref}')
+    for tool_path in entry['tools']:
+      validation.require_file(ROOT / tool_path, source)
+
+  index = (ROOT / 'index.html').read_text(encoding='utf-8')
+  cdn_by_url = {entry['url']: entry for entry in cdn.values()}
+  for tag in SCRIPT_TAG_PATTERN.findall(index):
+    attrs = dict(HTML_ATTR_PATTERN.findall(tag))
+    src = attrs.get('src', '')
+    if not src.startswith(('https://', 'http://')):
+      continue
+    entry = cdn_by_url.get(src)
+    if not entry:
+      validation.error(f'index.html: external script bypasses dependency registry: {src}')
+      continue
+    if attrs.get('integrity') != entry['integrity']:
+      validation.error(f'index.html: integrity does not match registry: {src}')
+    if attrs.get('crossorigin') != 'anonymous':
+      validation.error(f'index.html: external SRI script requires crossorigin="anonymous": {src}')
+
+  for path in sorted((ROOT / 'js').rglob('*.js')):
+    if path.name == 'dependencies.js':
+      continue
+    source = path.read_text(encoding='utf-8')
+    for url in EXTERNAL_EXECUTABLE_CALL.findall(source):
+      validation.error(
+        f'{path.relative_to(ROOT)}: external executable URL bypasses local vendoring: {url}'
+      )
+    for asset_id in re.findall(r"vendorUrl\(\s*'([^']+)'\s*\)", source):
+      if asset_id not in vendored:
+        validation.error(f'{path.relative_to(ROOT)}: unknown vendored dependency: {asset_id}')
+    for asset_id in re.findall(r'\bLIB\.([A-Za-z0-9]+)', source):
+      if asset_id not in cdn:
+        validation.error(f'{path.relative_to(ROOT)}: unknown CDN dependency: {asset_id}')
+
+  core = (ROOT / 'js' / 'core.js').read_text(encoding='utf-8')
+  worker = (ROOT / 'sw.js').read_text(encoding='utf-8')
+  if "import './dependencies.js';" not in core:
+    validation.error('js/core.js: dependency registry import is required')
+  if "importScripts('./js/dependencies.js');" not in worker:
+    validation.error('sw.js: dependency registry import is required')
+  if "importScripts('./js/sw-integrity.js');" not in worker:
+    validation.error('sw.js: shared integrity helper import is required')
+
+  print(f'Validated {len(cdn)} CDN assets and {len(vendored)} vendored assets with SHA-384.')
+  return paths
+
+
 def validate_document_assets(validation: Validation) -> set[Path]:
   index = ROOT / 'index.html'
   for ref in LOCAL_REF.findall(index.read_text(encoding='utf-8')):
@@ -230,7 +391,7 @@ def validate_playwright_ci(validation: Validation) -> None:
       )
 
 
-def validate_app_shell(validation: Validation) -> list[str]:
+def validate_app_shell(validation: Validation, vendored_paths: set[Path]) -> list[str]:
   source = (ROOT / 'sw.js').read_text(encoding='utf-8')
   match = re.search(r'const APP_SHELL = \[(.*?)\];', source, re.DOTALL)
   if not match:
@@ -253,6 +414,7 @@ def validate_app_shell(validation: Validation) -> list[str]:
     ROOT / 'sw.js',
     *validation.checked_files,
     *(ROOT / 'js').rglob('*.js'),
+    *vendored_paths,
   }
   for path in sorted(required - normalized):
     validation.error(f'sw.js APP_SHELL: required local asset is not cached: {path.relative_to(ROOT)}')
@@ -286,9 +448,10 @@ def main() -> int:
   validate_tools(validation)
   validate_imports(validation)
   validate_document_assets(validation)
+  vendored_paths = validate_dependencies(validation)
   validate_node_versions(validation)
   validate_playwright_ci(validation)
-  refs = validate_app_shell(validation)
+  refs = validate_app_shell(validation, vendored_paths)
   if args.base_url:
     validate_http(validation, args.base_url, refs)
 

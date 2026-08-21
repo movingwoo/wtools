@@ -1,5 +1,5 @@
 // 암호화 / 복호화
-import { tool, makeIO, h, formLabel, kvTable, strToBytes, bytesToStr, bytesToHex, hexToBytes, bytesToB64, b64ToBytes, concatBytes, decodeInput, encodeOutput, loadScript, loadModule, LIB, copyBtn } from '../core.js';
+import { tool, makeIO, h, formLabel, kvTable, strToBytes, bytesToStr, bytesToHex, hexToBytes, bytesToB64, b64ToBytes, concatBytes, decodeInput, encodeOutput, loadScript, loadModule, vendorUrl, LIB, copyBtn } from '../core.js';
 
 const CAT = '암호화 / 복호화';
 
@@ -871,7 +871,7 @@ tool({
 
 /* ---------- PGP (OpenPGP.js) ---------- */
 async function pgp() {
-  return loadModule('https://cdn.jsdelivr.net/npm/openpgp@5.11.1/dist/openpgp.min.mjs');
+  return loadModule(vendorUrl('openpgp'));
 }
 
 tool({

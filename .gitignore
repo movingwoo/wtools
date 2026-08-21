@@ -2,6 +2,8 @@
 .codex/
 .DS_Store
 /dist/
+__pycache__/
+*.pyc
 
 TODO.md
 SECURITY_HEADERS.md

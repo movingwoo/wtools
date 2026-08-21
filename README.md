@@ -75,7 +75,7 @@ python3 -m http.server 8000
 
 ## 검사
 
-다음 명령은 외부 패키지 없이 도구 ID와 카테고리, 로컬 모듈 가져오기, 정적 자산 및 서비스 워커 앱 셸을 검사합니다.
+다음 명령은 외부 패키지 없이 도구 ID와 카테고리, 로컬 모듈 가져오기, 제3자 자산 SHA-384, 정적 자산 및 서비스 워커 앱 셸을 검사합니다.
 
 ```bash
 python3 scripts/validate_static.py
@@ -95,8 +95,8 @@ CI와 동일한 세 브라우저 구성을 검사하려면 `npx playwright insta
 
 GitHub Actions는 모든 PR과 `main` 브랜치 푸시에서 정적 검사, JavaScript 구문 검사, 공백 오류 검사와 HTTP 앱 셸 스모크 테스트를 실행합니다. 브라우저 검사는 하나의 고정된 컨테이너에서 Chromium 전체 테스트와 Firefox 및 WebKit 핵심 스모크 테스트를 순차적으로 실행합니다.
 
-도구가 지연 로드하는 CDN 라이브러리는 로컬 캐시에서 공급되므로 일시적인 CDN 장애가 PR 검사를 중단시키지 않습니다.  
-실제 CDN 상태는 하루에 한 번 실행되는 Chromium nightly 워크플로에서 확인합니다.
+도구가 지연 로드하는 classic script/CSS는 테스트 캐시에서 공급되므로 일시적인 CDN 장애가 PR 검사를 중단시키지 않습니다.  
+동적 ESM/WASM은 SHA-384로 고정한 검토본을 저장소에서 제공하며, 실제 CDN 원본과 운영 보안 헤더는 하루에 한 번 nightly 워크플로에서 확인합니다.
 
 ## 구조
 
@@ -104,10 +104,11 @@ GitHub Actions는 모든 PR과 `main` 브랜치 푸시에서 정적 검사, Java
 index.html          진입점 (사이드바 + 콘텐츠 영역)
 css/style.css       스타일 (시스템 연동 + 수동 라이트/다크)
 js/core.js          도구 등록 프레임워크 + 공통 UI 빌더 + 유틸
+js/dependencies.js  제3자 코드 URL·SHA-384·라이선스·사용처 등록부
 js/main.js          해시 기반 라우터 / 사이드바 / 홈 화면
 js/theme.js         초기 테마 적용 + 시스템/라이트/다크 전환
 js/tools/*.js       카테고리별 도구 구현 (모듈별로 분리)
-assets/             아이콘·이미지
+assets/             아이콘·이미지 및 검토·고정한 제3자 ESM/WASM
 manifest.json       PWA 매니페스트 (설치, 아이콘, 테마 색상)
 sw.js               서비스워커; 앱 셸 사전 캐시 + network-first 갱신으로 오프라인 지원
 tests/              Playwright 브라우저 테스트 (CI 전용, 자체 package.json — 사이트 배포와 무관)
@@ -115,8 +116,8 @@ scripts/            의존성 없는 저장소·정적 사이트 검증 스크�
 .github/workflows/  PR·main push 검사(validate)와 하루 한 번 실제 CDN 검증(nightly)
 ```
 
-jsrsasign, openpgp, pako, figlet처럼 용량이 큰 라이브러리는 해당 도구를 열 때 CDN에서 **지연 로드**하여 초기 로딩 시간을 줄입니다.  
-crypto-js와 js-yaml 등 핵심 라이브러리만 페이지를 열 때 불러옵니다.
+jsrsasign, pako, figlet 같은 classic script는 SRI로 검증하면서 해당 도구를 열 때 CDN에서 **지연 로드**합니다.  
+OpenPGP, TOML, GIF, Brotli·Zstandard·Bzip2·LZ4의 동적 ESM/WASM은 하위 import까지 검토한 로컬 사본을 사용합니다. crypto-js와 js-yaml만 페이지를 열 때 불러옵니다.
 
 ## 새 도구 추가
 

@@ -179,6 +179,14 @@ globalThis.WTOOLS_DEPENDENCIES = {
     }
   },
   "vendored": {
+    "cryptoJsWorker": {
+      "path": "assets/vendor/crypto-js-4.2.0.min.js",
+      "integrity": "sha384-mgWScxWVKP8F7PBbpNp7i/aSb17kN0LcifBpahAplF3Mn0GR4/u1oMpWIm2rD8yY",
+      "source": "https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.2.0/crypto-js.min.js",
+      "sourceIntegrity": "sha384-mgWScxWVKP8F7PBbpNp7i/aSb17kN0LcifBpahAplF3Mn0GR4/u1oMpWIm2rD8yY",
+      "license": "MIT",
+      "tools": ["js/tools/hashing.js"]
+    },
     "smolToml": {
       "path": "assets/vendor/smol-toml-1.2.2.mjs",
       "integrity": "sha384-+o/LoGqbIrGc9fWR9hZI+JsVoUoMGibYVsEynMz33B/i3P8j4xcdCFR7mBIW9xEP",
@@ -268,9 +276,26 @@ globalThis.WTOOLS_DEPENDENCIES = {
       "tools": ["js/tools/cryptotools.js"]
     }
   },
-  "reviewed": "2026-08-21"
+  "tests": {
+    "playwright": {
+      "version": "1.62.1",
+      "source": "https://registry.npmjs.org/@playwright/test/-/test-1.62.1.tgz",
+      "integrity": "sha512-DTcUc8qii+cpHvtOwggMtBRMjKZHXYWdw8syRYu2vtzuq4Wxphqq4NfCs5Zt44L6mA8rfDfj+PHnxFc/FeK6mQ==",
+      "license": "Apache-2.0",
+      "use": "브라우저 기능·호환성 회귀 테스트"
+    },
+    "axeCore": {
+      "version": "4.10.3",
+      "source": "https://registry.npmjs.org/axe-core/-/axe-core-4.10.3.tgz",
+      "integrity": "sha512-Xm7bpRXnDSX2YE2YFfBk2FnF0ep6tmG7xPh8iHee8MIcrgq762Nkce856dYtJYLkuIoYZvGfTs/PbZhideTcEg==",
+      "license": "MPL-2.0",
+      "use": "WCAG 자동 접근성 검사"
+    }
+  },
+  "reviewed": "2026-08-24"
 };
 
 Object.freeze(globalThis.WTOOLS_DEPENDENCIES.cdn);
 Object.freeze(globalThis.WTOOLS_DEPENDENCIES.vendored);
+Object.freeze(globalThis.WTOOLS_DEPENDENCIES.tests);
 Object.freeze(globalThis.WTOOLS_DEPENDENCIES);

@@ -1,5 +1,9 @@
 // 해싱
-import { tool, makeIO, h, formLabel, kvTable, strToBytes, hexToBytes, bytesToB64, decodeInput, FMT_IN, loadScript, LIB } from '../core.js';
+import {
+  tool, makeIO, h, formLabel, kvTable, copyBtn, download, strToBytes, hexToBytes, bytesToB64,
+  decodeInput, FMT_IN, loadScript, vendorUrl, LIB, createAsyncRunner, readFileChunks,
+  throwIfAborted, requireFeature,
+} from '../core.js';
 
 const CAT = '해싱';
 
@@ -232,6 +236,7 @@ tool({
       ],
       outputHTML: true, runOnLoad: true,
       async process(v, o) {
+        requireFeature('wasm', typeof WebAssembly !== 'undefined');
         await loadScript(LIB.hashWasm);
         const bytes = decodeInput(v.input, o.ifmt);
         const key = v.key ? strToBytes(v.key) : null;
@@ -335,11 +340,115 @@ tool({
 });
 
 const FILE_CHECKSUM_ALGORITHMS = {
-  'MD5': { length: 32, digest: (wordArray) => CryptoJS.MD5(wordArray).toString() },
-  'SHA-1': { length: 40, digest: (wordArray) => CryptoJS.SHA1(wordArray).toString() },
-  'SHA-256': { length: 64, digest: (wordArray) => CryptoJS.SHA256(wordArray).toString() },
-  'SHA-512': { length: 128, digest: (wordArray) => CryptoJS.SHA512(wordArray).toString() },
+  'MD5': { length: 32, worker: 'MD5' },
+  'SHA-1': { length: 40, worker: 'SHA1' },
+  'SHA-256': { length: 64, worker: 'SHA256' },
+  'SHA-512': { length: 128, worker: 'SHA512' },
 };
+
+const FILE_HASH_WORKER_SOURCE = `
+const CRYPTO_JS_URL = ${JSON.stringify(vendorUrl('cryptoJsWorker'))};
+const hashers = new Map();
+let loaded = false;
+function load() {
+  if (!loaded) { importScripts(CRYPTO_JS_URL); loaded = true; }
+}
+self.onmessage = ({ data }) => {
+  try {
+    load();
+    if (data.type === 'start') {
+      const algorithm = CryptoJS.algo[data.algorithm];
+      if (!algorithm) throw new Error('지원하지 않는 파일 해시 알고리즘입니다.');
+      hashers.set(data.job, algorithm.create());
+      self.postMessage({ request: data.request });
+      return;
+    }
+    const hasher = hashers.get(data.job);
+    if (!hasher) throw new Error('파일 해시 작업 상태를 찾지 못했습니다.');
+    if (data.type === 'chunk') {
+      hasher.update(CryptoJS.lib.WordArray.create(new Uint8Array(data.bytes)));
+      self.postMessage({ request: data.request });
+      return;
+    }
+    if (data.type === 'finish') {
+      const digest = hasher.finalize().toString();
+      hashers.delete(data.job);
+      self.postMessage({ request: data.request, digest });
+      return;
+    }
+    throw new Error('알 수 없는 파일 해시 요청입니다.');
+  } catch (error) {
+    self.postMessage({ request: data.request, error: error?.message || String(error) });
+  }
+};`;
+
+function fileHashWorker(signal) {
+  requireFeature('worker', typeof Worker !== 'undefined');
+  const url = URL.createObjectURL(new Blob([FILE_HASH_WORKER_SOURCE], { type: 'text/javascript' }));
+  const worker = new Worker(url);
+  const pending = new Map();
+  let requestId = 0;
+  const close = (error) => {
+    worker.terminate();
+    URL.revokeObjectURL(url);
+    for (const { reject } of pending.values()) reject(error);
+    pending.clear();
+  };
+  worker.addEventListener('message', ({ data }) => {
+    const task = pending.get(data.request);
+    if (!task) return;
+    pending.delete(data.request);
+    if (data.error) task.reject(new Error(data.error));
+    else task.resolve(data);
+  });
+  worker.addEventListener('error', (event) => {
+    event.preventDefault();
+    close(new Error(event.message || '파일 해시 Worker를 실행하지 못했습니다.'));
+  });
+  signal?.addEventListener('abort', () => close(new DOMException('작업이 취소되었습니다.', 'AbortError')), { once: true });
+  return {
+    request(message, transfer = []) {
+      throwIfAborted(signal);
+      const request = ++requestId;
+      return new Promise((resolve, reject) => {
+        pending.set(request, { resolve, reject });
+        worker.postMessage({ ...message, request }, transfer);
+      });
+    },
+    close: () => close(new DOMException('파일 해시 Worker가 종료되었습니다.', 'AbortError')),
+  };
+}
+
+async function hashFilesInWorker(files, task) {
+  const client = fileHashWorker(task.signal);
+  const records = [];
+  try {
+    for (let fileIndex = 0; fileIndex < files.length; fileIndex++) {
+      const file = files[fileIndex];
+      const hashes = {};
+      let algorithmIndex = 0;
+      for (const [name, config] of Object.entries(FILE_CHECKSUM_ALGORITHMS)) {
+        throwIfAborted(task.signal);
+        const job = `${fileIndex}:${algorithmIndex++}`;
+        await client.request({ type: 'start', job, algorithm: config.worker });
+        await readFileChunks(file, {
+          signal: task.signal,
+          onChunk: async (bytes) => client.request({ type: 'chunk', job, bytes }, [bytes.buffer]),
+          onProgress: (ratio) => task.progress(
+            `파일 ${fileIndex + 1}/${files.length} · ${name} ${Math.round(ratio * 100)}%`,
+          ),
+        });
+        hashes[name] = (await client.request({ type: 'finish', job })).digest;
+      }
+      records.push({
+        name: file.name, path: file.webkitRelativePath || file.name, size: file.size, hashes,
+      });
+    }
+    return records;
+  } finally {
+    client.close();
+  }
+}
 
 const CHECKSUM_ALGORITHM_BY_LENGTH = Object.fromEntries(
   Object.entries(FILE_CHECKSUM_ALGORITHMS).map(([name, cfg]) => [cfg.length, name]));
@@ -513,7 +622,10 @@ tool({
     const status = h('div', {
       class: 'io-status', role: 'status', 'aria-live': 'polite', 'aria-atomic': 'true',
     });
-    const file = h('input', { type: 'file', multiple: true });
+    const file = h('input', {
+      type: 'file', multiple: true,
+      'data-file-budget-note': '청크를 2 MiB씩 Worker로 보내므로 파일 전체를 한 번에 메모리에 올리지 않습니다.',
+    });
     const expected = h('textarea', {
       class: 'mono', rows: 5,
       placeholder: '예: ba7816bf...  abc.txt\n또는 SHA256 (abc.txt) = ba7816bf...',
@@ -521,6 +633,7 @@ tool({
     const manifest = h('input', {
       type: 'file',
     });
+    const manifestError = h('span', { class: 'error', role: 'alert' });
     let records = [];
 
     const showResults = () => {
@@ -529,6 +642,16 @@ tool({
       if (expected.value.trim()) {
         verification = verifyFileChecksums(records, parseChecksumText(expected.value));
         frag.append(checksumVerificationView(verification));
+      }
+      if (records.length) {
+        const checksumText = () => records.flatMap((record) => Object.entries(record.hashes)
+          .map(([algorithm, hash]) => `${algorithm.replace('-', '')} (${record.path}) = ${hash}`)).join('\n');
+        frag.append(h('div', { class: 'btn-row checksum-all-actions' },
+          copyBtn(checksumText, '전체 복사'),
+          h('button', {
+            class: 'btn small', type: 'button',
+            onclick: () => download('checksums.txt', checksumText(), 'text/plain;charset=utf-8'),
+          }, '전체 다운로드')));
       }
       for (const record of records) {
         frag.append(h('div', { class: 'checksum-file-result' }, kvTable([
@@ -560,84 +683,49 @@ tool({
       formLabel(expected, '기대 체크섬 또는 체크섬 목록 (선택)', { class: 'io-label' }),
       expected,
       formLabel(manifest, '체크섬 파일 가져오기 (선택, 최대 1MB)', { class: 'io-label' }),
-      manifest, status, out);
-    file.addEventListener('change', async () => {
-      const list = [...file.files];
-      if (!list.length) return;
-      file.disabled = true;
-      manifest.disabled = true;
-      expected.disabled = true;
-      wrap.setAttribute('aria-busy', 'true');
-      status.className = 'io-status active';
-      status.textContent = '처리 중…';
-      try {
-        const nextRecords = [];
-        for (let i = 0; i < list.length; i++) {
-          const f = list[i];
-          status.textContent = list.length > 1 ? `처리 중… (${i + 1}/${list.length})` : '처리 중…';
-          await new Promise((res) => setTimeout(res)); // 진행 표시가 그려지도록 양보
-          const buf = new Uint8Array(await f.arrayBuffer());
-          const wa = CryptoJS.lib.WordArray.create(buf);
-          nextRecords.push({
-            name: f.name, path: f.webkitRelativePath || f.name, size: f.size,
-            hashes: Object.fromEntries(Object.entries(FILE_CHECKSUM_ALGORITHMS)
-              .map(([name, cfg]) => [name, cfg.digest(wa)])),
-          });
-        }
-        records = nextRecords;
-        if (wrap.isConnected) showResults();
-      } catch (e) {
-        records = [];
-        out.replaceChildren(h('span', { class: 'error' }, e?.message || String(e)));
-        status.className = 'io-status active error';
-        status.textContent = '처리 실패: ' + (e?.message || String(e));
-      } finally {
-        file.disabled = false;
-        manifest.disabled = false;
-        expected.disabled = false;
-        wrap.setAttribute('aria-busy', 'false');
-      }
+      manifest, manifestError, status, out);
+    const runner = createAsyncRunner(wrap, {
+      controls: () => [file], status, errorOut: out,
     });
+    file.addEventListener('change', () => runner.run(async (task) => {
+      const list = [...file.files];
+      if (!list.length) throw new Error('체크섬을 계산할 파일을 선택하세요.');
+      records = await hashFilesInWorker(list, task);
+      if (task.active()) showResults();
+    }));
     expected.addEventListener('input', () => {
       if (records.length) showResults();
     });
     manifest.addEventListener('change', async () => {
       const selected = manifest.files?.[0];
-      if (!selected) return;
-      if (selected.size > 1024 * 1024) {
-        status.className = 'io-status active error';
-        status.textContent = '체크섬 파일은 1MB 이하만 불러올 수 있습니다.';
-        manifest.value = '';
-        return;
-      }
-      file.disabled = true;
+      manifestError.textContent = '';
       manifest.disabled = true;
-      expected.disabled = true;
-      wrap.setAttribute('aria-busy', 'true');
-      status.className = 'io-status active';
-      status.textContent = '체크섬 파일을 읽는 중…';
       try {
+        if (!selected) throw new Error('가져올 체크섬 파일을 선택하세요.');
+        if (selected.size > 1024 * 1024) {
+          manifest.value = '';
+          throw new Error('체크섬 파일은 1MB 이하만 불러올 수 있습니다.');
+        }
         const text = await selected.text();
         if (!text.trim()) {
           expected.value = '';
-          status.className = 'io-status active error';
-          status.textContent = '체크섬 파일이 비어 있습니다.';
-          return;
+          throw new Error('체크섬 파일이 비어 있습니다.');
         }
+        if (!root.isConnected) return;
         expected.value = text;
         if (records.length) showResults();
         else {
           status.className = 'io-status active';
           status.textContent = '체크섬 파일을 불러왔습니다. 검증할 파일을 선택하세요.';
         }
-      } catch (e) {
+      } catch (error) {
+        if (!root.isConnected) return;
+        const detail = error?.message || String(error);
+        manifestError.textContent = detail;
         status.className = 'io-status active error';
-        status.textContent = '체크섬 파일을 읽지 못했습니다: ' + (e?.message || String(e));
+        status.textContent = `처리 실패: ${detail}`;
       } finally {
-        file.disabled = false;
-        manifest.disabled = false;
-        expected.disabled = false;
-        wrap.setAttribute('aria-busy', 'false');
+        if (root.isConnected) manifest.disabled = false;
       }
     });
     root.append(wrap);

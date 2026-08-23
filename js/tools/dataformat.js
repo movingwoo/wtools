@@ -39,7 +39,7 @@ function requireLocalSampleRefs(value, seen = new Set()) {
   if (!value || typeof value !== 'object' || seen.has(value)) return;
   seen.add(value);
   if (typeof value.$ref === 'string' && !value.$ref.startsWith('#'))
-    throw new Error(`외부 $ref는 샘플 생성에서 지원하지 않습니다: ${value.$ref}`);
+    throw new Error(`외부 $ref는 네트워크로 가져오지 않습니다: ${value.$ref}`);
   for (const child of Object.values(value)) requireLocalSampleRefs(child, seen);
 }
 
@@ -274,6 +274,20 @@ function schemaDraft(schema) {
   throw new Error('지원하지 않는 JSON Schema 버전입니다. Draft 4, 6, 7, 2019-09 또는 2020-12를 사용하세요.');
 }
 
+const UNSUPPORTED_SCHEMA_KEYWORDS = new Set([
+  '$dynamicAnchor', '$dynamicRef', 'unevaluatedItems', 'unevaluatedProperties', 'contentSchema',
+]);
+
+function unsupportedSchemaKeywords(value, found = new Set(), seen = new Set()) {
+  if (!value || typeof value !== 'object' || seen.has(value)) return found;
+  seen.add(value);
+  for (const [key, child] of Object.entries(value)) {
+    if (UNSUPPORTED_SCHEMA_KEYWORDS.has(key)) found.add(key);
+    unsupportedSchemaKeywords(child, found, seen);
+  }
+  return found;
+}
+
 function schemaErrorMessage(error) {
   const p = error?.params || [];
   switch (error?.code) {
@@ -326,7 +340,10 @@ tool({
       async process(v, o, action) {
         if (!v.schema.trim()) throw new Error('JSON Schema를 입력하세요.');
         const schema = JSON.parse(v.schema);
-        if (action === 'sample') requireLocalSampleRefs(schema);
+        const unsupported = [...unsupportedSchemaKeywords(schema)];
+        if (unsupported.length)
+          throw new Error(`현재 검증기가 지원하지 않는 키워드입니다: ${unsupported.join(', ')}`);
+        requireLocalSampleRefs(schema);
         await loadScript(LIB.zSchema);
         const validator = ZSchema.ZSchema.create({ version: schemaDraft(schema), safe: true });
         const schemaResult = validator.validateSchema(schema);
@@ -353,7 +370,7 @@ tool({
           return `${i + 1}. ${path}: ${schemaErrorMessage(e)}`;
         }).join('\n');
       },
-      note: '검증은 JSON Schema Draft 4, 6, 7, 2019-09, 2020-12를 지원합니다. $schema를 생략하면 2020-12로 처리합니다. 샘플은 로컬 $ref, required, allOf/oneOf, prefixItems/minItems, pattern과 example/default/enum 등을 반영하고 생성 직후 스키마로 다시 검증합니다. 외부 $ref는 네트워크로 가져오지 않습니다.',
+      note: '공식 테스트 벡터로 확인한 JSON Schema Draft 4/6/7과 2019-09/2020-12의 핵심 검증 키워드를 지원합니다. $dynamicRef/$dynamicAnchor, unevaluatedItems/unevaluatedProperties, contentSchema는 지원하지 않아 명시적으로 거부합니다. $schema를 생략하면 2020-12로 처리합니다. 샘플은 로컬 $ref, required, allOf/oneOf, prefixItems/minItems, pattern과 example/default/enum 등을 반영하고 생성 직후 다시 검증하며 외부 $ref를 가져오지 않습니다.',
     });
   },
 });
@@ -566,6 +583,9 @@ tool({
         toml: { options: { from: 'toml' } }, env: { options: { from: 'env' } },
       },
     }],
+    outputs: ['json', 'yaml', 'xml', 'csv', 'toml', 'env'].map((type) => ({
+      id: `format-${type}`, label: `${type.toUpperCase()} 결과`, type,
+    })),
   },
   render(root) {
     const FMT = [['json', 'JSON'], ['yaml', 'YAML'], ['xml', 'XML'], ['csv', 'CSV'], ['toml', 'TOML'], ['env', 'ENV (.env)']];
@@ -579,6 +599,10 @@ tool({
         { id: 'csvHeader', label: 'CSV 헤더 포함', type: 'checkbox', value: true },
       ],
       outputRows: 12,
+      transferOutput: {
+        id: ({ opts }) => `format-${opts.to}`,
+        when: ({ result }) => !!String(result).trim(),
+      },
       async process(text, o) {
         if (!text.trim()) return '';
         let data;

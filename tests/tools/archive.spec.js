@@ -3,6 +3,7 @@
 // 압축 → 해제 왕복과 파일 업로드/다운로드 경로를 확인한다.
 import { test, expect, toolCases, openTool, ioSection, runIO, uploadFile, grabDownload } from '../helpers.js';
 import { brotliDecompressSync, zstdDecompressSync } from 'node:zlib';
+import { execFileSync } from 'node:child_process';
 
 const MSG = 'hello wtools compression test\n'.repeat(3); // 90바이트
 // 원문 MSG를 다른 구현으로 압축한 벡터: node zlib(gzip/deflate/deflateRaw), python bz2/lzma(FORMAT_ALONE)
@@ -212,6 +213,72 @@ test('tar: gzip 옵션은 .tar.gz로 묶고 풀 때 자동 해제', async ({ pag
 
   await uploadFile(content, '해제할 Tar 파일 선택', { name: 'wtools.tar.gz', mimeType: 'application/gzip', buffer: tgz.bytes });
   await expect(content.locator('table.grid')).toContainText('a.txt');
+});
+
+test('zip: UTF-8·디렉터리·중복 이름을 Python zipfile과 교차 검증한다', async ({ page }) => {
+  await openTool(page, 'zip');
+  const content = page.locator('#content');
+  await uploadFile(content, 'ZIP에 추가할 파일 선택', [
+    { name: '한글.txt', mimeType: 'text/plain', buffer: Buffer.from('내용') },
+    { name: '폴더/', mimeType: 'application/octet-stream', buffer: Buffer.alloc(0) },
+    { name: '같음.txt', mimeType: 'text/plain', buffer: Buffer.from('첫째') },
+    { name: '같음.txt', mimeType: 'text/plain', buffer: Buffer.from('둘째') },
+  ]);
+  const zip = await grabDownload(page, () => content.getByRole('button', { name: 'ZIP 다운로드' }).click());
+  const script = [
+    'import io,json,sys,zipfile',
+    'z=zipfile.ZipFile(io.BytesIO(sys.stdin.buffer.read()))',
+    'print(json.dumps([[i.filename,i.is_dir(),i.file_size] for i in z.infolist()],ensure_ascii=False))',
+  ].join(';');
+  const entries = JSON.parse(execFileSync('python3', ['-c', script], { input: zip.bytes, encoding: 'utf8' }));
+  expect(entries).toContainEqual(['한글.txt', false, Buffer.byteLength('내용')]);
+  expect(entries.some(([name, isDir]) => name === '폴더/' && isDir)).toBe(true);
+  expect(entries.filter(([name]) => name.startsWith('같음')).map(([name]) => name))
+    .toEqual(['같음.txt', '같음 (2).txt']);
+});
+
+test('tar: UTF-8 긴 USTAR 경로를 Python tarfile과 교차 검증한다', async ({ page }) => {
+  await openTool(page, 'tar');
+  const content = page.locator('#content');
+  const longName = `${'prefix'.repeat(18)}/${'한글'.repeat(15)}.txt`;
+  await uploadFile(content, 'Tar에 추가할 파일 선택', {
+    name: longName, mimeType: 'text/plain', buffer: Buffer.from('긴 경로'),
+  });
+  const tar = await grabDownload(page, () => content.getByRole('button', { name: 'Tar 다운로드' }).click());
+  const script = [
+    'import io,json,sys,tarfile',
+    't=tarfile.open(fileobj=io.BytesIO(sys.stdin.buffer.read()),mode="r:")',
+    'print(json.dumps([[i.name,i.size] for i in t.getmembers()],ensure_ascii=False))',
+  ].join(';');
+  expect(JSON.parse(execFileSync('python3', ['-c', script], { input: tar.bytes, encoding: 'utf8' })))
+    .toEqual([[longName, Buffer.byteLength('긴 경로')]]);
+});
+
+test('zip: 경로 순회·CRC 오류·압축 폭탄 헤더를 해제 전에 거부한다', async ({ page }) => {
+  await openTool(page, 'zip');
+  const content = page.locator('#content');
+  await uploadFile(content, 'ZIP에 추가할 파일 선택', {
+    name: 'safe.txt', mimeType: 'text/plain', buffer: Buffer.from('안전한 내용'),
+  });
+  const made = await grabDownload(page, () => content.getByRole('button', { name: 'ZIP 다운로드' }).click());
+  const central = made.bytes.indexOf(Buffer.from('PK\x01\x02', 'latin1'));
+  expect(central).toBeGreaterThan(0);
+
+  const traversal = Buffer.from(made.bytes);
+  for (let at = 0; (at = traversal.indexOf(Buffer.from('safe.txt'), at)) >= 0; at += 8)
+    Buffer.from('../x.txt').copy(traversal, at);
+  await uploadFile(content, '해제할 ZIP 파일 선택', { name: 'traversal.zip', mimeType: 'application/zip', buffer: traversal });
+  await expect(content.locator('.error').first()).toContainText(/안전하지 않은|경로/);
+
+  const crc = Buffer.from(made.bytes);
+  crc.writeUInt32LE((crc.readUInt32LE(central + 16) ^ 1) >>> 0, central + 16);
+  await uploadFile(content, '해제할 ZIP 파일 선택', { name: 'crc.zip', mimeType: 'application/zip', buffer: crc });
+  await expect(content.locator('.error').first()).toContainText('CRC-32');
+
+  const bomb = Buffer.from(made.bytes);
+  bomb.writeUInt32LE(129 * 1024 * 1024, central + 24);
+  await uploadFile(content, '해제할 ZIP 파일 선택', { name: 'bomb.zip', mimeType: 'application/zip', buffer: bomb });
+  await expect(content.locator('.error').first()).toContainText(/항목 한도|128\.0 MiB/);
 });
 
 test('bzip2: 파일 해제와 미리보기', async ({ page }) => {

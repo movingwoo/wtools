@@ -33,7 +33,8 @@ test('설치 시 검증된 자산만 캐시하고 이전 버전 캐시를 삭제
   await waitForControl(page);
   const state = await page.evaluate(async ({ externalUrl, vendoredPath }) => {
     const keys = await caches.keys();
-    const shell = await caches.open('wtools-shell-v10');
+    const shellName = keys.find((key) => key.startsWith('wtools-shell-'));
+    const shell = await caches.open(shellName);
     const vendorResponse = await shell.match(vendoredPath);
     const entry = globalThis.WTOOLS_DEPENDENCIES.vendored.smolToml;
     const digest = await crypto.subtle.digest('SHA-384', await vendorResponse.clone().arrayBuffer());
@@ -44,10 +45,12 @@ test('설치 시 검증된 자산만 캐시하고 이전 버전 캐시를 삭제
       vendorIntegrity: integrity,
       expectedVendorIntegrity: entry.integrity,
       externalCached: !!await external.match(externalUrl),
+      shellName,
     };
   }, { externalUrl: EXTERNAL_URL, vendoredPath: VENDORED_PATH });
   expect(state.keys).not.toContain('wtools-shell-v0');
   expect(state.keys).not.toContain('wtools-external-v0');
+  expect(state.shellName).toMatch(/^wtools-shell-[0-9a-f]{12}$/);
   expect(state.vendorIntegrity).toBe(state.expectedVendorIntegrity);
   expect(state.externalCached).toBe(true);
 
@@ -153,6 +156,8 @@ test('변조된 제3자 응답과 캐시를 폐기하고 한국어 오류를 반
     return {
       status: response.status,
       body: await response.text(),
+      errorCode: response.headers.get('X-WTools-Error'),
+      cacheControl: response.headers.get('Cache-Control'),
       cached,
       cachedDeleted,
       fetchedDeleted,
@@ -162,6 +167,8 @@ test('변조된 제3자 응답과 캐시를 폐기하고 한국어 오류를 반
   });
   expect(result.status).toBe(502);
   expect(result.body).toContain('무결성 검증에 실패했습니다');
+  expect(result.errorCode).toBe('WTI001');
+  expect(result.cacheControl).toBe('no-store');
   expect(result.cached).toBeNull();
   expect(result.cachedDeleted).toBe(true);
   expect(result.fetchedDeleted).toBe(true);

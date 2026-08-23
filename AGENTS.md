@@ -19,7 +19,8 @@ W-Tools is a collection of developer utilities that runs as a pure static site. 
 index.html          Page shell, global libraries, and the `js/main.js` entry point
 css/style.css       Shared responsive and light/dark theme styles
 js/core.js          Tool registry, shared UI builders, byte helpers, and lazy loaders
-js/main.js          Tool imports, hash router, sidebar, search, and generated home page
+js/main.js          Tool manifest registration, lazy module loader, hash router, sidebar, search, and generated home page
+js/tool-manifest.js Generated search/home metadata and tool-to-module mapping
 js/tools/*.js       Category modules; each module registers multiple related tools
 assets/             Static images and icons
 manifest.json       PWA manifest (installability, icons, theme color)
@@ -45,7 +46,7 @@ python3 -m http.server 8000
 
 Then open `http://localhost:8000` and validate changes manually.
 
-CI (`.github/workflows/validate.yml`) checks JavaScript syntax, validates registrations and static assets, and runs the Playwright browser suite on every PR and every push to `main`. A second workflow, `.github/workflows/nightly.yml`, re-runs the Chromium suite once a day against the real CDN. CI uses the digest-pinned official Playwright image whose version matches `tests/package.json`, so browsers and Linux dependencies are not downloaded during each job; `validate_static.py` keeps the image and package versions aligned. To run the browser tests locally, use the Node version pinned in both `.node-version` and `tests/.node-version` (22, the same major CI uses). The test package rejects other Node majors, and `validate_static.py` keeps the two version files aligned. With `fnm` or `nvm` installed, the version switches automatically on entering either the repository or `tests/`.
+CI (`.github/workflows/validate.yml`) checks JavaScript syntax, validates registrations and static assets, and runs the Playwright browser suite on every PR and every push to `main`. Nightly re-runs Chromium against the real CDN; scheduled compatibility and maintenance workflows cover the closest minimum engines and monthly dependency/standards review. CI uses digest-pinned official Playwright images, and `validate_static.py` keeps the primary image and package versions aligned. To run the browser tests locally, use the Node version pinned in both `.node-version` and `tests/.node-version` (22, the same major CI uses). The test package rejects other Node majors, and `validate_static.py` keeps the two version files aligned. With `fnm` or `nvm` installed, the version switches automatically on entering either the repository or `tests/`.
 
 ```bash
 cd tests
@@ -139,7 +140,7 @@ Prefer shared APIs from `js/core.js` instead of duplicating them:
 - Make focused changes. Do not add a framework, build tooling, or package dependency for a small feature.
 - Prefer Web APIs and existing helpers. If a substantial library is necessary, load it lazily only when the relevant tool opens; pin its version and add it to `LIB` when it is reusable.
 - Keep only `CryptoJS` and `jsyaml` as eagerly loaded globals unless the site architecture is intentionally revised.
-- Stay within the browser baseline documented in `README.md` (Chrome/Edge 110, Firefox 115, Safari 16.4). Regex lookbehind, `structuredClone`, `findLast`, `toSorted`/`toReversed`/`with`, and import maps are available; `Intl.Segmenter` is not (Firefox 125) and stays behind a `typeof` guard. Syntax that an older engine cannot parse — regex lookbehind, for example — fails at parse time and takes down the entire site, because `js/main.js` imports every tool module statically, so a feature past the baseline is not a localized risk.
+- Stay within the browser baseline documented in `README.md` (Chrome/Edge 110, Firefox 115, Safari 16.4). Regex lookbehind, `structuredClone`, `findLast`, `toSorted`/`toReversed`/`with`, and import maps are available; `Intl.Segmenter` is not (Firefox 125) and stays behind a `typeof` guard. Tool implementations are dynamically imported, so a parse failure is isolated to that module, but the minimum syntax policy still applies to every module and is checked by `scripts/check_browser_compat.mjs` plus the scheduled baseline-engine job.
 - Validate input and throw `Error` objects with clear Korean messages. Avoid silent failures and unexplained coercion.
 - Preserve responsiveness, keyboard access, semantic labels, and the existing automatic light/dark theme.
 - Revoke object URLs and stop timers or workers when their lifetime ends. Avoid blocking the main thread for large inputs when a chunked or asynchronous approach is practical.
@@ -151,7 +152,7 @@ Prefer shared APIs from `js/core.js` instead of duplicating them:
 1. Locate the matching category module under `js/tools/`; create a new module only when no existing category fits.
 2. Register the tool with `tool(...)` and reuse `makeIO` or the shared DOM/helpers where appropriate.
 3. Confirm the category string exists in `js/core.js` and the tool ID is not already registered.
-4. If a new module was created, import it from `js/main.js`.
+4. Run `node scripts/generate_tool_manifest.mjs` so the tool metadata and module mapping stay current.
 5. Update the corresponding category in `FEATURES.md`. Update `README.md` as well if the public overview, setup, or architecture changed.
 6. Add or update a case in `tests/tools/<module>.spec.js` that covers the new or changed behavior.
 7. Run the syntax check and perform relevant browser validation.

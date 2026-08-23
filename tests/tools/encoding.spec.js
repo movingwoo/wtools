@@ -192,6 +192,22 @@ const cases = [
     name: 'punycode: 독일어 라벨 (RFC 3492 방식)', tool: 'punycode', inputs: 'bücher.example',
     kv: { 'ASCII (Punycode)': 'xn--bcher-kva.example' },
   },
+  {
+    name: 'punycode: UTS #46 NFC 정규화', tool: 'punycode', inputs: 'bu\u0308cher.example',
+    kv: { 'ASCII (Punycode)': 'xn--bcher-kva.example', '유니코드': 'bücher.example' },
+  },
+  {
+    name: 'punycode: IDNA2008 금지 밑줄', tool: 'punycode', inputs: 'bad_label.example',
+    htmlError: /밑줄을 사용할 수 없습니다/,
+  },
+  {
+    name: 'punycode: 63바이트 초과 라벨 거부', tool: 'punycode', inputs: `${'a'.repeat(64)}.example`,
+    htmlError: /63자를 넘습니다/,
+  },
+  {
+    name: 'punycode: 라틴·키릴 혼합 스크립트 경고', tool: 'punycode', inputs: 'pаypal.example',
+    htmlContains: ['혼합 스크립트', '피싱'],
+  },
 
 ];
 

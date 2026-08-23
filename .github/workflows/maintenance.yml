@@ -1,0 +1,58 @@
+name: Monthly dependency and standards review
+
+on:
+  schedule:
+    # 매월 1일 04:40 KST
+    - cron: '40 19 1 * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+          cache-dependency-path: tests/package-lock.json
+
+      - name: Install test dependencies
+        working-directory: tests
+        run: npm ci --no-audit --no-fund
+
+      - name: Security audit
+        working-directory: tests
+        run: npm audit --audit-level=high
+
+      - name: List available updates
+        working-directory: tests
+        shell: bash
+        run: |
+          echo '## 테스트 의존성 새 버전' >> "$GITHUB_STEP_SUMMARY"
+          npm outdated --long >> "$GITHUB_STEP_SUMMARY" 2>&1 || true
+
+      - name: Verify dependency pins and browser baseline
+        run: |
+          python3 scripts/vendor_dependencies.py --check
+          python3 scripts/validate_static.py
+          node scripts/check_browser_compat.mjs
+
+      - name: Run representative public vectors
+        working-directory: tests
+        run: npx playwright test --project=chromium -g 'JSON Schema|punycode|zip:|tar:'
+
+      - name: Write review summary
+        if: ${{ always() }}
+        shell: bash
+        run: |
+          echo '## 월간 품질·보안 점검' >> "$GITHUB_STEP_SUMMARY"
+          echo '- npm 보안 감사, 고정 자산 원본 해시, 브라우저 기준선, JSON Schema·IDN·ZIP/Tar 대표 벡터를 확인했습니다.' >> "$GITHUB_STEP_SUMMARY"
+          echo '- 실제 CDN과 운영 헤더·PWA 검사는 nightly 워크플로 결과를 함께 확인하세요.' >> "$GITHUB_STEP_SUMMARY"

@@ -31,15 +31,20 @@
     return response;
   }
 
-  function integrityErrorResponse() {
-    return new Response('제3자 라이브러리 무결성 검증에 실패했습니다. 새로고침 후 다시 시도하세요.', {
-      status: 502,
+  function diagnosticErrorResponse(code, message, status = 502) {
+    return new Response(`${message} (${code}) 새로고침 후 다시 시도하세요.`, {
+      status,
       headers: {
         'Content-Type': 'text/plain; charset=utf-8',
         'Cache-Control': 'no-store',
         'Access-Control-Allow-Origin': '*',
+        'X-WTools-Error': code,
       },
     });
+  }
+
+  function integrityErrorResponse() {
+    return diagnosticErrorResponse('WTI001', '제3자 라이브러리 무결성 검증에 실패했습니다.');
   }
 
   scope.WTOOLS_INTEGRITY = Object.freeze({
@@ -47,6 +52,7 @@
     verifiedCached,
     fetchVerified,
     IntegrityError,
+    diagnosticErrorResponse,
     integrityErrorResponse,
   });
 })(globalThis);

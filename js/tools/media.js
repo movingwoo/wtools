@@ -1,7 +1,98 @@
 // 이미지 / 미디어 / QR
-import { tool, makeIO, h, formLabel, kvTable, loadScript, loadModule, vendorUrl, LIB, download, downloadZip, copyBtn, bytesToB64 } from '../core.js';
+import {
+  tool, makeIO, h, formLabel, kvTable, loadScript, loadModule, vendorUrl, LIB, download,
+  downloadZip, copyBtn, bytesToB64, throwIfAborted, requireFeature, formatBytes, createAsyncRunner,
+} from '../core.js';
 
 const CAT = '이미지 / 미디어 / QR';
+const IMAGE_LIMITS = Object.freeze({
+  maxPixels: 40_000_000,
+  maxTotalPixels: 100_000_000,
+  maxDimension: 16_384,
+});
+const bytesToAscii = (bytes) => String.fromCharCode(...bytes);
+
+function assertImageDimensions(name, width, height, currentTotal = 0) {
+  if (!Number.isInteger(width) || !Number.isInteger(height) || width < 1 || height < 1)
+    throw new Error(`${name}: 이미지 크기를 확인할 수 없습니다.`);
+  if (width > IMAGE_LIMITS.maxDimension || height > IMAGE_LIMITS.maxDimension)
+    throw new Error(`${name}: 가로·세로는 각각 ${IMAGE_LIMITS.maxDimension.toLocaleString()}픽셀 이하여야 합니다.`);
+  const pixels = width * height;
+  if (pixels > IMAGE_LIMITS.maxPixels)
+    throw new Error(`${name}: 픽셀 수 ${pixels.toLocaleString()}개가 단일 이미지 한도 ${IMAGE_LIMITS.maxPixels.toLocaleString()}개를 넘습니다.`);
+  if (currentTotal + pixels > IMAGE_LIMITS.maxTotalPixels)
+    throw new Error(`선택한 이미지의 총 픽셀 수가 ${IMAGE_LIMITS.maxTotalPixels.toLocaleString()}개를 넘습니다.`);
+  return pixels;
+}
+
+function jpegDimensions(bytes) {
+  let offset = 2;
+  while (offset + 9 < bytes.length) {
+    if (bytes[offset] !== 0xff) { offset++; continue; }
+    const marker = bytes[offset + 1];
+    if ([0xc0, 0xc1, 0xc2, 0xc3, 0xc5, 0xc6, 0xc7, 0xc9, 0xca, 0xcb, 0xcd, 0xce, 0xcf].includes(marker))
+      return { width: (bytes[offset + 7] << 8) | bytes[offset + 8], height: (bytes[offset + 5] << 8) | bytes[offset + 6] };
+    if (marker === 0xd8 || marker === 0xd9 || (marker >= 0xd0 && marker <= 0xd7)) { offset += 2; continue; }
+    const length = (bytes[offset + 2] << 8) | bytes[offset + 3];
+    if (length < 2) break;
+    offset += 2 + length;
+  }
+  return null;
+}
+
+async function imageDimensions(file) {
+  const bytes = new Uint8Array(await file.slice(0, Math.min(file.size, 1024 * 1024)).arrayBuffer());
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  if (bytes.length >= 24 && bytes[0] === 0x89 && bytes[1] === 0x50)
+    return { bytes, width: view.getUint32(16), height: view.getUint32(20) };
+  if (bytes.length >= 10 && bytes[0] === 0x47 && bytes[1] === 0x49 && bytes[2] === 0x46)
+    return { bytes, width: view.getUint16(6, true), height: view.getUint16(8, true) };
+  if (bytes.length >= 26 && bytes[0] === 0x42 && bytes[1] === 0x4d)
+    return { bytes, width: Math.abs(view.getInt32(18, true)), height: Math.abs(view.getInt32(22, true)) };
+  if (bytes.length >= 30 && bytesToAscii(bytes.subarray(0, 4)) === 'RIFF' && bytesToAscii(bytes.subarray(8, 12)) === 'WEBP') {
+    const kind = bytesToAscii(bytes.subarray(12, 16));
+    if (kind === 'VP8X') return {
+      bytes,
+      width: 1 + bytes[24] + (bytes[25] << 8) + (bytes[26] << 16),
+      height: 1 + bytes[27] + (bytes[28] << 8) + (bytes[29] << 16),
+    };
+    if (kind === 'VP8L' && bytes[20] === 0x2f) return {
+      bytes,
+      width: 1 + bytes[21] + ((bytes[22] & 0x3f) << 8),
+      height: 1 + (bytes[22] >> 6) + (bytes[23] << 2) + ((bytes[24] & 0x0f) << 10),
+    };
+    for (let offset = 20; offset + 6 < bytes.length; offset++) {
+      if (bytes[offset] === 0x9d && bytes[offset + 1] === 0x01 && bytes[offset + 2] === 0x2a)
+        return { bytes, width: view.getUint16(offset + 3, true) & 0x3fff, height: view.getUint16(offset + 5, true) & 0x3fff };
+    }
+  }
+  if (bytes.length >= 4 && bytes[0] === 0xff && bytes[1] === 0xd8) {
+    const dimensions = jpegDimensions(bytes) || {};
+    return { bytes, ...dimensions };
+  }
+  if (file.type === 'image/svg+xml' || /\.svg$/i.test(file.name)) {
+    const text = new TextDecoder().decode(bytes);
+    const tag = text.match(/<svg\b[^>]*>/i)?.[0] || '';
+    const number = (name) => Number(tag.match(new RegExp(`\\b${name}=["']([0-9.]+)`, 'i'))?.[1]);
+    let width = number('width'), height = number('height');
+    const viewBox = tag.match(/\bviewBox=["']\s*[-0-9.]+\s+[-0-9.]+\s+([0-9.]+)\s+([0-9.]+)/i);
+    if ((!width || !height) && viewBox) { width ||= Number(viewBox[1]); height ||= Number(viewBox[2]); }
+    return { bytes, width, height };
+  }
+  return { bytes, width: 0, height: 0 };
+}
+
+async function safeCreateImageBitmap(source, options) {
+  requireFeature('imagebitmap', typeof createImageBitmap === 'function');
+  if (source instanceof Blob) {
+    const dimensions = await imageDimensions(source);
+    assertImageDimensions(source.name || '이미지', dimensions.width, dimensions.height);
+  }
+  const bitmap = await createImageBitmap(source, options);
+  try { assertImageDimensions(source.name || '이미지', bitmap.width, bitmap.height); }
+  catch (error) { bitmap.close?.(); throw error; }
+  return bitmap;
+}
 
 async function makeQR(text, ecl, size) {
   await loadScript(LIB.qrcode);
@@ -14,8 +105,9 @@ async function makeQR(text, ecl, size) {
   const cell = Math.max(2, Math.floor(size / (count + 8)));
   const margin = cell * 4;
   const dim = count * cell + margin * 2;
-  const canvas = h('canvas', { width: dim, height: dim });
+  const canvas = h('canvas', { width: dim, height: dim, role: 'img', 'aria-label': '생성된 QR 코드' });
   const ctx = canvas.getContext('2d');
+  requireFeature('canvas', !!ctx);
   ctx.fillStyle = '#fff';
   ctx.fillRect(0, 0, dim, dim);
   ctx.fillStyle = '#000';
@@ -77,6 +169,10 @@ tool({
   id: 'base64-image', cat: CAT, name: 'Base64 ↔ 이미지',
   desc: '이미지를 Base64 데이터 URI로 변환하거나, Data URI를 이미지로 미리보고 저장합니다.',
   keywords: 'base64 image data uri encode decode',
+  transfer: {
+    inputs: [{ id: 'input', label: 'Base64 또는 Data URI', accepts: ['base64', 'data-uri'] }],
+    outputs: [{ id: 'data-uri', label: '이미지 Data URI', type: 'data-uri' }],
+  },
   render(root) {
     // 이미지 → Base64
     root.append(h('h3', null, '이미지 → Base64'));
@@ -93,7 +189,7 @@ tool({
         fileOut.innerHTML = '';
         fileOut.append(
           h('div', { class: 'out-head' }, formLabel(ta, `Data URI (${f.type}, ${(uri.length / 1024).toFixed(1)} KB)`, { class: 'io-label' }), copyBtn(() => ta.value)),
-          ta, h('img', { src: uri, class: 'img-preview', style: { maxHeight: '200px', marginTop: '8px' } }));
+          ta, h('img', { src: uri, class: 'img-preview', alt: `${f.name} 미리보기`, style: { maxHeight: '200px', marginTop: '8px' } }));
       };
       reader.readAsDataURL(f);
     });
@@ -105,11 +201,18 @@ tool({
       inputs: [{ id: 'input', label: 'Base64 또는 Data URI', rows: 4, placeholder: 'data:image/png;base64,iVBOR... 또는 순수 Base64' }],
       options: [{ id: 'mime', label: '(순수 Base64인 경우) MIME', type: 'select', values: ['image/png', 'image/jpeg', 'image/gif', 'image/webp', 'image/svg+xml'] }],
       outputHTML: true,
+      transferOutput: {
+        id: 'data-uri',
+        when: ({ input }) => !!String(input).trim(),
+        value: ({ input, opts }) => String(input).trim().startsWith('data:')
+          ? String(input).trim()
+          : `data:${opts.mime};base64,${String(input).replace(/\s/g, '')}`,
+      },
       process(text, o) {
         text = text.trim();
         if (!text) return '';
         const uri = text.startsWith('data:') ? text : `data:${o.mime};base64,${text.replace(/\s/g, '')}`;
-        const img = h('img', { src: uri, class: 'img-preview', style: { maxHeight: '300px' } });
+        const img = h('img', { src: uri, class: 'img-preview', alt: '입력한 Base64 이미지 미리보기', style: { maxHeight: '300px' } });
         img.onerror = () => { img.replaceWith(h('span', { class: 'error' }, '이미지를 표시할 수 없습니다.')); };
         const ext = (uri.match(/data:image\/(\w+)/) || [])[1] || 'png';
         const dl = h('button', { class: 'btn', type: 'button', onclick: () => download('image.' + ext, dataUriToBlob(uri)) }, '이미지 저장');
@@ -256,7 +359,11 @@ tool({
     const convertStatus = h('div', {
       class: 'io-status', role: 'status', 'aria-live': 'polite', 'aria-atomic': 'true',
     });
-    const file = h('input', { type: 'file', accept: 'image/*', multiple: true });
+    const file = h('input', {
+      type: 'file', accept: 'image/*', multiple: true,
+      'data-file-max-count': 50,
+      'data-file-budget-note': `이미지당 ${IMAGE_LIMITS.maxPixels.toLocaleString()}픽셀, 전체 ${IMAGE_LIMITS.maxTotalPixels.toLocaleString()}픽셀까지 처리합니다.`,
+    });
     const fmt = h('select', null, [['original', '원본 포맷 유지 (재인코딩)'], ['image/png', 'PNG'], ['image/jpeg', 'JPEG'], ['image/webp', 'WebP'], ['image/gif', 'GIF (단일 프레임)'], ['image/bmp', 'BMP'], ['image/svg+xml', 'SVG (PNG 포함)']]
       .map(([v, l]) => h('option', { value: v, selected: v === 'image/png' }, l)));
     const quality = h('input', { type: 'range', min: 10, max: 100, value: 90, style: { width: '120px' } });
@@ -275,11 +382,24 @@ tool({
     const maxOpts = h('span', { class: 'opt-item', style: { display: 'none' } },
       formLabel(maxWidth, '최대 폭'), maxWidth, formLabel(maxHeight, '높이'), maxHeight);
     const info = h('span', { style: { color: 'var(--muted)' } });
-    let items = []; // [{ name, type, size, bitmap, orientation, edit }]
+    let items = []; // [{ file, name, type, size, width, height, orientation, edit }]
     let outUrls = [];
     let seq = 0;
     let active = true;
     let converting = false, convertPending = false;
+    let convertScheduled = false;
+    let conversionController = null;
+    let pendingItems = null;
+    const cancelButton = h('button', { class: 'btn small hidden', type: 'button' }, '취소');
+
+    function scheduleConvert() {
+      if (convertScheduled) return;
+      convertScheduled = true;
+      queueMicrotask(() => {
+        convertScheduled = false;
+        if (active) convert();
+      });
+    }
 
     function dimensions(sourceWidth, sourceHeight) {
       let s;
@@ -292,22 +412,31 @@ tool({
         s = +scale.value / 100;
       }
       if (noUpscale.checked) s = Math.min(1, s);
-      return {
+      const result = {
         w: Math.max(1, Math.round(sourceWidth * s)),
         hgt: Math.max(1, Math.round(sourceHeight * s)),
       };
+      assertImageDimensions('출력 이미지', result.w, result.hgt);
+      return result;
     }
 
-    async function convertOne(item, type, q) {
+    async function convertOne(item, type, q, signal) {
+      requireFeature('imagebitmap', typeof createImageBitmap === 'function');
+      throwIfAborted(signal);
+      const bitmap = await safeCreateImageBitmap(item.file, { imageOrientation: 'from-image' });
+      assertImageDimensions(item.name, bitmap.width, bitmap.height);
+      throwIfAborted(signal);
+      try {
       const controls = item.useEdit?.checked ? item.edit : commonEdit;
       const edit = imageEditSettings(controls);
-      const crop = imageCropRect(item.bitmap.width, item.bitmap.height, edit);
+      const crop = imageCropRect(bitmap.width, bitmap.height, edit);
       const turns = edit.rotation === 90 || edit.rotation === 270;
       const sourceWidth = turns ? crop.height : crop.width;
       const sourceHeight = turns ? crop.width : crop.height;
       const { w, hgt } = dimensions(sourceWidth, sourceHeight);
       const canvas = h('canvas', { width: w, height: hgt });
       const ctx = canvas.getContext('2d');
+      requireFeature('canvas', !!ctx);
       // 투명도를 보존하지 않는 출력은 사용자가 고른 배경색으로 먼저 합성한다.
       if (type === 'image/jpeg' || type === 'image/bmp' || type === 'image/gif') { ctx.fillStyle = background.value; ctx.fillRect(0, 0, w, hgt); }
       ctx.save();
@@ -315,7 +444,7 @@ tool({
       ctx.scale(edit.flipHorizontal ? -1 : 1, edit.flipVertical ? -1 : 1);
       ctx.scale(w / sourceWidth, hgt / sourceHeight);
       ctx.rotate(edit.rotation * Math.PI / 180);
-      ctx.drawImage(item.bitmap, crop.x, crop.y, crop.width, crop.height,
+      ctx.drawImage(bitmap, crop.x, crop.y, crop.width, crop.height,
         -crop.width / 2, -crop.height / 2, crop.width, crop.height);
       ctx.restore();
       let blob;
@@ -325,45 +454,60 @@ tool({
       else blob = await new Promise((res) => canvas.toBlob(res, type, q));
       if (!blob) throw new Error('이 브라우저는 해당 포맷 인코딩을 지원하지 않습니다.');
       return { blob, w, hgt };
+      } finally {
+        bitmap.close?.();
+      }
     }
 
-    async function convert() {
-      if (!items.length) return;
+    async function convert(requestedItems = items) {
+      if (!requestedItems.length) return;
       if (converting) {
         convertPending = true;
+        pendingItems = requestedItems;
+        conversionController?.abort();
         seq++;
+        out.setAttribute('aria-busy', 'true');
+        convertStatus.className = 'io-status active';
+        convertStatus.textContent = '변경된 설정으로 다시 처리 중…';
+        out.replaceChildren(h('p', { class: 'note' }, '변경된 설정으로 다시 변환 중...'));
         return;
       }
       converting = true;
+      conversionController = new AbortController();
+      const signal = conversionController.signal;
+      const batch = [...requestedItems];
       const my = ++seq;
       out.setAttribute('aria-busy', 'true');
       convertStatus.className = 'io-status active';
       convertStatus.textContent = '처리 중…';
+      cancelButton.classList.remove('hidden');
       try {
         const q = +quality.value / 100;
         const progress = h('p', { class: 'note' }, '변환 중...');
-        outUrls.forEach((u) => URL.revokeObjectURL(u));
+        out.replaceChildren(progress);
+        const staleUrls = outUrls;
         outUrls = [];
-        out.innerHTML = '';
-        out.append(progress);
+        setTimeout(() => staleUrls.forEach((url) => URL.revokeObjectURL(url)), 0);
         const frag = h('div');
         const results = []; // ZIP용 [{name, data}]
-        let failedCount = 0;
-        for (let i = 0; i < items.length; i++) {
-          if (items.length > 1) {
-            progress.textContent = `변환 중... (${i + 1}/${items.length})`;
-            convertStatus.textContent = `처리 중… (${i + 1}/${items.length})`;
+        const failedItems = [];
+        for (let i = 0; i < batch.length; i++) {
+          throwIfAborted(signal);
+          if (batch.length > 1) {
+            progress.textContent = `변환 중... (${i + 1}/${batch.length})`;
+            convertStatus.textContent = `처리 중… (${i + 1}/${batch.length})`;
           }
-          const item = items[i];
+          const item = batch[i];
           try {
             let type = fmt.value === 'original' ? item.type : fmt.value;
             if (type === 'image/jpg') type = 'image/jpeg';
             if (!['image/png', 'image/jpeg', 'image/webp', 'image/gif', 'image/bmp', 'image/svg+xml'].includes(type))
               throw new Error('이 파일의 원본 포맷은 출력할 수 없습니다. 다른 출력 포맷을 선택하세요.');
-            const { blob, w, hgt } = await convertOne(item, type, q);
+            const { blob, w, hgt } = await convertOne(item, type, q, signal);
+            throwIfAborted(signal);
             if (my !== seq) return;
             const ext = type === 'image/svg+xml' ? 'svg' : type === 'image/jpeg' ? 'jpg' : type.split('/')[1];
-            const outName = items.length === 1 ? 'converted.' + ext : item.name.replace(/\.[^.]+$/, '') + '.' + ext;
+            const outName = batch.length === 1 && items.length === 1 ? 'converted.' + ext : item.name.replace(/\.[^.]+$/, '') + '.' + ext;
             const uri = URL.createObjectURL(blob);
             outUrls.push(uri);
             results.push({ name: outName, data: blob });
@@ -371,69 +515,97 @@ tool({
             const sizeText = `${(item.size / 1024).toFixed(1)} KB → ${(blob.size / 1024).toFixed(1)} KB` +
               (change == null ? '' : ` (${change >= 0 ? change.toFixed(1) + '% 감소' : (-change).toFixed(1) + '% 증가'})`);
             frag.append(h('div', { style: { marginBottom: '14px' } },
-              h('img', { src: uri, class: 'img-preview', style: { maxHeight: items.length > 1 ? '160px' : '260px' } }),
-              h('p', null, `${items.length > 1 ? item.name + ' → ' + outName + ' — ' : ''}${w} × ${hgt}, ${sizeText} `,
+              h('img', { src: uri, class: 'img-preview', alt: `${item.name} 변환 미리보기`, style: { maxHeight: batch.length > 1 ? '160px' : '260px' } }),
+              h('p', null, `${batch.length > 1 || items.length > 1 ? item.name + ' → ' + outName + ' — ' : ''}${w} × ${hgt}, ${sizeText} `,
                 h('button', { class: 'btn small', type: 'button', onclick: () => download(outName, blob) }, '다운로드'))));
           } catch (e) {
+            if (e?.name === 'AbortError') throw e;
             if (my !== seq) return;
-            failedCount++;
+            failedItems.push(item);
             frag.append(h('p', null, h('span', { class: 'error' }, `${item.name} 변환 실패: ${e.message}`)));
           }
         }
         if (my !== seq) return;
         out.innerHTML = '';
-        if (results.length > 1)
-          out.append(h('div', { class: 'btn-row', style: { marginBottom: '10px' } },
-            h('button', {
-              class: 'btn primary', type: 'button',
-              onclick: () => downloadZip('converted.zip', results).catch((e) => alert('ZIP 생성 실패: ' + e.message)),
-            }, `전체 ZIP 다운로드 (${results.length}개)`)));
-        out.append(h('p', { class: 'note' }, '변환이 완료되었습니다.'), frag);
-        convertStatus.className = failedCount ? 'io-status active error' : 'io-status active';
-        convertStatus.textContent = failedCount
-          ? `변환이 완료되었지만 ${failedCount}개 파일은 실패했습니다.`
+        const zipError = h('span', { class: 'zip-error', role: 'alert' });
+        const actions = h('div', { class: 'btn-row', style: { marginBottom: '10px' } });
+        if (results.length > 1) actions.append(h('button', {
+          class: 'btn primary', type: 'button',
+          onclick: async () => {
+            zipError.textContent = '';
+            try { await downloadZip('converted.zip', results); }
+            catch (error) { zipError.textContent = 'ZIP 생성 실패: ' + error.message; }
+          },
+        }, `전체 ZIP 다운로드 (${results.length}개)`));
+        if (failedItems.length) actions.append(h('button', {
+          class: 'btn', type: 'button', onclick: () => convert(failedItems),
+        }, `실패 항목 다시 시도 (${failedItems.length}개)`));
+        if (actions.childNodes.length) out.append(actions, zipError);
+        out.append(h('p', { class: 'note', tabindex: -1 }, '변환이 완료되었습니다.'), frag);
+        out.querySelector('[tabindex]')?.focus();
+        convertStatus.className = failedItems.length ? 'io-status active error' : 'io-status active';
+        convertStatus.textContent = failedItems.length
+          ? `변환이 완료되었지만 ${failedItems.length}개 파일은 실패했습니다.`
           : '처리가 완료되었습니다.';
       } catch (e) {
         if (my === seq) {
           out.innerHTML = '';
-          out.append(h('span', { class: 'error' }, e?.message || String(e)));
-          convertStatus.className = 'io-status active error';
-          convertStatus.textContent = '처리 실패: ' + (e?.message || String(e));
+          const aborted = e?.name === 'AbortError';
+          out.append(h('span', { class: aborted ? 'note' : 'error' }, aborted ? '작업이 취소되었습니다.' : e?.message || String(e)));
+          convertStatus.className = `io-status active${aborted ? '' : ' error'}`;
+          convertStatus.textContent = aborted ? '작업이 취소되었습니다.' : '처리 실패: ' + (e?.message || String(e));
         }
       } finally {
         converting = false;
+        conversionController = null;
+        cancelButton.classList.add('hidden');
         out.setAttribute('aria-busy', 'false');
         if (convertPending && active) {
+          const nextItems = pendingItems || items;
           convertPending = false;
-          convert();
+          pendingItems = null;
+          convert(nextItems);
         }
       }
     }
+
+    cancelButton.addEventListener('click', () => {
+      convertPending = false;
+      pendingItems = null;
+      conversionController?.abort();
+    });
 
     file.addEventListener('change', async () => {
       const list = [...file.files];
       if (!list.length) return;
       file.disabled = true;
       info.textContent = '이미지 로딩 중...';
-      items.forEach((item) => item.bitmap.close?.());
+      conversionController?.abort();
       items = [];
       fileEdits.innerHTML = '';
       const failed = [];
+      let totalPixels = 0;
       for (const f of list) {
         try {
-          const bytes = new Uint8Array(await f.arrayBuffer());
+          const dimensions = await imageDimensions(f);
+          const pixels = assertImageDimensions(f.name, dimensions.width, dimensions.height, totalPixels);
+          totalPixels += pixels;
           let orientation = 1;
-          try { orientation = Number(readExif(bytes)?.ifd0?.[0x0112]) || 1; } catch { /* 손상된 EXIF는 픽셀 디코딩을 막지 않는다. */ }
-          const bitmap = await createImageBitmap(f, { imageOrientation: 'from-image' });
-          if (!active) { bitmap.close?.(); return; }
-          items.push({ name: f.name, type: f.type, size: f.size, bitmap, orientation });
-        } catch {
-          failed.push(f.name);
+          try { orientation = Number(readExif(dimensions.bytes)?.ifd0?.[0x0112]) || 1; } catch { /* 손상된 EXIF는 크기 검사를 막지 않는다. */ }
+          if (!active) return;
+          const swapsAxes = orientation >= 5 && orientation <= 8;
+          items.push({
+            file: f, name: f.name, type: f.type, size: f.size, orientation,
+            width: swapsAxes ? dimensions.height : dimensions.width,
+            height: swapsAxes ? dimensions.width : dimensions.height,
+          });
+        } catch (error) {
+          failed.push(`${f.name}: ${error.message}`);
         }
       }
       file.disabled = false;
       info.textContent = (items.length === 1
-        ? `원본: ${items[0].bitmap.width} × ${items[0].bitmap.height}` +
+        ? `원본: ${items[0].width} × ${items[0].height}` +
           (items[0].orientation >= 2 && items[0].orientation <= 8 ? ` — EXIF 방향 ${items[0].orientation} 적용됨` : '')
         : `${items.length}개 파일 선택됨`) +
         (failed.length ? ` — 로드 실패: ${failed.join(', ')}` : '');
@@ -445,11 +617,10 @@ tool({
         useEdit.addEventListener('change', () => {
           if (useEdit.checked && !initialized) { copyImageEditControls(commonEdit, edit); initialized = true; }
           fieldset.disabled = !useEdit.checked;
-          convert();
+          scheduleConvert();
         });
         for (const control of [edit.rotation, edit.flipHorizontal, edit.flipVertical, edit.cropMode, edit.cropX, edit.cropY, edit.cropWidth, edit.cropHeight]) {
-          control.addEventListener('input', () => { edit.syncCrop(); convert(); });
-          control.addEventListener('change', () => { edit.syncCrop(); convert(); });
+          control.addEventListener('input', () => { edit.syncCrop(); scheduleConvert(); });
         }
         item.useEdit = useEdit;
         item.edit = edit;
@@ -463,14 +634,14 @@ tool({
     resizeMode.addEventListener('change', () => {
       percentOpt.style.display = resizeMode.value === 'percent' ? '' : 'none';
       maxOpts.style.display = resizeMode.value === 'max' ? '' : 'none';
-      convert();
+      scheduleConvert();
     });
-    quality.addEventListener('input', () => { qualityValue.textContent = quality.value; convert(); });
-    [fmt, background, scale, maxWidth, maxHeight, noUpscale].forEach((el) => el.addEventListener('input', convert));
+    quality.addEventListener('input', () => { qualityValue.textContent = quality.value; scheduleConvert(); });
+    [fmt, background, scale, maxWidth, maxHeight, noUpscale]
+      .forEach((el) => el.addEventListener('input', scheduleConvert));
     for (const control of [commonEdit.rotation, commonEdit.flipHorizontal, commonEdit.flipVertical, commonEdit.cropMode,
       commonEdit.cropX, commonEdit.cropY, commonEdit.cropWidth, commonEdit.cropHeight]) {
-      control.addEventListener('input', () => { commonEdit.syncCrop(); convert(); });
-      control.addEventListener('change', () => { commonEdit.syncCrop(); convert(); });
+      control.addEventListener('input', () => { commonEdit.syncCrop(); scheduleConvert(); });
     }
     root.append(
       h('div', { class: 'io' },
@@ -487,11 +658,11 @@ tool({
           h('p', { style: { margin: '0 0 6px' } }, 'EXIF 방향 정보는 파일을 읽을 때 픽셀에 한 번 적용되며 미리보기와 다운로드 결과가 같은 방향을 사용합니다. 자르기는 EXIF 방향 적용 후, 사용자 회전·반전 전에 수행됩니다. 여러 파일에서는 공통 편집 설정을 기본으로 사용하고, 파일별 설정을 켠 파일은 회전·반전·자르기 설정 전체를 개별 값으로 대체합니다. 출력 포맷·품질·크기는 항상 공통입니다.'),
           h('p', { style: { margin: 0 } }, '원본 포맷 유지를 선택해도 결과는 캔버스로 다시 인코딩되어 EXIF·GPS 등 메타데이터가 제거됩니다. 화질을 유지한 채 메타데이터만 삭제하려면 EXIF 뷰어 / 메타데이터 제거 도구를 사용하세요. GIF 출력은 단일 프레임이며 애니메이션 입력도 정지 이미지 한 장으로 바뀝니다. SVG 출력은 벡터화가 아니라 PNG 이미지를 포함한 SVG 파일입니다.')),
         fileEdits,
-        convertStatus, out));
+        h('div', { class: 'btn-row' }, cancelButton), convertStatus, out));
     return () => {
       active = false;
       seq++;
-      items.forEach((item) => item.bitmap.close?.());
+      conversionController?.abort();
       outUrls.forEach((url) => URL.revokeObjectURL(url));
       items = [];
       outUrls = [];
@@ -665,7 +836,7 @@ tool({
       imageOut.innerHTML = '해독 중...';
       try {
         await loadScript(LIB.jsqr);
-        const bmp = await createImageBitmap(src);
+        const bmp = await safeCreateImageBitmap(src);
         // 너무 큰 이미지는 축소 (해상도가 충분히 크면 인식률에 영향 없음)
         const scale = Math.min(1, 1500 / Math.max(bmp.width, bmp.height));
         const w = Math.round(bmp.width * scale), hgt = Math.round(bmp.height * scale);
@@ -685,7 +856,7 @@ tool({
       }
     }
 
-    const video = h('video', { class: 'scanner-video', playsinline: true, muted: true, autoplay: true });
+    const video = h('video', { class: 'scanner-video', playsinline: true, muted: true, autoplay: true, 'aria-label': '카메라 스캔 미리보기' });
     const cameraSelect = h('select', { disabled: true, 'aria-label': '카메라 선택' });
     cameraSelect.append(h('option', { value: '' }, '카메라 시작 후 선택 가능'));
     const cameraStatus = h('p', { class: 'note camera-status', role: 'status', 'aria-live': 'polite' },
@@ -994,56 +1165,83 @@ tool({
   keywords: 'exif metadata gps remove strip privacy jpeg png 위치정보',
   render(root) {
     const out = h('div');
-    const file = h('input', { type: 'file', accept: 'image/jpeg,image/png', multiple: true });
-    file.addEventListener('change', async () => {
+    const file = h('input', {
+      type: 'file', accept: 'image/jpeg,image/png', multiple: true,
+      'data-file-max-count': 100,
+    });
+    const wrap = h('div', { class: 'io' },
+      formLabel(file, '사진 선택 (여러 장 가능, 브라우저 밖으로 전송되지 않습니다)', { class: 'io-label' }), file,
+      h('p', { class: 'note' }, '메타데이터 세그먼트만 삭제하고 픽셀 데이터는 건드리지 않으므로 화질이 그대로 유지됩니다.'), out);
+    const runner = createAsyncRunner(wrap, { controls: () => [file], errorOut: out });
+    file.addEventListener('change', () => runner.run(async (task) => {
       const list = [...file.files];
-      if (!list.length) return;
+      if (!list.length) throw new Error('확인할 사진을 선택하세요.');
       out.innerHTML = '';
       const many = list.length > 1;
       const zipRow = h('div', { class: 'btn-row', style: { marginBottom: '10px' } });
       const cleans = []; // ZIP용 [{name, data}]
+      const failures = [];
       if (many) out.append(zipRow);
-      for (const f of list) {
+      for (let index = 0; index < list.length; index++) {
+        throwIfAborted(task.signal);
+        task.progress(`메타데이터를 검사하는 중… (${index + 1}/${list.length})`);
+        const f = list[index];
         const sec = h('div', { style: many ? { marginBottom: '18px' } : null });
         out.append(sec);
         if (many) sec.append(h('h4', { class: 'mono' }, f.name));
-        const bytes = new Uint8Array(await f.arrayBuffer());
-        const isJpeg = bytes[0] === 0xff && bytes[1] === 0xd8;
-        const isPng = bytes[0] === 0x89 && bytes[1] === 0x50;
-        if (!isJpeg && !isPng) {
-          sec.append(h('span', { class: 'error' }, 'JPEG 또는 PNG 파일만 지원합니다.'));
-          continue;
-        }
-        if (isJpeg) {
-          const meta = readExif(bytes);
-          const rows = meta ? exifRows(meta) : [];
-          sec.append(h('h4', null, 'EXIF 정보'),
-            rows.length ? kvTable(rows) : h('p', { class: 'note' }, meta ? '주요 EXIF 태그가 비어 있습니다.' : 'EXIF 데이터가 없습니다.'));
-        }
-        const { blob, removed } = isJpeg ? stripJpeg(bytes) : stripPng(bytes);
-        const saved = f.size - blob.size;
-        const cleanName = f.name.replace(/(\.[^.]+)?$/, (m) => '_clean' + m);
-        if (removed.length) {
-          cleans.push({ name: cleanName, data: blob });
-          sec.append(
-            h('p', null, `제거할 메타데이터: ${removed.join(', ')} — ${saved.toLocaleString()} bytes 감소`),
-            h('div', { class: 'btn-row' }, h('button', {
-              class: 'btn' + (many ? ' small' : ' primary'), type: 'button',
-              onclick: () => download(cleanName, blob),
-            }, '메타데이터 제거본 다운로드')));
-        } else {
-          sec.append(h('p', { class: 'note' }, '제거할 메타데이터 세그먼트가 없습니다.'));
+        try {
+          const bytes = new Uint8Array(await f.arrayBuffer());
+          throwIfAborted(task.signal);
+          const isJpeg = bytes[0] === 0xff && bytes[1] === 0xd8;
+          const isPng = bytes[0] === 0x89 && bytes[1] === 0x50;
+          if (!isJpeg && !isPng) throw new Error('JPEG 또는 PNG 파일만 지원합니다.');
+          if (isJpeg) {
+            const meta = readExif(bytes);
+            const rows = meta ? exifRows(meta) : [];
+            sec.append(h('h4', null, 'EXIF 정보'),
+              rows.length ? kvTable(rows) : h('p', { class: 'note' }, meta ? '주요 EXIF 태그가 비어 있습니다.' : 'EXIF 데이터가 없습니다.'));
+          }
+          const { blob, removed } = isJpeg ? stripJpeg(bytes) : stripPng(bytes);
+          const saved = f.size - blob.size;
+          const cleanName = f.name.replace(/(\.[^.]+)?$/, (m) => '_clean' + m);
+          if (removed.length) {
+            cleans.push({ name: cleanName, data: blob });
+            sec.append(
+              h('p', null, `제거할 메타데이터: ${removed.join(', ')} — ${saved.toLocaleString()} bytes 감소`),
+              h('div', { class: 'btn-row' }, h('button', {
+                class: 'btn' + (many ? ' small' : ' primary'), type: 'button',
+                onclick: () => download(cleanName, blob),
+              }, '메타데이터 제거본 다운로드')));
+          } else {
+            sec.append(h('p', { class: 'note' }, '제거할 메타데이터 세그먼트가 없습니다.'));
+          }
+        } catch (error) {
+          if (error?.name === 'AbortError') throw error;
+          failures.push(f);
+          sec.append(h('span', { class: 'error' }, `${f.name}: ${error.message}`));
         }
       }
-      if (cleans.length > 1)
+      const zipError = h('span', { role: 'alert' });
+      if (cleans.length > 1) {
         zipRow.append(h('button', {
           class: 'btn primary', type: 'button',
-          onclick: () => downloadZip('metadata_clean.zip', cleans).catch((e) => alert('ZIP 생성 실패: ' + e.message)),
-        }, `제거본 전체 ZIP 다운로드 (${cleans.length}개)`));
-    });
-    root.append(h('div', { class: 'io' },
-      formLabel(file, '사진 선택 (여러 장 가능, 브라우저 밖으로 전송되지 않습니다)', { class: 'io-label' }), file,
-      h('p', { class: 'note' }, '메타데이터 세그먼트만 삭제하고 픽셀 데이터는 건드리지 않으므로 화질이 그대로 유지됩니다.'), out));
+          onclick: async () => {
+            zipError.textContent = '';
+            try { await downloadZip('metadata_clean.zip', cleans); }
+            catch (error) { zipError.textContent = 'ZIP 생성 실패: ' + error.message; }
+          },
+        }, `제거본 전체 ZIP 다운로드 (${cleans.length}개)`), zipError);
+      }
+      if (failures.length) zipRow.append(h('button', {
+        class: 'btn', type: 'button', onclick: () => {
+          const transfer = new DataTransfer();
+          failures.forEach((item) => transfer.items.add(item));
+          file.files = transfer.files;
+          file.dispatchEvent(new Event('change', { bubbles: true }));
+        },
+      }, `실패 항목 다시 시도 (${failures.length}개)`));
+    }));
+    root.append(wrap);
   },
 });
 
@@ -1082,7 +1280,7 @@ tool({
       if (!f) return;
       out.innerHTML = '생성 중...';
       try {
-        const bmp = await createImageBitmap(f);
+        const bmp = await safeCreateImageBitmap(f);
         const sq = Math.min(bmp.width, bmp.height); // 정사각형이 아니면 중앙 크롭
         const sx = (bmp.width - sq) / 2, sy = (bmp.height - sq) / 2;
         const canvases = SIZES.map((s) => {
@@ -1190,7 +1388,7 @@ tool({
     file.addEventListener('change', async () => {
       const f = file.files[0];
       if (!f) return;
-      bmp = await createImageBitmap(f);
+      bmp = await safeCreateImageBitmap(f);
       run();
     });
     countSel.addEventListener('change', run);
@@ -1315,7 +1513,7 @@ tool({
     file.addEventListener('change', async () => {
       const f = file.files[0];
       if (!f) return;
-      bmp = await createImageBitmap(f);
+      bmp = await safeCreateImageBitmap(f);
       run();
     });
     [width, charset, invert, colorMode].forEach((el) => el.addEventListener('input', run));

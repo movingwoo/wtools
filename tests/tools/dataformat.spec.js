@@ -109,6 +109,23 @@ const cases = [
   },
 
   /* ---------- json-schema ---------- */
+  // JSON Schema Test Suite의 draft4/type.json, draft6/const.json,
+  // draft7/contains.json과 최신 draft의 해당 핵심 키워드 벡터를 축약해 고정한다.
+  {
+    name: 'json-schema 공식 벡터: Draft 4 type', tool: 'json-schema',
+    inputs: ['"1"', '{"$schema":"http://json-schema.org/draft-04/schema#","type":"integer"}'],
+    action: '검증', output: '1. /: 예상 타입은 integer이지만 실제 타입은 string입니다.',
+  },
+  {
+    name: 'json-schema 공식 벡터: Draft 6 const', tool: 'json-schema',
+    inputs: ['2', '{"$schema":"http://json-schema.org/draft-06/schema#","const":1}'],
+    action: '검증', output: '1. /: const에 지정된 값과 일치하지 않습니다.',
+  },
+  {
+    name: 'json-schema 공식 벡터: Draft 7 contains', tool: 'json-schema',
+    inputs: ['[1,2,3]', '{"$schema":"http://json-schema.org/draft-07/schema#","contains":{"type":"string"}}'],
+    action: '검증', output: '1. /: contains 스키마와 일치하는 배열 항목이 없습니다.',
+  },
   {
     name: 'json-schema: 스키마에 맞는 데이터', tool: 'json-schema',
     inputs: ['{"name":"홍길동","age":20}', null], action: '검증',
@@ -162,7 +179,12 @@ const cases = [
   {
     name: 'json-schema: 외부 $ref는 네트워크 요청 없이 거부', tool: 'json-schema',
     inputs: [null, '{"$ref":"https://example.com/schema.json"}'], action: '샘플 생성',
-    error: '외부 $ref는 샘플 생성에서 지원하지 않습니다: https://example.com/schema.json',
+    error: '외부 $ref는 네트워크로 가져오지 않습니다: https://example.com/schema.json',
+  },
+  {
+    name: 'json-schema: 미지원 최신 키워드는 묵살하지 않고 거부', tool: 'json-schema',
+    inputs: ['{}', '{"$schema":"https://json-schema.org/draft/2020-12/schema","unevaluatedProperties":false}'],
+    action: '검증', error: '현재 검증기가 지원하지 않는 키워드입니다: unevaluatedProperties',
   },
   {
     name: 'json-schema: 스키마가 비면 에러', tool: 'json-schema',
@@ -277,12 +299,22 @@ test('data-convert: JSON → CSV → JSON 왕복 (값은 문자열로 남음)', 
   ]);
 });
 
-test('data-convert: CRLF·셀 내부 줄바꿈·따옴표 escape·빈 마지막 셀 보존', async ({ page }) => {
+test('data-convert: CRLF 파싱·셀 내부 줄바꿈·따옴표 escape·빈 마지막 셀 보존', async ({ page }) => {
   await openTool(page, 'data-convert');
   const io = ioSection(page);
   const csv = 'id,note,last\r\n1,"첫 줄\r\n둘째 ""줄""",\r\n';
+  const parsed = await page.evaluate(async (source) => {
+    const { parseCSV } = await import('/js/tools/dataformat.js');
+    return parseCSV(source);
+  }, csv);
+  expect(parsed).toEqual([
+    ['id', 'note', 'last'],
+    ['1', '첫 줄\r\n둘째 "줄"', ''],
+  ]);
+
+  // HTML textarea의 value는 사양에 따라 CRLF를 LF로 정규화한다.
   const output = await runIO(io, { options: { '입력 포맷': 'csv', '출력 포맷': 'json' }, inputs: csv });
-  expect(JSON.parse(output)).toEqual([{ id: '1', note: '첫 줄\r\n둘째 "줄"', last: '' }]);
+  expect(JSON.parse(output)).toEqual([{ id: '1', note: '첫 줄\n둘째 "줄"', last: '' }]);
 });
 
 test('data-convert: JSON → ENV → JSON 왕복 (값은 문자열로 남음)', async ({ page }) => {

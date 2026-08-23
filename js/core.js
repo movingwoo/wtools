@@ -17,7 +17,37 @@ export const categories = [
 ];
 
 export const tools = [];
-export function tool(def) { tools.push(def); }
+export function registerToolManifests(manifests) {
+  for (const manifest of manifests) {
+    if (tools.some((item) => item.id === manifest.id)) throw new Error(`중복된 도구 ID입니다: ${manifest.id}`);
+    tools.push({ ...manifest });
+  }
+}
+
+// 지연 로드된 구현은 먼저 등록된 검색/홈 메타데이터를 같은 객체에서 갱신한다.
+// 객체 정체성을 유지해야 이미 만들어 둔 사이드바와 즐겨찾기 참조도 최신 render를 본다.
+export function tool(def) {
+  const existing = tools.find((item) => item.id === def.id);
+  if (existing) Object.assign(existing, def);
+  else tools.push(def);
+}
+
+const cleanupByRoot = new WeakMap();
+export function addToolCleanup(root, cleanup) {
+  if (typeof cleanup !== 'function') return cleanup;
+  const list = cleanupByRoot.get(root) || [];
+  list.push(cleanup);
+  cleanupByRoot.set(root, list);
+  return cleanup;
+}
+
+export function cleanupToolRoot(root) {
+  for (const node of [root, ...root.querySelectorAll('*')]) {
+    const list = cleanupByRoot.get(node) || [];
+    cleanupByRoot.delete(node);
+    for (const cleanup of list.reverse()) cleanup();
+  }
+}
 
 let pendingToolInput = null;
 export function stageToolInput(toolId, value, setup = {}) {
@@ -37,12 +67,38 @@ function transferTargets(sourceId, outputId) {
   const output = tools.find((item) => item.id === sourceId)?.transfer?.outputs
     ?.find((item) => item.id === outputId);
   if (!output) return [];
-  return (output.targets || []).flatMap((targetId) => {
+  const targetIds = output.targets?.length
+    ? output.targets
+    : tools.map((item) => item.id);
+  return targetIds.flatMap((targetId) => {
     const target = tools.find((item) => item.id === targetId);
     if (!target) return [];
     const inputs = (target.transfer?.inputs || []).filter((input) => input.accepts?.includes(output.type));
     return inputs.length ? [{ target, inputs, type: output.type }] : [];
   });
+}
+
+const TRANSFER_TYPES = Object.freeze({
+  text: { label: '텍스트', validate: (value) => String(value).length > 0 },
+  base64: { label: 'Base64', validate: (value) => /^(?:[A-Za-z0-9+/_-]{2,}={0,2})$/.test(String(value).replace(/\s/g, '')) },
+  hex: { label: 'Hex', validate: (value) => /^(?:[0-9a-f]{2})+$/i.test(String(value).replace(/[\s:,-]|0x/gi, '')) },
+  hash: { label: '해시', validate: (value) => /^(?:[0-9a-f]{8,}|\$[^\s]+|\{SSHA\}[^\s]+)$/i.test(String(value).trim()) },
+  checksum: { label: '체크섬 목록', validate: (value) => String(value).trim().length > 0 },
+  json: { label: 'JSON', validate(value) { try { JSON.parse(String(value)); return true; } catch { return false; } } },
+  yaml: { label: 'YAML', validate: (value) => String(value).trim().length > 0 },
+  xml: { label: 'XML', validate: (value) => /^\s*</.test(String(value)) },
+  csv: { label: 'CSV', validate: (value) => String(value).includes(',') || String(value).includes('\t') },
+  toml: { label: 'TOML', validate: (value) => String(value).trim().length > 0 },
+  env: { label: 'ENV', validate: (value) => /^\s*(?:export\s+)?[A-Za-z_][\w]*\s*=/m.test(String(value)) },
+  url: { label: 'URL/URI', validate(value) { try { return !!new URL(String(value).trim()); } catch { return false; } } },
+  pem: { label: 'PEM', validate: (value) => /-----BEGIN [A-Z0-9 ]+-----[\s\S]+-----END [A-Z0-9 ]+-----/.test(String(value)), sensitive: true },
+  jwk: { label: 'JWK', validate(value) { try { const parsed = JSON.parse(String(value)); return parsed && typeof parsed.kty === 'string'; } catch { return false; } }, sensitive: true },
+  asn1: { label: 'ASN.1', validate: (value) => /^(?:[0-9a-f]{2})+$/i.test(String(value).replace(/\s/g, '')) },
+  'data-uri': { label: 'Data URI', validate: (value) => /^data:[^,]+,/i.test(String(value)) },
+});
+
+function transferType(type) {
+  return TRANSFER_TYPES[type] || TRANSFER_TYPES.text;
 }
 
 /* ---------- DOM 헬퍼 ---------- */
@@ -87,6 +143,61 @@ function clipboardFileName(type, index) {
   return `클립보드-${index + 1}.${extensions[type] || 'bin'}`;
 }
 
+export const FILE_BUDGET = Object.freeze({
+  warnFileBytes: 32 * 1024 * 1024,
+  warnTotalBytes: 64 * 1024 * 1024,
+  warnCount: 20,
+  maxFileBytes: 256 * 1024 * 1024,
+  maxTotalBytes: 512 * 1024 * 1024,
+  maxCount: 200,
+});
+
+export function formatBytes(bytes) {
+  if (bytes < 1024) return `${bytes.toLocaleString()} B`;
+  const units = ['KiB', 'MiB', 'GiB'];
+  let value = bytes / 1024, unit = units[0];
+  for (let i = 1; i < units.length && value >= 1024; i++) { value /= 1024; unit = units[i]; }
+  return `${value.toFixed(value >= 10 ? 1 : 2)} ${unit}`;
+}
+
+function numericBudget(input, key, fallback) {
+  const value = Number(input.dataset[key]);
+  return Number.isFinite(value) && value > 0 ? value : fallback;
+}
+
+export function assessFileBudget(files, overrides = {}) {
+  const list = [...files];
+  const budget = { ...FILE_BUDGET, ...overrides };
+  const total = list.reduce((sum, file) => sum + file.size, 0);
+  const largest = list.reduce((max, file) => Math.max(max, file.size), 0);
+  const hard = [];
+  const warnings = [];
+  if (list.length > budget.maxCount) hard.push(`파일 개수 ${list.length}개가 최대 ${budget.maxCount}개를 넘습니다.`);
+  if (largest > budget.maxFileBytes) hard.push(`단일 파일이 최대 ${formatBytes(budget.maxFileBytes)}를 넘습니다.`);
+  if (total > budget.maxTotalBytes) hard.push(`파일 총합 ${formatBytes(total)}이 최대 ${formatBytes(budget.maxTotalBytes)}를 넘습니다.`);
+  if (!hard.length) {
+    if (list.length > budget.warnCount) warnings.push(`파일 ${list.length}개`);
+    if (largest > budget.warnFileBytes) warnings.push(`단일 파일 최대 ${formatBytes(largest)}`);
+    if (total > budget.warnTotalBytes) warnings.push(`총합 ${formatBytes(total)}`);
+  }
+  return { files: list, total, largest, hard, warnings, budget };
+}
+
+function inputFileBudget(input) {
+  return {
+    warnFileBytes: numericBudget(input, 'fileWarnFile', FILE_BUDGET.warnFileBytes),
+    warnTotalBytes: numericBudget(input, 'fileWarnTotal', FILE_BUDGET.warnTotalBytes),
+    warnCount: numericBudget(input, 'fileWarnCount', FILE_BUDGET.warnCount),
+    maxFileBytes: numericBudget(input, 'fileMaxFile', FILE_BUDGET.maxFileBytes),
+    maxTotalBytes: numericBudget(input, 'fileMaxTotal', FILE_BUDGET.maxTotalBytes),
+    maxCount: numericBudget(input, 'fileMaxCount', FILE_BUDGET.maxCount),
+  };
+}
+
+function fileSelectionSignature(files) {
+  return [...files].map((file) => `${file.name}:${file.size}:${file.lastModified}`).join('|');
+}
+
 // 도구가 만든 파일 input을 공통 드롭·클립보드 UI로 보강한다.
 export function enhanceFileInputs(root) {
   let fileInputIndex = 0;
@@ -99,6 +210,7 @@ export function enhanceFileInputs(root) {
     const status = h('span', { class: 'file-drop-status', 'aria-live': 'polite' });
     const browse = h('button', { class: 'btn small', type: 'button' }, '파일 찾아보기');
     const paste = h('button', { class: 'btn small', type: 'button' }, '클립보드 파일 붙여넣기');
+    const budgetApprove = h('button', { class: 'btn small hidden', type: 'button' }, '그래도 처리');
     const description = h('span', { class: 'sr-only', id: `wtools-file-drop-description-${++fileDropId}` }, `${inputLabel} 입력`);
     const zone = h('div', {
       class: 'file-drop-zone', role: 'group', tabindex: 0,
@@ -110,14 +222,49 @@ export function enhanceFileInputs(root) {
       ? '파일을 여기에 끌어놓거나 이 영역에서 Ctrl/Cmd+V로 붙여넣으세요. 여러 파일을 받을 수 있습니다.'
       : '파일을 여기에 끌어놓거나 이 영역에서 Ctrl/Cmd+V로 붙여넣으세요.'),
     h('span', { class: 'file-drop-actions' }, browse, paste),
+    budgetApprove,
     status,
-    h('span', { class: 'file-drop-privacy' }, '파일 내용은 브라우저 밖으로 전송되지 않습니다.'));
+    h('span', { class: 'file-drop-privacy' }, '파일 내용은 브라우저 밖으로 전송되지 않습니다.'),
+    input.dataset.fileBudgetNote
+      ? h('span', { class: 'file-drop-budget-note' }, `이 도구의 예산 예외: ${input.dataset.fileBudgetNote}`)
+      : null);
+
+    let approvedSignature = '';
+    let pendingSignature = '';
 
     const announce = (message, error = false) => {
       if (!zone.isConnected) return;
       status.textContent = message;
       status.classList.toggle('error', error);
     };
+    const enforceBudget = (event) => {
+      const files = [...(input.files || [])];
+      if (!files.length) return;
+      const signature = fileSelectionSignature(files);
+      const assessment = assessFileBudget(files, inputFileBudget(input));
+      if (assessment.hard.length) {
+        event.stopImmediatePropagation();
+        input.value = '';
+        budgetApprove.classList.add('hidden');
+        announce(`안전 한도를 초과해 처리하지 않았습니다. ${assessment.hard.join(' ')}`, true);
+        return;
+      }
+      if (assessment.warnings.length && signature !== approvedSignature) {
+        event.stopImmediatePropagation();
+        pendingSignature = signature;
+        budgetApprove.classList.remove('hidden');
+        announce(`큰 파일 작업입니다(${assessment.warnings.join(', ')}). 메모리 사용량을 확인한 뒤 계속할 수 있습니다.`, true);
+        return;
+      }
+      budgetApprove.classList.add('hidden');
+      pendingSignature = '';
+    };
+    input.addEventListener('change', enforceBudget, true);
+    budgetApprove.addEventListener('click', () => {
+      if (!pendingSignature || !input.files?.length) return;
+      approvedSignature = pendingSignature;
+      input.dispatchEvent(new Event('change', { bubbles: true }));
+    });
     const selectFiles = (files, source) => {
       if (!zone.isConnected) return;
       if (input.disabled) { announce('현재 파일을 처리 중입니다. 완료된 뒤 다시 시도하세요.', true); return; }
@@ -138,6 +285,7 @@ export function enhanceFileInputs(root) {
         return;
       }
       input.dispatchEvent(new Event('change', { bubbles: true }));
+      if (!input.files?.length || pendingSignature) return;
       const suffix = rejected.length ? `, 지원하지 않는 형식 ${rejected.length}개 제외` : '';
       announce(`${source}에서 ${selected.length}개 파일을 가져왔습니다${suffix}.`);
     };
@@ -340,6 +488,144 @@ export function download(name, data, type = 'application/octet-stream') {
   setTimeout(() => URL.revokeObjectURL(url), 5000);
 }
 
+export function abortError() {
+  return new DOMException('작업이 취소되었습니다.', 'AbortError');
+}
+
+export function throwIfAborted(signal) {
+  if (signal?.aborted) throw abortError();
+}
+
+export async function readFileChunks(file, { signal, chunkSize = 2 * 1024 * 1024, onChunk, onProgress } = {}) {
+  if (typeof file?.slice !== 'function') throw new Error('파일을 읽을 수 없습니다.');
+  let offset = 0;
+  while (offset < file.size) {
+    throwIfAborted(signal);
+    const end = Math.min(file.size, offset + chunkSize);
+    const bytes = new Uint8Array(await file.slice(offset, end).arrayBuffer());
+    throwIfAborted(signal);
+    await onChunk?.(bytes, offset, file.size);
+    offset = end;
+    onProgress?.(file.size ? offset / file.size : 1);
+  }
+  if (!file.size) onProgress?.(1);
+}
+
+export function requireFeature(feature, available, fallback) {
+  if (available) return;
+  const defaults = {
+    webcrypto: '이 브라우저는 이 도구에 필요한 WebCrypto를 지원하지 않습니다. 지원 브라우저를 최신 버전으로 업데이트하세요.',
+    worker: '이 브라우저는 대용량 작업에 필요한 Web Worker를 지원하지 않습니다.',
+    canvas: '이 브라우저는 이미지 처리에 필요한 Canvas 기능을 지원하지 않습니다.',
+    imagebitmap: '이 브라우저는 이미지 디코딩에 필요한 ImageBitmap 기능을 지원하지 않습니다.',
+    wasm: '이 브라우저는 이 알고리즘에 필요한 WebAssembly를 지원하지 않습니다.',
+    clipboard: '이 브라우저 또는 현재 연결에서는 클립보드 기능을 사용할 수 없습니다.',
+    camera: '이 브라우저 또는 현재 연결에서는 카메라 기능을 사용할 수 없습니다.',
+  };
+  throw new Error(fallback || defaults[feature] || '이 브라우저에서 필요한 기능을 지원하지 않습니다.');
+}
+
+// makeIO 밖의 파일·키·아카이브 작업에 동일한 실행 상태와 취소/재시도를 제공한다.
+export function createAsyncRunner(root, cfg = {}) {
+  const status = cfg.status || h('div', {
+    class: 'io-status', role: 'status', 'aria-live': 'polite', 'aria-atomic': 'true',
+  });
+  const errorOut = cfg.errorOut || h('div', { class: 'async-error' });
+  const cancelButton = h('button', { class: 'btn small hidden', type: 'button' }, '취소');
+  const retryButton = h('button', { class: 'btn small hidden', type: 'button' }, '다시 시도');
+  const actions = h('div', { class: 'async-runner-actions' }, cancelButton, retryButton);
+  if (!cfg.status) root.append(status);
+  if (!cfg.errorOut) root.append(errorOut);
+  root.append(actions);
+
+  let running = false;
+  let controller = null;
+  let lastTask = null;
+  let sequence = 0;
+  let disposed = false;
+  const controls = () => (typeof cfg.controls === 'function' ? cfg.controls() : cfg.controls || []).filter(Boolean);
+
+  function message(text, error = false) {
+    if (disposed || !root.isConnected) return;
+    status.className = `io-status${text ? ' active' : ''}${error ? ' error' : ''}`;
+    status.textContent = text;
+  }
+
+  function setRunning(value) {
+    running = value;
+    if (!root.isConnected) return;
+    root.setAttribute('aria-busy', String(value));
+    for (const control of controls()) control.disabled = value;
+    cancelButton.classList.toggle('hidden', !value || cfg.cancelable === false);
+    cancelButton.disabled = !value;
+    retryButton.classList.add('hidden');
+  }
+
+  function cancel() {
+    if (!controller || controller.signal.aborted) return;
+    message('취소 중…');
+    cancelButton.disabled = true;
+    controller.abort();
+  }
+
+  async function run(task = lastTask) {
+    if (!task || disposed) return false;
+    if (running) {
+      message('이미 작업을 처리 중입니다. 완료하거나 취소한 뒤 다시 시도하세요.', true);
+      return false;
+    }
+    lastTask = task;
+    const my = ++sequence;
+    controller = new AbortController();
+    errorOut.replaceChildren();
+    setRunning(true);
+    message(cfg.runningMessage || '처리 중…');
+    const context = {
+      signal: controller.signal,
+      progress(text) { message(text || '처리 중…'); },
+      active() { return !disposed && my === sequence && root.isConnected && !controller.signal.aborted; },
+      download(name, data, type) {
+        if (!this.active()) return false;
+        download(name, data, type);
+        return true;
+      },
+    };
+    try {
+      const result = await task(context);
+      if (!context.active()) return false;
+      cfg.onSuccess?.(result, context);
+      message(cfg.successMessage || '처리가 완료되었습니다.');
+      return true;
+    } catch (error) {
+      const aborted = error?.name === 'AbortError' || controller.signal.aborted;
+      if (!disposed && my === sequence && root.isConnected) {
+        const detail = aborted ? '작업이 취소되었습니다.' : error?.message || String(error);
+        errorOut.replaceChildren(h('span', { class: aborted ? 'note' : 'error' }, detail));
+        message(aborted ? detail : `처리 실패: ${detail}`, !aborted);
+        retryButton.classList.toggle('hidden', aborted || cfg.retryable === false);
+        cfg.onError?.(error, context);
+      }
+      return false;
+    } finally {
+      if (my === sequence) {
+        controller = null;
+        setRunning(false);
+      }
+    }
+  }
+
+  cancelButton.addEventListener('click', cancel);
+  retryButton.addEventListener('click', () => run());
+  const cleanup = () => {
+    disposed = true;
+    sequence++;
+    controller?.abort();
+    controller = null;
+  };
+  addToolCleanup(root, cleanup);
+  return { run, cancel, cleanup, status, errorOut, cancelButton, retryButton, get running() { return running; } };
+}
+
 /* ---------- 외부 라이브러리 지연 로드 ---------- */
 const loaded = {};
 // lib: URL 문자열 또는 { url, integrity } (SRI 해시가 있으면 무결성 검증)
@@ -519,8 +805,15 @@ export function makeIO(root, cfg) {
   const transferTarget = h('select', { 'aria-label': '전달할 도구' });
   const transferInput = h('select', { 'aria-label': '전달할 입력 칸' });
   const transferGo = h('button', { class: 'btn small', type: 'button' }, '보내기');
-  const transferPanel = h('div', { class: 'transfer-panel hidden' },
-    h('span', { class: 'io-label' }, '결과 전달'), transferTarget, transferInput, transferGo,
+  const transferLabel = h('span', { class: 'io-label', id: `wtools-transfer-label-${++fieldId}` }, '결과 전달');
+  const transferConsent = h('input', { type: 'checkbox' });
+  const transferConsentWrap = h('span', { class: 'transfer-sensitive hidden' },
+    formLabel(transferConsent, '개인키·시크릿일 수 있는 민감한 값을 한 번 전달하는 데 동의합니다.'), transferConsent);
+  const transferError = h('span', { class: 'transfer-error', role: 'alert' });
+  const transferPanel = h('div', {
+    class: 'transfer-panel hidden', role: 'group', 'aria-labelledby': transferLabel.id,
+  },
+    transferLabel, transferTarget, transferInput, transferConsentWrap, transferGo, transferError,
     h('span', { class: 'transfer-privacy' }, '값은 현재 탭의 메모리에서 한 번만 전달됩니다.'));
   const status = h('div', {
     class: 'io-status', role: 'status', 'aria-live': 'polite', 'aria-atomic': 'true',
@@ -545,6 +838,10 @@ export function makeIO(root, cfg) {
     for (const input of selected?.inputs || [])
       transferInput.append(h('option', { value: input.id }, input.label));
     transferInput.classList.toggle('hidden', (selected?.inputs.length || 0) < 2);
+    const sensitive = !!transferType(selected?.type).sensitive;
+    transferConsentWrap.classList.toggle('hidden', !sensitive);
+    transferConsent.checked = false;
+    transferError.textContent = '';
   }
   transferTarget.addEventListener('change', updateTransferInputs);
   transferButton.addEventListener('click', () => {
@@ -560,6 +857,17 @@ export function makeIO(root, cfg) {
     const value = transferConfig.value
       ? transferConfig.value(transferContext)
       : cfg.outputHTML ? out.textContent : out.value;
+    const type = transferType(selected.type);
+    if (!type.validate(value)) {
+      transferError.textContent = `${type.label} 형식으로 검증되지 않아 전달하지 않았습니다.`;
+      return;
+    }
+    if (type.sensitive && !transferConsent.checked) {
+      transferError.textContent = '민감한 값 전달 동의를 먼저 선택하세요.';
+      transferConsent.focus();
+      return;
+    }
+    transferError.textContent = '';
     const setup = input.optionsByType?.[selected.type] || {};
     stageToolInput(selected.target.id, String(value), { ...setup, inputId: input.id });
     const hash = '#/tool/' + selected.target.id;
@@ -577,9 +885,19 @@ export function makeIO(root, cfg) {
     try { allowed = !transferConfig.when || transferConfig.when(context); }
     catch { allowed = false; }
     if (!allowed) return;
-    compatibleTargets = transferTargets(sourceId, transferConfig.id);
+    let outputId;
+    try { outputId = typeof transferConfig.id === 'function' ? transferConfig.id(context) : transferConfig.id; }
+    catch { return; }
+    if (!outputId) return;
+    const value = transferConfig.value
+      ? transferConfig.value(context)
+      : cfg.outputHTML ? out.textContent : out.value;
+    const declared = tools.find((item) => item.id === sourceId)?.transfer?.outputs
+      ?.find((item) => item.id === outputId);
+    if (!transferType(declared?.type).validate(value)) return;
+    compatibleTargets = transferTargets(sourceId, outputId);
     if (!compatibleTargets.length) return;
-    transferContext = context;
+    transferContext = { ...context, outputId };
     transferTarget.innerHTML = '';
     for (const item of compatibleTargets)
       transferTarget.append(h('option', { value: item.target.id }, item.target.name));
@@ -669,6 +987,12 @@ export function makeIO(root, cfg) {
     }
   }
 
+  addToolCleanup(wrap, () => {
+    seq++;
+    pending = false;
+    controller?.abort();
+    controller = null;
+  });
   if (cfg.runOnLoad || staged) run();
   return { run, cancel, inputEls, optEls, out, status, setOut, getOpts };
 }

@@ -1,5 +1,5 @@
 // 공개키 / 인증서
-import { tool, makeIO, h, kvTable, strToBytes, bytesToHex, hexToBytes, bytesToStr, bytesToB64, b64ToBytes, concatBytes, loadScript, LIB } from '../core.js';
+import { tool, makeIO, h, kvTable, strToBytes, bytesToHex, hexToBytes, bytesToStr, bytesToB64, b64ToBytes, concatBytes, loadScript, LIB, requireFeature } from '../core.js';
 
 const CAT = '공개키 / 인증서';
 
@@ -13,6 +13,7 @@ tool({
   id: 'x509-parse', cat: CAT, name: 'X.509 인증서 파싱',
   desc: 'PEM 인증서를 파싱해 주체, 발급자, 유효기간, 확장 등을 표시합니다.',
   keywords: 'x509 certificate ssl tls pem parse',
+  transfer: { inputs: [{ id: 'input', label: 'PEM 인증서', accepts: ['pem'] }] },
   render(root) {
     makeIO(root, {
       inputs: [{ id: 'input', label: 'PEM 인증서', rows: 12, placeholder: '-----BEGIN CERTIFICATE-----' }],
@@ -62,6 +63,7 @@ tool({
   id: 'asn1-parse', cat: CAT, name: 'ASN.1 Hex 파싱',
   desc: 'ASN.1 DER(Hex 문자열)를 계층 구조로 디코딩합니다.',
   keywords: 'asn1 der parse hex',
+  transfer: { inputs: [{ id: 'input', label: 'ASN.1 DER', accepts: ['asn1', 'hex', 'pem'] }] },
   render(root) {
     makeIO(root, {
       inputs: [{ id: 'input', label: 'ASN.1 DER (Hex)', rows: 8, placeholder: '3082... 또는 PEM' }],
@@ -82,12 +84,23 @@ tool({
   id: 'pem-hex', cat: CAT, name: 'PEM ↔ Hex 변환',
   desc: 'PEM(Base64) 블록과 DER Hex를 상호 변환합니다.',
   keywords: 'pem hex der base64 convert',
+  transfer: {
+    inputs: [{ id: 'input', label: 'PEM 또는 Hex', accepts: ['pem', 'hex', 'asn1'] }],
+    outputs: [
+      { id: 'pem', label: 'PEM', type: 'pem' },
+      { id: 'hex', label: 'DER Hex', type: 'hex' },
+    ],
+  },
   render(root) {
     makeIO(root, {
       inputs: [{ id: 'input', label: '입력 (PEM 또는 Hex)', rows: 10, placeholder: '-----BEGIN ...----- 또는 3082...' }],
       options: [{ id: 'label', label: 'PEM 헤더', type: 'text', size: 160, value: 'CERTIFICATE' }],
       actions: [{ id: 'toHex', label: 'PEM → Hex' }, { id: 'toPem', label: 'Hex → PEM' }],
       autorun: false, outputRows: 10,
+      transferOutput: {
+        id: ({ actionId }) => actionId === 'toPem' ? 'pem' : 'hex',
+        when: ({ result }) => !!String(result).trim(),
+      },
       async process(text, o, action) {
         await loadScript(LIB.jsrsasign);
         if (action === 'toPem') {
@@ -165,14 +178,27 @@ tool({
   id: 'jwk-pem', cat: CAT, name: 'JWK ↔ PEM 변환',
   desc: 'JWK(JSON Web Key)와 PEM(SPKI/PKCS#8)을 서로 변환하고 RFC 7638 지문(kid)을 계산합니다.',
   keywords: 'jwk pem spki pkcs8 jwt jose kid thumbprint rfc7638 rsa ec ed25519 키 변환',
+  transfer: {
+    inputs: [{ id: 'input', label: 'JWK 또는 PEM', accepts: ['jwk', 'pem'] }],
+    outputs: [
+      { id: 'pem', label: 'PEM', type: 'pem' },
+      { id: 'jwk', label: 'JWK', type: 'jwk' },
+    ],
+  },
   render(root) {
     makeIO(root, {
       inputs: [{ id: 'input', label: 'JWK(JSON) 또는 PEM', rows: 12, placeholder: '{"kty":"EC","crv":"P-256",...} 또는 -----BEGIN PUBLIC KEY-----' }],
       actions: [{ id: 'toPem', label: 'JWK → PEM' }, { id: 'toJwk', label: 'PEM → JWK' }],
       autorun: false, outputHTML: true,
+      transferOutput: {
+        id: ({ actionId }) => actionId === 'toPem' ? 'pem' : 'jwk',
+        when: ({ result }) => !!result?.querySelector?.('[data-transfer-key]'),
+        value: ({ result }) => result.querySelector('[data-transfer-key]')?.textContent || '',
+      },
       async process(text, o, action) {
         const trimmed = text.trim();
         if (!trimmed) return '';
+        requireFeature('webcrypto', globalThis.crypto?.subtle);
 
         if (action === 'toPem') {
           let jwk;
@@ -193,7 +219,7 @@ tool({
           }
           return h('div', null,
             kvTable([['키 종류', `${jwk.kty}${jwk.crv ? ' / ' + jwk.crv : ''}`], ['PEM 종류', label], ['지문 (kid)', await jwkThumbprint(jwk)]]),
-            h('h3', null, 'PEM'), h('pre', { class: 'out-html' }, pem));
+            h('h3', null, 'PEM'), h('pre', { class: 'out-html', 'data-transfer-key': true }, pem));
         }
 
         const isPrivate = /-----BEGIN [\w ]*PRIVATE KEY-----/.test(trimmed);
@@ -233,7 +259,7 @@ tool({
         jwk.kid = await jwkThumbprint(jwk);
         return h('div', null,
           kvTable([['키 종류', `${jwk.kty}${jwk.crv ? ' / ' + jwk.crv : ''}`], ['PEM 종류', isPrivate ? 'PRIVATE KEY' : 'PUBLIC KEY'], ['지문 (kid)', jwk.kid]]),
-          h('h3', null, 'JWK'), h('pre', { class: 'out-html' }, JSON.stringify(jwk, null, 2)));
+          h('h3', null, 'JWK'), h('pre', { class: 'out-html', 'data-transfer-key': true }, JSON.stringify(jwk, null, 2)));
       },
       note: 'PEM에는 알고리즘 정보가 충분하지 않아 RSA와 EC(P-256/384/521), Ed25519를 차례로 시도합니다. "alg" 항목은 원본 JWK에 있을 때만 유지됩니다.',
     });
@@ -293,6 +319,7 @@ tool({
   id: 'privkey-info', cat: CAT, name: 'RSA/EC 개인키 정보',
   desc: 'PEM 개인키에서 알고리즘, 키 크기, 공개키 등의 정보를 추출합니다.',
   keywords: 'private key rsa ec dsa info modulus',
+  transfer: { inputs: [{ id: 'input', label: 'PEM 개인키', accepts: ['pem'] }] },
   render(root) {
     makeIO(root, {
       inputs: [{ id: 'input', label: 'PEM 개인키', rows: 12, placeholder: '-----BEGIN PRIVATE KEY-----' }],

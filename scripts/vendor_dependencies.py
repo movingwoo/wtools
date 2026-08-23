@@ -57,8 +57,14 @@ def transformed(asset_id: str, data: bytes) -> bytes:
   return text.encode('utf-8')
 
 
-def update(check: bool) -> None:
-  for asset_id, entry in registry()['vendored'].items():
+def update(check: bool, selected: set[str]) -> None:
+  entries = registry()['vendored']
+  unknown = selected - set(entries)
+  if unknown:
+    raise ValueError(f'등록되지 않은 자산입니다: {", ".join(sorted(unknown))}')
+  for asset_id, entry in entries.items():
+    if selected and asset_id not in selected:
+      continue
     request = urllib.request.Request(entry['source'], headers={'User-Agent': 'W-Tools vendor updater'})
     with urllib.request.urlopen(request, timeout=30) as response:
       source = response.read()
@@ -80,9 +86,10 @@ def update(check: bool) -> None:
 def main() -> int:
   parser = argparse.ArgumentParser(description='외부 ESM/WASM 검토본을 갱신합니다.')
   parser.add_argument('--check', action='store_true', help='다운로드한 원본과 로컬 파일이 같은지만 검사')
+  parser.add_argument('--asset', action='append', default=[], help='지정한 등록부 자산만 처리합니다(반복 가능).')
   args = parser.parse_args()
   try:
-    update(args.check)
+    update(args.check, set(args.asset))
   except (OSError, ValueError, urllib.error.URLError) as error:
     print(f'제3자 자산 갱신 실패: {error}', file=sys.stderr)
     return 1

@@ -593,7 +593,7 @@ export const TOOL_MANIFESTS = Object.freeze([
     "desc": "두 JSON의 구조적 차이(추가/삭제/변경된 경로)를 비교합니다.",
     "keywords": "json compare diff",
     "module": "./tools/devfmt-diff.js",
-    "externalLibrary": true
+    "externalLibrary": false
   },
   {
     "id": "text-diff",
@@ -602,7 +602,7 @@ export const TOOL_MANIFESTS = Object.freeze([
     "desc": "두 텍스트의 차이를 비교하고 통합 diff 파일로 내려받습니다.",
     "keywords": "diff compare text patch unified whitespace difference 비교 공백",
     "module": "./tools/devfmt-diff.js",
-    "externalLibrary": true
+    "externalLibrary": false
   },
   {
     "id": "regex-tester",
@@ -611,7 +611,7 @@ export const TOOL_MANIFESTS = Object.freeze([
     "desc": "정규식을 실시간으로 테스트하고 검색 가능한 JavaScript 정규식 치트시트를 제공합니다.",
     "keywords": "regex regexp pattern match replace cheat sheet reference 문법 치트시트 정규표현식",
     "module": "./tools/devfmt-diff.js",
-    "externalLibrary": true
+    "externalLibrary": false
   },
   {
     "id": "crontab",
@@ -647,7 +647,7 @@ export const TOOL_MANIFESTS = Object.freeze([
     "desc": "camelCase, snake_case, kebab-case, PascalCase 등으로 변환합니다.",
     "keywords": "camel snake kebab pascal case",
     "module": "./tools/stringtools.js",
-    "externalLibrary": true
+    "externalLibrary": false
   },
   {
     "id": "obfuscator",
@@ -656,7 +656,7 @@ export const TOOL_MANIFESTS = Object.freeze([
     "desc": "텍스트를 눈으로는 비슷하지만 다른 문자로 바꾸거나(호모글리프), 제로폭 문자 삽입, 전각, 리트 표기 등으로 난독화합니다.",
     "keywords": "obfuscate homoglyph zero width leet",
     "module": "./tools/stringtools.js",
-    "externalLibrary": true
+    "externalLibrary": false
   },
   {
     "id": "slugify",
@@ -665,7 +665,7 @@ export const TOOL_MANIFESTS = Object.freeze([
     "desc": "제목을 URL에 쓸 수 있는 슬러그로 변환합니다.",
     "keywords": "slug url seo",
     "module": "./tools/stringtools.js",
-    "externalLibrary": true
+    "externalLibrary": false
   },
   {
     "id": "text-stats",
@@ -674,7 +674,7 @@ export const TOOL_MANIFESTS = Object.freeze([
     "desc": "글자 수, 단어 수, 줄 수, 바이트 수 등 텍스트 통계를 표시합니다.",
     "keywords": "count characters words lines statistics",
     "module": "./tools/stringtools.js",
-    "externalLibrary": true
+    "externalLibrary": false
   },
   {
     "id": "unicode-inspect",
@@ -683,7 +683,7 @@ export const TOOL_MANIFESTS = Object.freeze([
     "desc": "문자마다 코드포인트, UTF-8/UTF-16 바이트, 종류를 표로 보여줍니다.",
     "keywords": "unicode codepoint inspect utf8 utf16 character 문자 코드포인트 분석 grapheme",
     "module": "./tools/stringtools.js",
-    "externalLibrary": true
+    "externalLibrary": false
   },
   {
     "id": "invisible-chars",
@@ -692,7 +692,7 @@ export const TOOL_MANIFESTS = Object.freeze([
     "desc": "제로폭 문자, BOM, 양방향 서식, 특수 공백, 혼동되는 위장 문자를 찾아내고 제거합니다.",
     "keywords": "zero width zwsp bom nbsp invisible hidden homoglyph bidi trojan source 제로폭 숨은문자 공백 위장",
     "module": "./tools/stringtools.js",
-    "externalLibrary": true
+    "externalLibrary": false
   },
   {
     "id": "emoji-picker",
@@ -701,7 +701,7 @@ export const TOOL_MANIFESTS = Object.freeze([
     "desc": "유니코드 전체 이모지(약 1,900개)를 한국어/영어로 검색하고 클릭해서 복사합니다.",
     "keywords": "emoji picker copy unicode",
     "module": "./tools/stringtools.js",
-    "externalLibrary": true
+    "externalLibrary": false
   },
   {
     "id": "ascii-art",
@@ -710,7 +710,7 @@ export const TOOL_MANIFESTS = Object.freeze([
     "desc": "영문과 숫자를 큰 ASCII 문자 배너로 변환합니다. (FIGlet)",
     "keywords": "ascii art figlet banner 텍스트 배너 아스키 아트",
     "module": "./tools/stringtools.js",
-    "externalLibrary": true
+    "externalLibrary": false
   },
   {
     "id": "hangul-tools",
@@ -719,7 +719,7 @@ export const TOOL_MANIFESTS = Object.freeze([
     "desc": "한/영 키를 잘못 놓고 친 텍스트 변환(dkssud→안녕), 초성 추출, 로마자 표기, 자모 분해를 제공합니다.",
     "keywords": "hangul korean 한영 오타 변환 초성 로마자 romanize jamo dkssud",
     "module": "./tools/stringtools.js",
-    "externalLibrary": true
+    "externalLibrary": false
   },
   {
     "id": "lorem-ipsum",
@@ -728,7 +728,7 @@ export const TOOL_MANIFESTS = Object.freeze([
     "desc": "레이아웃 확인용 채움 텍스트를 영문(Lorem Ipsum) 또는 한글로 생성합니다.",
     "keywords": "lorem ipsum dummy filler placeholder text 더미 채움",
     "module": "./tools/stringtools.js",
-    "externalLibrary": true
+    "externalLibrary": false
   },
   {
     "id": "dummy-data",
@@ -737,7 +737,7 @@ export const TOOL_MANIFESTS = Object.freeze([
     "desc": "테스트용 가짜 인물 데이터(이름/이메일/전화번호 등)를 JSON, CSV, SQL로 생성합니다.",
     "keywords": "dummy mock fake data json csv sql seed 테스트 데이터",
     "module": "./tools/stringtools.js",
-    "externalLibrary": true
+    "externalLibrary": false
   },
   {
     "id": "hash",

@@ -1,7 +1,18 @@
 // 코드 포맷팅 / 개발 유틸리티 — Diff / 정규식 테스트
-import { tool, makeIO, h, download, loadScript, LIB } from '../core.js';
+import { tool, makeIO, h, download } from '../core.js';
 
 const CAT = '코드 포맷팅 / 개발 유틸리티';
+let diffEnginePromise;
+
+function loadDiffEngine() {
+  if (!diffEnginePromise) {
+    diffEnginePromise = import('../lib/diff/myers.js').catch((error) => {
+      diffEnginePromise = null;
+      throw error;
+    });
+  }
+  return diffEnginePromise;
+}
 
 /* ---------- Diff ---------- */
 function jsonDiff(a, b, path, out) {
@@ -64,8 +75,8 @@ tool({
       ],
       outputHTML: true,
       async process(v, o) {
-        await loadScript(LIB.jsdiff);
-        const fn = o.mode === 'words' ? Diff.diffWords : o.mode === 'chars' ? Diff.diffChars : Diff.diffLines;
+        const { createUnifiedPatch, diffChars, diffLines, diffWords } = await loadDiffEngine();
+        const fn = o.mode === 'words' ? diffWords : o.mode === 'chars' ? diffChars : diffLines;
         const a = o.ignoreWhitespace && o.mode === 'chars' ? v.a.replace(/\s+/g, '') : v.a;
         const b = o.ignoreWhitespace && o.mode === 'chars' ? v.b.replace(/\s+/g, '') : v.b;
         const parts = fn(a, b, { ignoreWhitespace: o.ignoreWhitespace });
@@ -75,7 +86,7 @@ tool({
             : p.removed ? (o.mode === 'lines' ? 'diff-line-del' : 'diff-del') : null;
           box.append(cls ? h('span', { class: cls }, p.value) : p.value);
         }
-        const patch = Diff.createTwoFilesPatch('텍스트 A.txt', '텍스트 B.txt', v.a, v.b, '', '', {
+        const patch = createUnifiedPatch('텍스트 A.txt', '텍스트 B.txt', v.a, v.b, {
           context: 3, ignoreWhitespace: o.ignoreWhitespace,
         });
         const changed = parts.some((part) => part.added || part.removed);

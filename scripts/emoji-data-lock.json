@@ -1,0 +1,40 @@
+{
+  "schema": 1,
+  "emojiVersion": "17.0",
+  "unicodeVersion": "17.0.0",
+  "cldrVersion": "48.2",
+  "cldrTag": "release-48-2",
+  "groupCounts": {
+    "0": 171,
+    "1": 388,
+    "3": 160,
+    "4": 131,
+    "5": 219,
+    "6": 85,
+    "7": 266,
+    "8": 224,
+    "9": 270
+  },
+  "sources": {
+    "emoji": {
+      "url": "https://www.unicode.org/Public/17.0.0/emoji/emoji-test.txt",
+      "integrity": "sha384-kgIXu+mtqmvu3keD053zCfu6K5ePowRAIcm47kr6VvWYrtDEudoWdqMHB7DcYpS7"
+    },
+    "ko": {
+      "url": "https://raw.githubusercontent.com/unicode-org/cldr/release-48-2/common/annotations/ko.xml",
+      "integrity": "sha384-TvyLLaC27inmj5Qh8y8VZ4Fu+tf4YhcI65EjtJtB4LjO3R6jv8MwveLhQkkCPBGI"
+    },
+    "koDerived": {
+      "url": "https://raw.githubusercontent.com/unicode-org/cldr/release-48-2/common/annotationsDerived/ko.xml",
+      "integrity": "sha384-DeEgGjCtijxrndfth9Cu/UtZPfG9pb0U0k8PprJeeUuYdagoHN9bqWMdBU7IENuP"
+    },
+    "en": {
+      "url": "https://raw.githubusercontent.com/unicode-org/cldr/release-48-2/common/annotations/en.xml",
+      "integrity": "sha384-YUkZszERNWzeNkdrgDlRTp9Q7wdOjNG09TUd4KngH6GFZ6T82fNbuVOdvj8rPZad"
+    },
+    "enDerived": {
+      "url": "https://raw.githubusercontent.com/unicode-org/cldr/release-48-2/common/annotationsDerived/en.xml",
+      "integrity": "sha384-cGQsJX7wUsp2Mx0ff6t7g4l47mI5G2FY6ZqpbIqpG2arsFFLuc3kfv0EwWUrQrii"
+    }
+  }
+}

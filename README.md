@@ -133,7 +133,7 @@ scripts/            의존성 없는 저장소·정적 사이트 검증 스크�
 DEVELOPMENT_GUIDE.md 구현 구조, 크기 예산, 의존성 교체 및 릴리즈 규칙
 ```
 
-jsrsasign, pako, figlet 같은 classic script는 SRI로 검증하면서 해당 도구를 열 때 CDN에서 **지연 로드**합니다.  
+jsrsasign, pako 같은 classic script는 SRI로 검증하면서 해당 도구를 열 때 CDN에서 **지연 로드**합니다.  
 OpenPGP, TOML, GIF, Brotli·Zstandard·Bzip2·LZ4의 동적 ESM/WASM은 하위 import까지 검토한 로컬 사본을 사용합니다. crypto-js와 js-yaml만 페이지를 열 때 불러옵니다.
 
 ## 새 도구 추가
@@ -166,4 +166,5 @@ tool({
 ## 라이선스
 
 프로젝트 코드는 [MIT License](LICENSE)를 따릅니다.  
-저장소에 포함된 EFF 단어 목록의 출처와 별도 라이선스는 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)를 참고하세요.
+저장소에 포함된 EFF 단어 목록·FIGlet 글꼴·이모지 검색 데이터의 출처와 별도 라이선스는
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)를 참고하세요.

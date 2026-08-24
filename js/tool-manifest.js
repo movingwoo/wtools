@@ -1198,7 +1198,7 @@ export const TOOL_MANIFESTS = Object.freeze([
     "desc": "CIDR 표기로 네트워크 주소, 브로드캐스트, 사용 가능 호스트 범위 등을 계산합니다.",
     "keywords": "subnet cidr netmask network broadcast",
     "module": "./tools/network.js",
-    "externalLibrary": true
+    "externalLibrary": false
   },
   {
     "id": "ipv4-convert",
@@ -1207,7 +1207,7 @@ export const TOOL_MANIFESTS = Object.freeze([
     "desc": "IPv4를 10진수, 2진수, 16진수 등으로 변환합니다.",
     "keywords": "ipv4 decimal binary hex integer",
     "module": "./tools/network.js",
-    "externalLibrary": true
+    "externalLibrary": false
   },
   {
     "id": "ip-range",
@@ -1216,7 +1216,7 @@ export const TOOL_MANIFESTS = Object.freeze([
     "desc": "시작-끝 IP 범위를 최소 CIDR 블록들로 변환하거나, CIDR을 주소 목록으로 전개합니다.",
     "keywords": "ip range cidr expand list",
     "module": "./tools/network.js",
-    "externalLibrary": true
+    "externalLibrary": false
   },
   {
     "id": "subnet6",
@@ -1225,7 +1225,7 @@ export const TOOL_MANIFESTS = Object.freeze([
     "desc": "IPv6 CIDR의 네트워크 주소, 주소 범위, 개수, 주소 종류, 역방향 DNS를 계산합니다.",
     "keywords": "ipv6 subnet cidr prefix network range ip6.arpa reverse dns 서브넷",
     "module": "./tools/network.js",
-    "externalLibrary": true
+    "externalLibrary": false
   },
   {
     "id": "ipv6-ula",
@@ -1234,7 +1234,7 @@ export const TOOL_MANIFESTS = Object.freeze([
     "desc": "RFC 4193에 따라 고유 로컬 IPv6 주소(ULA) 프리픽스를 생성합니다.",
     "keywords": "ipv6 ula unique local rfc4193",
     "module": "./tools/network.js",
-    "externalLibrary": true
+    "externalLibrary": false
   },
   {
     "id": "mac-format",
@@ -1243,7 +1243,7 @@ export const TOOL_MANIFESTS = Object.freeze([
     "desc": "MAC 주소의 구분자 형식을 변환하거나 랜덤 MAC을 생성합니다.",
     "keywords": "mac address format vendor oui random",
     "module": "./tools/network.js",
-    "externalLibrary": true
+    "externalLibrary": false
   },
   {
     "id": "user-agent",
@@ -1252,7 +1252,7 @@ export const TOOL_MANIFESTS = Object.freeze([
     "desc": "User-Agent 문자열에서 브라우저, OS, 디바이스 정보를 추출합니다.",
     "keywords": "user agent parse browser os device",
     "module": "./tools/network.js",
-    "externalLibrary": true
+    "externalLibrary": false
   },
   {
     "id": "dns-lookup",
@@ -1267,7 +1267,7 @@ export const TOOL_MANIFESTS = Object.freeze([
       "cors": true
     },
     "module": "./tools/network.js",
-    "externalLibrary": true
+    "externalLibrary": false
   },
   {
     "id": "extract",
@@ -1276,7 +1276,7 @@ export const TOOL_MANIFESTS = Object.freeze([
     "desc": "텍스트에서 이메일, URL, 도메인, IP 주소를 추출합니다.",
     "keywords": "extract email url domain ip regex",
     "module": "./tools/network.js",
-    "externalLibrary": true
+    "externalLibrary": false
   },
   {
     "id": "csp-header",
@@ -1285,7 +1285,7 @@ export const TOOL_MANIFESTS = Object.freeze([
     "desc": "체크박스로 Content-Security-Policy를 구성하고 위험하거나 빠진 지시어를 확인합니다.",
     "keywords": "csp content security policy header 보안 헤더 unsafe-inline unsafe-eval",
     "module": "./tools/network.js",
-    "externalLibrary": true
+    "externalLibrary": false
   },
   {
     "id": "http-status",
@@ -1294,7 +1294,7 @@ export const TOOL_MANIFESTS = Object.freeze([
     "desc": "HTTP 상태 코드 목록과 의미를 검색합니다.",
     "keywords": "http status code reference 404 500",
     "module": "./tools/network.js",
-    "externalLibrary": true
+    "externalLibrary": false
   },
   {
     "id": "mime-types",
@@ -1303,7 +1303,7 @@ export const TOOL_MANIFESTS = Object.freeze([
     "desc": "MIME 타입과 파일 확장자를 상호 검색합니다.",
     "keywords": "mime type content-type extension",
     "module": "./tools/network.js",
-    "externalLibrary": true
+    "externalLibrary": false
   },
   {
     "id": "keycode",
@@ -1312,7 +1312,7 @@ export const TOOL_MANIFESTS = Object.freeze([
     "desc": "키보드 키를 누르면 key, code, keyCode 값을 표시합니다.",
     "keywords": "keycode keyboard event key which",
     "module": "./tools/network.js",
-    "externalLibrary": true
+    "externalLibrary": false
   },
   {
     "id": "device-info",
@@ -1321,7 +1321,7 @@ export const TOOL_MANIFESTS = Object.freeze([
     "desc": "현재 브라우저·화면·시스템 정보를 표시합니다.",
     "keywords": "device screen browser info viewport",
     "module": "./tools/network.js",
-    "externalLibrary": true
+    "externalLibrary": false
   },
   {
     "id": "unix-time",
@@ -1384,7 +1384,7 @@ export const TOOL_MANIFESTS = Object.freeze([
     "desc": "텍스트나 URL을 QR 코드로 생성하고 PNG로 저장합니다.",
     "keywords": "qr code generate url png",
     "module": "./tools/media.js",
-    "externalLibrary": true
+    "externalLibrary": false
   },
   {
     "id": "wifi-qr",
@@ -1393,7 +1393,7 @@ export const TOOL_MANIFESTS = Object.freeze([
     "desc": "WiFi 접속 정보를 QR 코드로 만들어 스캔으로 연결할 수 있게 합니다.",
     "keywords": "wifi qr wireless password ssid",
     "module": "./tools/media.js",
-    "externalLibrary": true
+    "externalLibrary": false
   },
   {
     "id": "base64-image",
@@ -1421,7 +1421,7 @@ export const TOOL_MANIFESTS = Object.freeze([
       ]
     },
     "module": "./tools/media.js",
-    "externalLibrary": true
+    "externalLibrary": false
   },
   {
     "id": "image-convert",
@@ -1430,7 +1430,7 @@ export const TOOL_MANIFESTS = Object.freeze([
     "desc": "이미지를 회전·반전·자르기·크기 조절한 뒤 다시 인코딩하고 여러 결과를 ZIP으로 내려받습니다.",
     "keywords": "image convert png jpeg webp gif bmp svg resize crop rotate flip compress quality metadata exif orientation 회전 반전 자르기",
     "module": "./tools/media.js",
-    "externalLibrary": true
+    "externalLibrary": false
   },
   {
     "id": "bg-remove",
@@ -1439,7 +1439,7 @@ export const TOOL_MANIFESTS = Object.freeze([
     "desc": "단색 배경(로고, 도장, 스캔 이미지 등)을 투명하게 만들어 PNG로 저장합니다.",
     "keywords": "background transparent remove alpha chroma key png",
     "module": "./tools/media.js",
-    "externalLibrary": true
+    "externalLibrary": false
   },
   {
     "id": "qr-read",
@@ -1448,7 +1448,7 @@ export const TOOL_MANIFESTS = Object.freeze([
     "desc": "카메라로 QR·바코드를 실시간 스캔하거나 이미지와 클립보드의 QR 코드를 해독합니다.",
     "keywords": "qr barcode code 128 ean data matrix camera read scan decode reader wifi",
     "module": "./tools/media.js",
-    "externalLibrary": true
+    "externalLibrary": false
   },
   {
     "id": "exif-viewer",
@@ -1457,7 +1457,7 @@ export const TOOL_MANIFESTS = Object.freeze([
     "desc": "사진의 EXIF(촬영 정보, GPS 위치)를 확인하고, 재압축 없이 메타데이터만 제거합니다.",
     "keywords": "exif metadata gps remove strip privacy jpeg png 위치정보",
     "module": "./tools/media.js",
-    "externalLibrary": true
+    "externalLibrary": false
   },
   {
     "id": "favicon-gen",
@@ -1466,7 +1466,7 @@ export const TOOL_MANIFESTS = Object.freeze([
     "desc": "이미지 한 장으로 favicon.ico와 여러 크기의 PNG 파비콘, HTML 태그를 만듭니다.",
     "keywords": "favicon ico png apple touch icon generator site",
     "module": "./tools/media.js",
-    "externalLibrary": true
+    "externalLibrary": false
   },
   {
     "id": "image-palette",
@@ -1475,7 +1475,7 @@ export const TOOL_MANIFESTS = Object.freeze([
     "desc": "이미지에서 대표 색상 팔레트를 추출합니다. (median cut 방식)",
     "keywords": "palette color extract dominant image 색상 추출",
     "module": "./tools/media.js",
-    "externalLibrary": true
+    "externalLibrary": false
   },
   {
     "id": "image-ascii-art",
@@ -1484,7 +1484,7 @@ export const TOOL_MANIFESTS = Object.freeze([
     "desc": "이미지의 밝기를 분석해 아스키아트(텍스트 그림)로 바꿉니다. 문자 수(세부 정도), 문자셋, 색상 유지 여부를 조절할 수 있습니다.",
     "keywords": "ascii art image to text 텍스트 아트 아스키 그림 변환기",
     "module": "./tools/media.js",
-    "externalLibrary": true
+    "externalLibrary": false
   },
   {
     "id": "statistics",

@@ -130,6 +130,90 @@ test('QR 엔진: 바이트 모드 용량 경계와 고정 행렬', async ({ page
   expect(result.overflow).toContain('UTF-8 2,954바이트');
 });
 
+test('QR 디코더: 원근·반전 이미지와 Reed–Solomon 손상을 복원', async ({ page }) => {
+  await page.goto('/');
+  const result = await page.evaluate(async () => {
+    const { encodeQr, qrFunctionModules } = await import('/js/lib/qr/encoder.js');
+    const { decodeQr, decodeQrMatrix } = await import('/js/lib/qr/decoder.js');
+    const project = (source, target) => {
+      const rows = [];
+      for (let i = 0; i < 4; i++) {
+        const { x: u, y: v } = source[i], { x, y } = target[i];
+        rows.push([u, v, 1, 0, 0, 0, -x * u, -x * v, x]);
+        rows.push([0, 0, 0, u, v, 1, -y * u, -y * v, y]);
+      }
+      for (let column = 0; column < 8; column++) {
+        let pivot = column;
+        for (let row = column + 1; row < 8; row++)
+          if (Math.abs(rows[row][column]) > Math.abs(rows[pivot][column])) pivot = row;
+        [rows[pivot], rows[column]] = [rows[column], rows[pivot]];
+        const divisor = rows[column][column];
+        for (let i = column; i < 9; i++) rows[column][i] /= divisor;
+        for (let row = 0; row < 8; row++) {
+          if (row === column) continue;
+          const scale = rows[row][column];
+          for (let i = column; i < 9; i++) rows[row][i] -= scale * rows[column][i];
+        }
+      }
+      const values = rows.map((row) => row[8]);
+      return (x, y) => {
+        const divisor = values[6] * x + values[7] * y + 1;
+        return {
+          x: (values[0] * x + values[1] * y + values[2]) / divisor,
+          y: (values[3] * x + values[4] * y + values[5]) / divisor,
+        };
+      };
+    };
+
+    const text = 'perspective-' + 'A'.repeat(30);
+    const qr = encodeQr(text, { level: 'H' });
+    const width = 360, height = 340, extent = qr.size + 8;
+    const inverse = project([
+      { x: 55, y: 30 }, { x: 305, y: 55 }, { x: 30, y: 310 }, { x: 330, y: 285 },
+    ], [
+      { x: 0, y: 0 }, { x: extent, y: 0 }, { x: 0, y: extent }, { x: extent, y: extent },
+    ]);
+    const render = (inverted) => {
+      const rgba = new Uint8Array(width * height * 4);
+      for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
+        const point = inverse(x + 0.5, y + 0.5);
+        const column = Math.floor(point.x) - 4, row = Math.floor(point.y) - 4;
+        const dark = !!(column >= 0 && row >= 0 && column < qr.size && row < qr.size && qr.modules[row][column]);
+        const value = dark !== inverted ? 0 : 255;
+        const offset = (y * width + x) * 4;
+        rgba[offset] = rgba[offset + 1] = rgba[offset + 2] = value;
+        rgba[offset + 3] = 255;
+      }
+      return decodeQr(rgba, width, height);
+    };
+
+    const damaged = qr.modules.map((row) => row.slice());
+    const functions = qrFunctionModules(qr.version);
+    let changed = 0;
+    for (let row = 0; row < qr.size && changed < 8; row++) for (let column = 0; column < qr.size && changed < 8; column++) {
+      if (!functions[row][column]) { damaged[row][column] ^= 1; changed++; }
+    }
+    const restored = decodeQrMatrix(damaged);
+    const maximum = decodeQrMatrix(encodeQr('A'.repeat(2953), { level: 'L' }).modules);
+    let invalid = '';
+    try { decodeQrMatrix([[1]]); } catch (error) { invalid = error.message; }
+    return {
+      normal: render(false)?.data,
+      inverted: render(true)?.data,
+      restored: restored.data,
+      corrected: restored.corrected,
+      maximum: { length: maximum.data.length, version: maximum.version },
+      invalid,
+    };
+  });
+  expect(result.normal).toBe('perspective-' + 'A'.repeat(30));
+  expect(result.inverted).toBe(result.normal);
+  expect(result.restored).toBe(result.normal);
+  expect(result.corrected).toBeGreaterThan(0);
+  expect(result.maximum).toEqual({ length: 2953, version: 40 });
+  expect(result.invalid).toContain('행렬 크기');
+});
+
 async function qrCanvasPng(page) {
   const dataUri = await page.locator('#content canvas').evaluate((canvas) => canvas.toDataURL('image/png'));
   return Buffer.from(dataUri.split(',')[1], 'base64');
@@ -191,6 +275,26 @@ test('QR 생성 도구와 OTP는 외부 qrcode 스크립트를 요청하지 않�
   await openTool(page, 'otp');
   await page.getByRole('button', { name: 'URI / QR 생성' }).click();
   await expect(page.locator('#content canvas')).toBeVisible();
+  expect(requests).toBe(0);
+});
+
+test('QR 리더와 GIF 변환은 제거한 제3자 자산을 요청하지 않는다', async ({ page }) => {
+  let requests = 0;
+  await page.route('https://cdn.jsdelivr.net/npm/jsqr@1.4.0/**', async (route) => {
+    requests++;
+    await route.abort();
+  });
+  await page.route('**/assets/vendor/gifenc-1.0.3.mjs', async (route) => {
+    requests++;
+    await route.abort();
+  });
+  await openTool(page, 'qr-read');
+  await uploadFile(page.locator('#content'), 'QR 이미지 선택 (브라우저 밖으로 전송되지 않습니다)', {
+    name: 'red.png', mimeType: 'image/png', buffer: RED_PNG,
+  });
+  await expect(page.locator('#content .error')).toContainText('QR 코드를 찾지 못했습니다.');
+  await openTool(page, 'image-convert');
+  await convertOnce(page, { format: 'image/gif' });
   expect(requests).toBe(0);
 });
 
@@ -347,6 +451,98 @@ test('base64-image: 이미지 → Base64 → 이미지 왕복', async ({ page })
   const saved = await grabDownload(page, () => content.getByRole('button', { name: '이미지 저장' }).click());
   expect(saved.name).toBe('image.png');
   expect(saved.bytes.equals(RED_PNG)).toBe(true);
+});
+
+test('GIF 엔진: 양자화·투명도·LZW와 다중 프레임을 독립 브라우저 디코더로 검증', async ({ page }) => {
+  await page.goto('/');
+  const result = await page.evaluate(async () => {
+    const { encodeGif, GifWriter } = await import('/js/lib/media/gif.js');
+    const decodePixels = async (bytes) => {
+      const bitmap = await createImageBitmap(new Blob([bytes], { type: 'image/gif' }));
+      const canvas = document.createElement('canvas');
+      canvas.width = bitmap.width; canvas.height = bitmap.height;
+      const context = canvas.getContext('2d');
+      context.drawImage(bitmap, 0, 0);
+      bitmap.close();
+      return [...context.getImageData(0, 0, canvas.width, canvas.height).data];
+    };
+    const rgba = Uint8Array.of(
+      255, 0, 0, 255, 0, 255, 0, 255, 0, 0, 255, 255, 0, 0, 0, 255,
+    );
+    const single = encodeGif(rgba, 4, 1, { maximumColors: 4 });
+    const transparent = encodeGif(Uint8Array.of(1, 2, 3, 0, 255, 0, 0, 255), 2, 1);
+
+    const palette = Uint8Array.of(255, 0, 0, 0, 0, 255);
+    const animated = new GifWriter(2, 1, { palette, loop: 0 });
+    animated.addFrame(Uint8Array.of(0, 1), { delay: 5 });
+    animated.addFrame(Uint8Array.of(1, 0), { delay: 10 });
+    const animation = animated.finish();
+    let offset = 13 + 3 * (1 << ((animation[10] & 7) + 1)), frames = 0;
+    while (offset < animation.length) {
+      const marker = animation[offset++];
+      if (marker === 0x3b) break;
+      if (marker === 0x21) {
+        offset++;
+        while (animation[offset]) offset += animation[offset] + 1;
+        offset++;
+      } else if (marker === 0x2c) {
+        frames++;
+        offset += 8;
+        const packed = animation[offset++];
+        if (packed & 0x80) offset += 3 * (1 << ((packed & 7) + 1));
+        offset++;
+        while (animation[offset]) offset += animation[offset] + 1;
+        offset++;
+      } else throw new Error('GIF 블록 마커가 올바르지 않습니다.');
+    }
+
+    const large = new Uint8Array(1024 * 1024 * 4);
+    for (let i = 0; i < large.length; i += 4) {
+      const pixel = i / 4;
+      large[i] = pixel & 255;
+      large[i + 1] = (pixel >>> 4) & 255;
+      large[i + 2] = (pixel >>> 8) & 255;
+      large[i + 3] = 255;
+    }
+    const largeGif = encodeGif(large, 1024, 1024);
+    const largeBitmap = await createImageBitmap(new Blob([largeGif], { type: 'image/gif' }));
+    const largeSize = [largeBitmap.width, largeBitmap.height];
+    largeBitmap.close();
+    let invalid = '';
+    try { encodeGif(new Uint8Array(), 0, 0); } catch (error) { invalid = error.message; }
+    return {
+      header: new TextDecoder().decode(single.subarray(0, 6)),
+      pixels: await decodePixels(single),
+      transparentPixels: await decodePixels(transparent),
+      frames,
+      loopExtension: new TextDecoder().decode(animation).includes('NETSCAPE2.0'),
+      trailer: animation[animation.length - 1],
+      largeSize,
+      invalid,
+    };
+  });
+  expect(result.header).toBe('GIF89a');
+  expect(result.pixels).toEqual([
+    255, 0, 0, 255, 0, 255, 0, 255, 0, 0, 255, 255, 0, 0, 0, 255,
+  ]);
+  expect(result.transparentPixels).toEqual([0, 0, 0, 0, 255, 0, 0, 255]);
+  expect(result).toMatchObject({ frames: 2, loopExtension: true, trailer: 0x3b, largeSize: [1024, 1024] });
+  expect(result.invalid).toContain('크기와 RGBA 픽셀 수');
+});
+
+test('image-convert: 대용량 GIF Worker 작업을 취소', async ({ page }) => {
+  const largePng = makePng(1600, 1600, (x, y) => [x & 255, y & 255, (x * 17 + y * 31) & 255]);
+  await openTool(page, 'image-convert');
+  const content = page.locator('#content');
+  await uploadFile(content, '이미지 선택 (여러 장 가능)', {
+    name: 'large.png', mimeType: 'image/png', buffer: largePng,
+  });
+  await expect(content.getByText('변환이 완료되었습니다.')).toBeVisible();
+  await setOption(content, '출력 포맷', 'image/gif');
+  const cancel = content.getByRole('button', { name: '취소', exact: true });
+  await expect(cancel).toBeVisible();
+  await cancel.click();
+  await expect(content).toContainText('작업이 취소되었습니다.');
 });
 
 /* ---------- image-convert ---------- */

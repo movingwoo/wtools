@@ -1,6 +1,6 @@
 // 이미지 / 미디어 / QR
 import {
-  tool, makeIO, h, formLabel, kvTable, loadScript, loadModule, vendorUrl, LIB, download,
+  tool, makeIO, h, formLabel, kvTable, download,
   downloadZip, copyBtn, bytesToB64, throwIfAborted, requireFeature, formatBytes, createAsyncRunner,
 } from '../core.js';
 
@@ -268,15 +268,32 @@ function encodeBMP({ data, width, height }) {
   return new Blob([buf], { type: 'image/bmp' });
 }
 
-let gifenc = null;
-async function encodeGIF(imageData) {
-  gifenc ??= await loadModule(vendorUrl('gifenc'));
-  const palette = gifenc.quantize(imageData.data, 256);
-  const index = gifenc.applyPalette(imageData.data, palette);
-  const gif = gifenc.GIFEncoder();
-  gif.writeFrame(index, imageData.width, imageData.height, { palette });
-  gif.finish();
-  return new Blob([gif.bytes()], { type: 'image/gif' });
+async function encodeGIF(imageData, signal) {
+  throwIfAborted(signal);
+  const worker = new Worker(new URL('../workers/gif-encode.js', import.meta.url), { type: 'module' });
+  return new Promise((resolve, reject) => {
+    const finish = () => {
+      signal?.removeEventListener('abort', abort);
+      worker.terminate();
+    };
+    const abort = () => {
+      finish();
+      reject(new DOMException('GIF 인코딩이 취소되었습니다.', 'AbortError'));
+    };
+    worker.onmessage = ({ data }) => {
+      finish();
+      if (data.error) reject(new Error(data.error));
+      else resolve(new Blob([data.bytes], { type: 'image/gif' }));
+    };
+    worker.onerror = () => {
+      finish();
+      reject(new Error('GIF 인코딩 모듈을 불러오지 못했습니다.'));
+    };
+    signal?.addEventListener('abort', abort, { once: true });
+    worker.postMessage({
+      id: 1, rgba: imageData.data.buffer, width: imageData.width, height: imageData.height,
+    }, [imageData.data.buffer]);
+  });
 }
 
 function encodeSVG(canvas) {
@@ -461,7 +478,7 @@ tool({
       ctx.restore();
       let blob;
       if (type === 'image/bmp') blob = encodeBMP(ctx.getImageData(0, 0, w, hgt));
-      else if (type === 'image/gif') blob = await encodeGIF(ctx.getImageData(0, 0, w, hgt));
+      else if (type === 'image/gif') blob = await encodeGIF(ctx.getImageData(0, 0, w, hgt), signal);
       else if (type === 'image/svg+xml') blob = encodeSVG(canvas);
       else blob = await new Promise((res) => canvas.toBlob(res, type, q));
       if (!blob) throw new Error('이 브라우저는 해당 포맷 인코딩을 지원하지 않습니다.');
@@ -851,10 +868,42 @@ tool({
   keywords: 'qr barcode code 128 ean data matrix camera read scan decode reader wifi',
   render(root) {
     const imageOut = h('div', { class: 'scan-result', 'aria-live': 'polite' });
+    let qrWorker = null, qrRequest = 0;
+    const qrPending = new Map();
+
+    function ensureQrWorker() {
+      if (qrWorker) return qrWorker;
+      qrWorker = new Worker(new URL('../workers/qr-decode.js', import.meta.url), { type: 'module' });
+      qrWorker.onmessage = ({ data }) => {
+        const pending = qrPending.get(data.id);
+        if (!pending) return;
+        qrPending.delete(data.id);
+        if (data.error) pending.reject(new Error(data.error));
+        else pending.resolve(data.result);
+      };
+      qrWorker.onerror = () => {
+        for (const pending of qrPending.values()) pending.reject(new Error('QR 해독 모듈을 불러오지 못했습니다.'));
+        qrPending.clear();
+        qrWorker?.terminate();
+        qrWorker = null;
+      };
+      return qrWorker;
+    }
+
+    function decodeQrPixels(imageData) {
+      const worker = ensureQrWorker();
+      const id = ++qrRequest;
+      return new Promise((resolve, reject) => {
+        qrPending.set(id, { resolve, reject });
+        worker.postMessage({
+          id, pixels: imageData.data.buffer, width: imageData.width, height: imageData.height,
+        }, [imageData.data.buffer]);
+      });
+    }
+
     async function decode(src) {
       imageOut.innerHTML = '해독 중...';
       try {
-        await loadScript(LIB.jsqr);
         const bmp = await safeCreateImageBitmap(src);
         // 너무 큰 이미지는 축소 (해상도가 충분히 크면 인식률에 영향 없음)
         const scale = Math.min(1, 1500 / Math.max(bmp.width, bmp.height));
@@ -862,7 +911,7 @@ tool({
         const ctx = h('canvas', { width: w, height: hgt }).getContext('2d', { willReadFrequently: true });
         ctx.drawImage(bmp, 0, 0, w, hgt);
         bmp.close?.();
-        const res = jsQR(ctx.getImageData(0, 0, w, hgt).data, w, hgt);
+        const res = w < 21 || hgt < 21 ? null : await decodeQrPixels(ctx.getImageData(0, 0, w, hgt));
         if (!res?.data) {
           imageOut.innerHTML = '';
           imageOut.append(h('span', { class: 'error' }, 'QR 코드를 찾지 못했습니다. 이미지가 선명한지, 코드 주변에 여백이 있는지 확인하세요.'));
@@ -927,7 +976,7 @@ tool({
           if (nativeFormats.length) detector = new BarcodeDetector({ formats: nativeFormats });
         } catch { detector = null; nativeFormats = []; }
       }
-      if (!nativeFormats.includes('qr_code')) await loadScript(LIB.jsqr);
+      if (!nativeFormats.includes('qr_code')) ensureQrWorker();
       const formats = ['qr_code', ...nativeFormats.filter((format) => format !== 'qr_code')];
       formatInfo.textContent = '인식 형식: ' + formats.map((format) => BARCODE_FORMATS[format]).join(', ');
     }
@@ -972,7 +1021,7 @@ tool({
           scanCanvas.height = Math.max(1, Math.round(height * scale));
           scanCtx.drawImage(video, 0, 0, scanCanvas.width, scanCanvas.height);
           const data = scanCtx.getImageData(0, 0, scanCanvas.width, scanCanvas.height);
-          const result = jsQR(data.data, data.width, data.height);
+          const result = await decodeQrPixels(data);
           if (result?.data && scanning) showDetected(result.data, 'qr_code');
         }
       } catch (error) {
@@ -1059,6 +1108,10 @@ tool({
     return () => {
       destroyed = true;
       stopCamera('');
+      for (const pending of qrPending.values()) pending.reject(new DOMException('QR 해독이 취소되었습니다.', 'AbortError'));
+      qrPending.clear();
+      qrWorker?.terminate();
+      qrWorker = null;
     };
   },
 });

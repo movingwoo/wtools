@@ -3,6 +3,12 @@
 이 프로젝트는 [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/) 형식과
 [Semantic Versioning](https://semver.org/lang/ko/)을 따릅니다.
 
+## [Unreleased]
+
+### 품질 및 운영
+
+- GitHub Actions의 checkout·setup-node·cache를 Node.js 24 기반 최신 메이저로 올려 폐기된 Node.js 20 런타임 경고 제거
+
 ## [1.3.0] - 2026-08-24
 
 인증서와 대용량 데이터 변환 워크플로를 추가하고 전반적인 보안·품질·호환성을

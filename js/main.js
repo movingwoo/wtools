@@ -380,20 +380,15 @@ function renderToolNotFound(id) {
   document.title = '도구를 찾을 수 없습니다 — W-Tools';
 }
 
-function appendRuntimeNotices(body, t) {
-  if (t.externalRequest) {
-    const request = t.externalRequest;
-    const action = request.action || '조회 버튼';
-    body.append(h('aside', { class: 'external-request-notice', 'aria-label': '외부 서버 사용 안내' },
-      h('strong', null, '외부 서버 사용 안내'),
-      h('p', null, `${action}을 누르면 ${request.service}로 다음 정보가 전송됩니다: ${request.sends}.`),
-      h('p', null, request.privacy),
-      request.cors ? h('p', null, '외부 서버의 CORS 허용 응답이 필요하므로 네트워크나 브라우저 정책에 따라 조회가 실패할 수 있습니다.') : null));
-  } else {
-    body.append(h('p', { class: 'local-processing-notice' }, '입력과 파일은 이 브라우저 안에서만 처리되며 외부 서버로 전송되지 않습니다.'));
-  }
-  if (t.externalLibrary) body.append(h('p', { class: 'library-load-notice' },
-    '일부 기능은 검증된 외부 라이브러리를 처음 불러올 때 네트워크 연결이 필요하며, 이후 오프라인 캐시를 사용할 수 있습니다.'));
+function appendExternalRequestNotice(body, t) {
+  if (!t.externalRequest) return;
+  const request = t.externalRequest;
+  const action = request.action || '조회 버튼';
+  body.append(h('aside', { class: 'external-request-notice', 'aria-label': '외부 서버 사용 안내' },
+    h('strong', null, '외부 서버 사용 안내'),
+    h('p', null, `${action}을 누르면 ${request.service}로 다음 정보가 전송됩니다: ${request.sends}.`),
+    h('p', null, request.privacy),
+    request.cors ? h('p', null, '외부 서버의 CORS 허용 응답이 필요하므로 네트워크나 브라우저 정책에 따라 조회가 실패할 수 있습니다.') : null));
 }
 
 function loadToolModule(t, retry = false) {
@@ -415,7 +410,7 @@ async function renderToolBody(t, body, token, retry = false) {
     if (token !== routeSequence || !body.isConnected) return;
     if (typeof t.render !== 'function') throw new Error('도구 구현이 등록되지 않았습니다.');
     body.replaceChildren();
-    appendRuntimeNotices(body, t);
+    appendExternalRequestNotice(body, t);
     const cleanup = t.render(body);
     if (typeof cleanup === 'function') cleanupCurrentTool.toolCleanup = cleanup;
     enhanceFileInputs(body);

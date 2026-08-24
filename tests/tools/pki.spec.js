@@ -219,7 +219,6 @@ test('certificate-chain: 신뢰 앵커·호스트명·로컬 CRL을 함께 판�
   const notice = page.locator('.external-request-notice');
   await expect(notice).toContainText('온라인 AIA·OCSP·CRL 확인');
   await expect(notice).toContainText('체인 검증”은 입력한 인증서 내용을 외부 서버로 전송하지 않습니다');
-  await expect(page.locator('.library-load-notice')).toContainText('외부 라이브러리를 처음 불러올 때 네트워크 연결');
   await fillInputs(io, [
     `${pki.leafCert}\n${pki.intermediateCert}`,
     pki.rootCert,

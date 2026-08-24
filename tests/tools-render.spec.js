@@ -39,6 +39,11 @@ test('모든 도구 페이지가 콘솔 에러 없이 렌더링된다', async ({
     // 아무것도 그리지 않고 조용히 끝난 도구도 실패로 본다.
     if (!(await page.locator('#content .tool-body').innerHTML()).trim())
       failures.push(`${id}: 도구 본문이 비어 있음`);
+    const bodyText = await page.locator('#content .tool-body').innerText();
+    if (bodyText.includes('입력과 파일은 이 브라우저 안에서만 처리되며 외부 서버로 전송되지 않습니다.'))
+      failures.push(`${id}: 제거된 브라우저 내 처리 안내가 표시됨`);
+    if (bodyText.includes('일부 기능은 검증된 외부 라이브러리를 처음 불러올 때 네트워크 연결이 필요하며, 이후 오프라인 캐시를 사용할 수 있습니다.'))
+      failures.push(`${id}: 제거된 외부 라이브러리 안내가 표시됨`);
     for (const err of errors.splice(0)) failures.push(`${id}: ${err}`);
   }
   expect(failures).toEqual([]);

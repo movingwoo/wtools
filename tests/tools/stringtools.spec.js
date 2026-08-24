@@ -121,13 +121,17 @@ test('dummy-data: CSV 헤더와 행 수', async ({ page }) => {
   expect(lines).toHaveLength(3); // 헤더 + 2행
 });
 
-test('emoji-picker: 전체 데이터에서 검색하고 복사한다', async ({ page, context }) => {
+test('emoji-picker: 로컬 전체 데이터에서 한국어·영어로 검색하고 복사한다', async ({ page, context }) => {
   await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+  const externalRequests = [];
+  page.on('request', (request) => {
+    if (request.url().includes('/emojibase-data@')) externalRequests.push(request.url());
+  });
   await openTool(page, 'emoji-picker');
 
   const body = page.locator('#content .tool-body');
   const info = body.locator('.note[role="status"]');
-  await expect(info).toContainText(/[\d,]+개/);
+  await expect(info).toContainText('1,914개');
 
   await body.getByPlaceholder('검색 (예: 하트, fire, 웃음)').fill('로켓');
   const rocket = body.locator('button[title="로켓"]');
@@ -135,18 +139,58 @@ test('emoji-picker: 전체 데이터에서 검색하고 복사한다', async ({ 
   await rocket.click();
   await expect(info).toContainText('🚀 복사됨!');
   expect(await page.evaluate(() => navigator.clipboard.readText())).toBe('🚀');
+
+  await body.getByPlaceholder('검색 (예: 하트, fire, 웃음)').fill('distorted');
+  await expect(body.locator('button[title="왜곡된 얼굴"]')).toBeVisible();
+  expect(externalRequests).toEqual([]);
 });
 
-test('emoji-picker: 전체 데이터가 손상되면 기본 목록으로 대체한다', async ({ page }) => {
-  await page.route('https://cdn.jsdelivr.net/npm/emojibase-data@16.0.3/**', (route) =>
+test('emoji-picker: 로컬 전체 데이터가 손상되면 기본 목록으로 대체한다', async ({ page }) => {
+  await page.route('**/assets/data/emoji.json', (route) =>
     route.fulfill({ status: 200, contentType: 'application/json', body: 'invalid json' }));
   await openTool(page, 'emoji-picker');
 
   const body = page.locator('#content .tool-body');
   const info = body.locator('.note[role="status"]');
-  await expect(info).toContainText('전체 목록 로드 실패');
+  await expect(info).toContainText('로컬 전체 목록을 불러오지 못해');
   await body.getByPlaceholder('검색 (예: 하트, fire, 웃음)').fill('로켓');
   await expect(body.locator('button[title="로켓 발사 rocket launch"]')).toBeVisible();
+});
+
+test('emoji-picker: 로컬 데이터가 고정한 Unicode 17 그룹과 검색 벡터를 보존한다', async ({ page }) => {
+  await page.goto('/');
+  const summary = await page.evaluate(async () => {
+    const response = await fetch('/assets/data/emoji.json');
+    const data = await response.json();
+    const counts = {};
+    for (const row of data.emoji) counts[row[1]] = (counts[row[1]] || 0) + 1;
+    const byEmoji = Object.fromEntries(data.emoji.map((row) => [row[0], row]));
+    return {
+      version: data.version,
+      source: data.source,
+      unicode: data.unicode,
+      cldr: data.cldr,
+      count: data.emoji.length,
+      unique: new Set(data.emoji.map((row) => row[0])).size,
+      counts,
+      rocket: byEmoji['🚀'],
+      koreanFlag: byEmoji['🇰🇷'],
+      distortedFace: byEmoji['🫪'],
+    };
+  });
+
+  expect(summary).toMatchObject({
+    version: 1,
+    source: 'Unicode Emoji/CLDR',
+    unicode: '17.0',
+    cldr: '48.2',
+    count: 1914,
+    unique: 1914,
+    counts: { 0: 171, 1: 388, 3: 160, 4: 131, 5: 219, 6: 85, 7: 266, 8: 224, 9: 270 },
+  });
+  expect(summary.rocket).toEqual(['🚀', 5, '로켓', expect.stringContaining('rocket')]);
+  expect(summary.koreanFlag).toEqual(['🇰🇷', 9, '깃발: 대한민국', expect.stringContaining('south korea')]);
+  expect(summary.distortedFace).toEqual(['🫪', 0, '왜곡된 얼굴', expect.stringContaining('distorted face')]);
 });
 
 test('ascii-art: 자체 FIGfont 엔진으로 실제 배너를 생성한다', async ({ page }) => {

@@ -166,4 +166,5 @@ tool({
 ## 라이선스
 
 프로젝트 코드는 [MIT License](LICENSE)를 따릅니다.  
-저장소에 포함된 EFF 단어 목록의 출처와 별도 라이선스는 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)를 참고하세요.
+저장소에 포함된 EFF 단어 목록·FIGlet 글꼴·이모지 검색 데이터의 출처와 별도 라이선스는
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)를 참고하세요.

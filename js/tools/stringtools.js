@@ -374,23 +374,27 @@ const EMOJIS = [
   ['🎵', '음표 music note'], ['🎤', '마이크 mic'], ['🎬', '영화 movie'], ['🏆', '트로피 우승 trophy'], ['🥇', '금메달 gold medal'],
 ].filter(([, k]) => k);
 
-/* 전체 이모지: emojibase 데이터(한국어+영어 라벨/태그)를 도구를 열 때 한 번만 로드.
+/* 전체 이모지: 로컬 검색 데이터(한국어+영어 라벨/검색어)를 도구를 열 때 한 번만 로드.
    스킨톤 변형은 제외한 기본형만 사용한다. 로드 실패 시 위의 큐레이션 목록으로 폴백. */
 const EMOJI_CAT = [[0, '표정'], [1, '사람'], [3, '동물/자연'], [4, '음식/음료'], [5, '여행/장소'], [6, '활동'], [7, '사물'], [8, '기호'], [9, '깃발']];
+const EMOJI_GROUPS = new Set(EMOJI_CAT.map(([value]) => value));
+const EMOJI_DATA_URL = new URL('../../assets/data/emoji.json', import.meta.url);
 let emojiAll = null;
 async function loadAllEmojis(signal) {
   if (emojiAll) return emojiAll;
-  const base = 'https://cdn.jsdelivr.net/npm/emojibase-data@16.0.3';
-  const [ko, en] = await Promise.all(['/ko/compact.json', '/en/compact.json'].map((p) =>
-    fetch(base + p, { signal }).then((r) => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })));
-  const enMap = new Map(en.map((x) => [x.hexcode, x]));
-  const loaded = ko
-    .filter((x) => x.group != null && x.group !== 2) // 그룹 2는 스킨톤 등 조합용 컴포넌트
-    .sort((a, b) => a.group - b.group || (a.order ?? 0) - (b.order ?? 0))
-    .map((x) => {
-      const e = enMap.get(x.hexcode);
-      return { e: x.unicode, g: x.group, t: x.label, kw: [x.label, ...(x.tags || []), e?.label, ...(e?.tags || [])].join(' ').toLowerCase() };
-    });
+  const response = await fetch(EMOJI_DATA_URL, { signal });
+  if (!response.ok) throw new Error('HTTP ' + response.status);
+  const data = await response.json();
+  if (data?.version !== 1 || !Array.isArray(data.emoji)) throw new Error('이모지 데이터 형식이 올바르지 않습니다.');
+  const loaded = data.emoji.map((row) => {
+    if (!Array.isArray(row) || row.length !== 4 || typeof row[0] !== 'string'
+      || !EMOJI_GROUPS.has(row[1]) || typeof row[2] !== 'string' || typeof row[3] !== 'string') {
+      throw new Error('이모지 데이터 항목이 올바르지 않습니다.');
+    }
+    const [e, g, t, keywords] = row;
+    return { e, g, t, kw: `${t} ${keywords}`.toLowerCase() };
+  });
+  if (!loaded.length) throw new Error('이모지 데이터가 비어 있습니다.');
   emojiAll = loaded;
   return loaded;
 }
@@ -402,12 +406,12 @@ tool({
   render(root) {
     const CHUNK = 200; // 한 번에 그리는 개수 — 나머지는 스크롤 시 추가 로드
     const searchBox = h('input', { type: 'text', placeholder: '검색 (예: 하트, fire, 웃음)', style: { flex: '1', minWidth: '0' } });
-    const catSel = h('select', null,
+    const catSel = h('select', { 'aria-label': '카테고리' },
       h('option', { value: '' }, '전체 카테고리'),
       EMOJI_CAT.map(([v, l]) => h('option', { value: v }, l)));
     const info = h('p', {
       class: 'note', role: 'status', 'aria-live': 'polite', 'aria-atomic': 'true',
-    }, '이모지 데이터 로드 중... (도구를 열 때 한 번만 내려받습니다)');
+    }, '이모지 데이터 불러오는 중...');
     const grid = h('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(52px, 1fr))', gap: '6px', marginTop: '12px' } });
     const sentinel = h('div', { style: { height: '1px' } });
     let list = [], filtered = [], shown = 0, warn = '', raf = 0, active = true;
@@ -470,7 +474,7 @@ tool({
       .catch(() => {
         if (!active) return;
         list = EMOJIS.map(([e, kw]) => ({ e, g: -1, t: kw, kw: kw.toLowerCase() }));
-        warn = '⚠ 전체 목록 로드 실패(네트워크 확인) — 기본 목록으로 표시. ';
+        warn = '⚠ 로컬 전체 목록을 불러오지 못해 기본 목록으로 표시합니다. ';
         apply();
       });
     return () => {

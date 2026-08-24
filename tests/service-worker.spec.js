@@ -77,6 +77,12 @@ test('오프라인에서 직접 도구 URL 새로고침과 navigation fallback�
   await page.reload({ waitUntil: 'domcontentloaded' });
   await expect(page.locator('#content .tool-header h1')).toHaveText('Base64 인코딩/디코딩');
 
+  await page.evaluate(() => { location.hash = '#/tool/emoji-picker'; });
+  const emoji = page.locator('#content .tool-body');
+  await expect(emoji.locator('.note[role="status"]')).toContainText('1,914개');
+  await emoji.getByPlaceholder('검색 (예: 하트, fire, 웃음)').fill('rocket');
+  await expect(emoji.locator('button[title="로켓"]')).toBeVisible();
+
   await page.goto('/#/', { waitUntil: 'domcontentloaded' });
   await expect(page.locator('#content .home h1')).toHaveText('W-Tools');
 

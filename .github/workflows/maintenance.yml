@@ -42,6 +42,8 @@ jobs:
       - name: Verify dependency pins and browser baseline
         run: |
           python3 scripts/vendor_dependencies.py --check
+          python3 scripts/generate_emoji_data.py --check
+          python3 scripts/generate_emoji_data.py --check-latest
           python3 scripts/validate_static.py
           node scripts/check_browser_compat.mjs
 
@@ -54,5 +56,5 @@ jobs:
         shell: bash
         run: |
           echo '## 월간 품질·보안 점검' >> "$GITHUB_STEP_SUMMARY"
-          echo '- npm 보안 감사, 고정 자산 원본 해시, 브라우저 기준선, JSON Schema·IDN·ZIP/Tar 대표 벡터를 확인했습니다.' >> "$GITHUB_STEP_SUMMARY"
+          echo '- npm 보안 감사, 고정 자산 원본 해시, 최신 Emoji·CLDR, 브라우저 기준선, JSON Schema·IDN·ZIP/Tar 대표 벡터를 확인했습니다.' >> "$GITHUB_STEP_SUMMARY"
           echo '- 실제 CDN과 운영 헤더·PWA 검사는 nightly 워크플로 결과를 함께 확인하세요.' >> "$GITHUB_STEP_SUMMARY"

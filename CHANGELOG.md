@@ -3,7 +3,10 @@
 이 프로젝트는 [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/) 형식과
 [Semantic Versioning](https://semver.org/lang/ko/)을 따릅니다.
 
-## [Unreleased]
+## [1.3.0] - 2026-08-24
+
+인증서와 대용량 데이터 변환 워크플로를 추가하고 전반적인 보안·품질·호환성을
+강화한 마이너 릴리즈입니다.
 
 ### 추가됨
 

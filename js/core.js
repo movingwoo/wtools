@@ -1,5 +1,8 @@
 // core.js — 도구 등록 프레임워크 + 공통 유틸리티
 import './dependencies.js';
+import { bytesToB64, b64ToBytes } from './lib/common/base64.js';
+
+export { bytesToB64, b64ToBytes };
 
 export const categories = [
   '인코딩 / 디코딩',
@@ -441,19 +444,6 @@ export function concatBytes(...parts) {
   for (const part of parts) { out.set(part, offset); offset += part.length; }
   return out;
 }
-export function bytesToB64(bytes) {
-  let bin = '';
-  for (let i = 0; i < bytes.length; i += 0x8000)
-    bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
-  return btoa(bin);
-}
-export function b64ToBytes(str) {
-  const clean = str.replace(/\s/g, '').replace(/-/g, '+').replace(/_/g, '/');
-  let bin;
-  try { bin = atob(clean); } catch { throw new Error('올바른 Base64 문자열이 아닙니다.'); }
-  return Uint8Array.from(bin, (c) => c.charCodeAt(0));
-}
-
 // 입력 형식(text/base64/hex) → 바이트
 export function decodeInput(str, fmt) {
   if (fmt === 'base64') return b64ToBytes(str);

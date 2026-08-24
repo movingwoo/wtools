@@ -569,6 +569,7 @@ def validate_initial_load_budget(validation: Validation) -> None:
     ROOT / 'js/theme.js',
     ROOT / 'js/main.js',
     ROOT / 'js/core.js',
+    ROOT / 'js/lib/common/base64.js',
     ROOT / 'js/tool-manifest.js',
     ROOT / 'js/dependencies.js',
   ]
@@ -577,7 +578,7 @@ def validate_initial_load_budget(validation: Validation) -> None:
   if total > budget:
     validation.error(
       f'initial local JavaScript is {total} bytes; budget is {budget} bytes '
-      '(theme, main, core, manifest, dependencies)'
+      '(theme, main, core and its eager common imports, manifest, dependencies)'
     )
   main_source = (ROOT / 'js/main.js').read_text(encoding='utf-8')
   if re.search(r"^import\s+['\"]\./tools/", main_source, re.MULTILINE):

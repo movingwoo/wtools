@@ -21,7 +21,7 @@ REGISTRY_PATTERN = re.compile(
 )
 TRANSFORMS = {
   'brotliDecompress': (
-    ('from"/npm/base64-js@1.5.1/+esm"', 'from"./base64-js-1.5.1.mjs"'),
+    ('from"/npm/base64-js@1.5.1/+esm"', 'from"../../js/lib/common/base64.js"'),
   ),
   'zstdCompress': (
     (

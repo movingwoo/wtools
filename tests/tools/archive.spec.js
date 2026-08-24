@@ -67,6 +67,87 @@ const cases = [
 
 toolCases('archive', cases);
 
+/* ---------- 공통 Base64 모듈 ---------- */
+
+test('base64 공통 모듈: RFC 4648 벡터와 URL-safe 입력', async ({ page }) => {
+  await page.goto('/');
+  const result = await page.evaluate(async () => {
+    const base64 = await import('/js/lib/common/base64.js');
+    const vectors = [
+      ['', ''], ['f', 'Zg=='], ['fo', 'Zm8='], ['foo', 'Zm9v'],
+      ['foob', 'Zm9vYg=='], ['fooba', 'Zm9vYmE='], ['foobar', 'Zm9vYmFy'],
+    ];
+    const encoder = new TextEncoder();
+    const decoder = new TextDecoder();
+    return {
+      encoded: vectors.map(([plain]) => base64.bytesToB64(encoder.encode(plain))),
+      decoded: vectors.map(([, encoded]) => decoder.decode(base64.b64ToBytes(encoded))),
+      lengths: vectors.map(([, encoded]) => base64.byteLength(encoded)),
+      urlSafe: [...base64.b64ToBytes('-_8')],
+      whitespace: decoder.decode(base64.b64ToBytes(' Zm9v\n')),
+      compatibility: decoder.decode(base64.default.toByteArray('Zm9v')),
+    };
+  });
+
+  expect(result.encoded).toEqual(['', 'Zg==', 'Zm8=', 'Zm9v', 'Zm9vYg==', 'Zm9vYmE=', 'Zm9vYmFy']);
+  expect(result.decoded).toEqual(['', 'f', 'fo', 'foo', 'foob', 'fooba', 'foobar']);
+  expect(result.lengths).toEqual([0, 1, 2, 3, 4, 5, 6]);
+  expect(result.urlSafe).toEqual([251, 255]);
+  expect(result.whitespace).toBe('foo');
+  expect(result.compatibility).toBe('foo');
+});
+
+test('base64 공통 모듈: 잘못된 입력을 일관된 오류로 거부', async ({ page }) => {
+  await page.goto('/');
+  const errors = await page.evaluate(async () => {
+    const { b64ToBytes } = await import('/js/lib/common/base64.js');
+    return ['A', '@@==', 'AAAA=', 'AA=A'].map((value) => {
+      try { b64ToBytes(value); return ''; }
+      catch (error) { return error.message; }
+    });
+  });
+  expect(errors).toEqual(Array(4).fill('올바른 Base64 문자열이 아닙니다.'));
+});
+
+test('base64 공통 모듈: 1 MiB 초과 입력을 청크 변환하여 복원', async ({ page }) => {
+  await page.goto('/');
+  const result = await page.evaluate(async () => {
+    const { bytesToB64, b64ToBytes } = await import('/js/lib/common/base64.js');
+    const input = new Uint8Array(1024 * 1024 + 3);
+    for (let i = 0; i < input.length; i++) input[i] = (i * 31 + 7) & 0xff;
+    const encoded = bytesToB64(input);
+    const output = b64ToBytes(encoded);
+    let mismatch = -1;
+    for (let i = 0; i < input.length; i++) {
+      if (input[i] !== output[i]) { mismatch = i; break; }
+    }
+    return { encodedLength: encoded.length, outputLength: output.length, mismatch };
+  });
+
+  expect(result.encodedLength).toBe(4 * Math.ceil((1024 * 1024 + 3) / 3));
+  expect(result.outputLength).toBe(1024 * 1024 + 3);
+  expect(result.mismatch).toBe(-1);
+});
+
+test('brotli: 빈 입력을 압축하고 다시 빈 바이트로 해제', async ({ page }) => {
+  await openTool(page, 'brotli');
+  const io = ioSection(page);
+  const input = io.locator('textarea.mono:not(.out)');
+  const output = io.locator('textarea.out');
+  await input.fill('');
+  await io.getByRole('button', { name: '압축', exact: true }).click();
+  await expect(io).toHaveAttribute('aria-busy', 'false');
+  const compressed = (await output.inputValue()).split('\n')[0];
+  expect(compressed).not.toBe('');
+
+  await io.getByLabel('입력 형식').selectOption('base64');
+  await io.getByLabel('출력 형식').selectOption('text');
+  await input.fill(compressed);
+  await io.getByRole('button', { name: '해제', exact: true }).click();
+  await expect(io).toHaveAttribute('aria-busy', 'false');
+  await expect(output).toHaveValue('');
+});
+
 /* ---------- 압축 → 해제 왕복 ---------- */
 
 const roundTrips = [

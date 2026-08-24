@@ -205,17 +205,9 @@ globalThis.WTOOLS_DEPENDENCIES = {
     },
     "brotliDecompress": {
       "path": "assets/vendor/brotli-decompress-1.3.3.mjs",
-      "integrity": "sha384-WXH5ECHJ1gRAiOiVDtzPKZWyMegUJikFhr7E8j7HAg3CkZVZdSzlWiv0aiCWct43",
+      "integrity": "sha384-0DWt7KH3BB7UTY1iywY0tyM7NfJJ5SiWN8gt8kFf3izEeZptC+q0jr/8KjLrW7xf",
       "source": "https://cdn.jsdelivr.net/npm/brotli@1.3.3/decompress.js/+esm",
       "sourceIntegrity": "sha384-E6MAu//hrot7qFyeqjLGxqJ9wba48vL5j+ENc6G2vE6hM3Q9Zyxxc0Q9PrKl4tWb",
-      "license": "MIT",
-      "tools": ["js/tools/archive.js"]
-    },
-    "base64Js": {
-      "path": "assets/vendor/base64-js-1.5.1.mjs",
-      "integrity": "sha384-Q1ItNbZEXRtDLvBiYr9UVlmKOPMHY+kZ82oOIfi/IKJLpnwKMHaUxhcjYWTo6kp+",
-      "source": "https://cdn.jsdelivr.net/npm/base64-js@1.5.1/+esm",
-      "sourceIntegrity": "sha384-Q1ItNbZEXRtDLvBiYr9UVlmKOPMHY+kZ82oOIfi/IKJLpnwKMHaUxhcjYWTo6kp+",
       "license": "MIT",
       "tools": ["js/tools/archive.js"]
     },

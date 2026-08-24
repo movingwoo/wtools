@@ -121,13 +121,6 @@ globalThis.WTOOLS_DEPENDENCIES = {
       "kind": "script",
       "tools": ["js/tools/archive.js"]
     },
-    "md4": {
-      "url": "https://cdn.jsdelivr.net/npm/js-md4@0.3.2/build/md4.min.js",
-      "integrity": "sha384-MoZ9k3YaW/GZNhasK9XhYqny3gz3Ht9G2Hy3VLx4oEJMq2WZAivb7Tu2yqIpQ9mR",
-      "license": "MIT",
-      "kind": "script",
-      "tools": ["js/tools/hashing.js"]
-    },
     "jsqr": {
       "url": "https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js",
       "integrity": "sha384-b5Ya4Bq3qCyz39m2ISh+4DxjAIljdeFwK/BsXLuj9gugaNwAcj/ia15fxNZL9Nlx",

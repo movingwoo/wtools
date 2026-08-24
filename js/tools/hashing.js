@@ -155,10 +155,19 @@ function toWordArray(bytes) {
   return CryptoJS.lib.WordArray.create(bytes);
 }
 
+let md4Module = null;
+
+function loadMd4Module() {
+  return md4Module ??= import('../lib/crypto/md4.js').catch((cause) => {
+    md4Module = null;
+    throw new Error('MD4 구현을 불러오지 못했습니다.', { cause });
+  });
+}
+
 async function computeHash(alg, bytes) {
   switch (alg) {
     case 'MD2': return md2(bytes);
-    case 'MD4': await loadScript(LIB.md4); return md4(bytes);
+    case 'MD4': return (await loadMd4Module()).md4Hex(bytes);
     case 'MD5': return CryptoJS.MD5(toWordArray(bytes)).toString();
     case 'SHA0': return sha0(bytes);
     case 'SHA1': return CryptoJS.SHA1(toWordArray(bytes)).toString();
@@ -187,6 +196,7 @@ tool({
         { id: 'ifmt', label: '입력 형식', type: 'select', values: FMT_IN },
         { id: 'upper', label: '대문자', type: 'checkbox' },
       ],
+      note: 'MD2, MD4, MD5, SHA-0, SHA-1은 현대 보안 용도로 안전하지 않습니다. 기존 형식의 호환성 확인에만 사용하고, 보안 목적에는 SHA-256 이상을 사용하세요.',
       outputHTML: true, runOnLoad: true,
       async process(text, o) {
         const bytes = decodeInput(text, o.ifmt);

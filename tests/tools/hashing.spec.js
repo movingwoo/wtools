@@ -1,6 +1,132 @@
 // 해싱 도구 정밀 테스트 — NIST/RFC 표준 테스트 벡터 사용.
-// MD4는 CDN 라이브러리를 로드하므로 외부 스크립트 지연 로드 경로도 함께 검증된다.
+import { execFileSync } from 'node:child_process';
 import { test, expect, toolCases, openTool, uploadFile } from '../helpers.js';
+
+const MD4_RFC_1320_VECTORS = [
+  ['', '31d6cfe0d16ae931b73c59d7e0c089c0'],
+  ['a', 'bde52cb31de33e46245e05fbdbd6fb24'],
+  ['abc', 'a448017aaf21d8525fc10ae87aa6729d'],
+  ['message digest', 'd9130a8164549fe818874806e1c7014b'],
+  ['abcdefghijklmnopqrstuvwxyz', 'd79e1c308aa5bbcdeea8ed63df412da9'],
+  ['ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789', '043f8582f241db351ce627e153e7f0e4'],
+  ['12345678901234567890123456789012345678901234567890123456789012345678901234567890',
+    'e33b4ddc9c38f2199c3e7b164fcc0536'],
+];
+
+const MD4_STREAM_SIZES = [0, 1, 55, 56, 63, 64, 65, 2 * 1024 * 1024 + 17];
+
+function opensslMd4Vectors(sizes) {
+  const script = `
+    const { createHash } = require('node:crypto');
+    const sizes = JSON.parse(process.argv[1]);
+    const result = {};
+    for (const size of sizes) {
+      const bytes = Buffer.alloc(size);
+      for (let i = 0; i < size; i++) bytes[i] = (i * 31 + size) & 255;
+      result[size] = createHash('md4').update(bytes).digest('hex');
+    }
+    process.stdout.write(JSON.stringify(result));
+  `;
+  return JSON.parse(execFileSync(process.execPath,
+    ['--openssl-legacy-provider', '-e', script, JSON.stringify(sizes)], { encoding: 'utf8' }));
+}
+
+test('MD4: RFC 1320 공개 벡터와 일치', async ({ page }) => {
+  await page.goto('/');
+  const actual = await page.evaluate(async (vectors) => {
+    const { md4Hex } = await import('/js/lib/crypto/md4.js');
+    const encoder = new TextEncoder();
+    return vectors.map(([input]) => md4Hex(encoder.encode(input)));
+  }, MD4_RFC_1320_VECTORS);
+  expect(actual).toEqual(MD4_RFC_1320_VECTORS.map(([, expected]) => expected));
+});
+
+test('MD4: 블록 경계와 File.slice 청크 입력을 OpenSSL과 교차 검증', async ({ page }) => {
+  test.setTimeout(60_000);
+  const expected = opensslMd4Vectors(MD4_STREAM_SIZES);
+  await page.goto('/');
+  const actual = await page.evaluate(async (sizes) => {
+    const { createMd4, md4Hex } = await import('/js/lib/crypto/md4.js');
+    const makeBytes = (size) => {
+      const bytes = new Uint8Array(size);
+      for (let i = 0; i < size; i++) bytes[i] = (i * 31 + size) & 255;
+      return bytes;
+    };
+    const results = {};
+    for (const size of sizes) {
+      const bytes = makeBytes(size);
+      const streamed = createMd4();
+      const chunkSizes = [1, 7, 64, 3, 255, 1024, 65537];
+      let offset = 0;
+      let chunkIndex = 0;
+      while (offset < bytes.length) {
+        const end = Math.min(offset + chunkSizes[chunkIndex++ % chunkSizes.length], bytes.length);
+        streamed.update(bytes.subarray(offset, end));
+        offset = end;
+      }
+
+      const file = new File([bytes], `md4-${size}.bin`);
+      const fileStreamed = createMd4();
+      for (let start = 0; start < file.size; start += 2 * 1024 * 1024) {
+        const chunk = await file.slice(start, start + 2 * 1024 * 1024).arrayBuffer();
+        fileStreamed.update(new Uint8Array(chunk));
+      }
+      results[size] = {
+        oneShot: md4Hex(bytes),
+        streamed: streamed.digestHex(),
+        fileStreamed: fileStreamed.digestHex(),
+      };
+    }
+    return results;
+  }, MD4_STREAM_SIZES);
+
+  for (const size of MD4_STREAM_SIZES) {
+    expect(actual[size]).toEqual({
+      oneShot: expected[size],
+      streamed: expected[size],
+      fileStreamed: expected[size],
+    });
+  }
+});
+
+test('MD4: 바이트 입력과 완료 상태를 명확히 검사', async ({ page }) => {
+  await page.goto('/');
+  const result = await page.evaluate(async () => {
+    const { createMd4, md4Hex } = await import('/js/lib/crypto/md4.js');
+    const encoder = new TextEncoder();
+    const hash = createMd4().update(encoder.encode('abc'));
+    const first = hash.digestHex();
+    const second = hash.digestHex();
+    let inputError = '';
+    let finishedError = '';
+    try { createMd4().update('abc'); } catch (error) { inputError = error.message; }
+    try { hash.update(new Uint8Array()); } catch (error) { finishedError = error.message; }
+    const buffer = encoder.encode('abc').buffer;
+    return {
+      first,
+      second,
+      arrayBuffer: md4Hex(buffer),
+      dataView: md4Hex(new DataView(buffer)),
+      inputError,
+      finishedError,
+    };
+  });
+  expect(result).toEqual({
+    first: 'a448017aaf21d8525fc10ae87aa6729d',
+    second: 'a448017aaf21d8525fc10ae87aa6729d',
+    arrayBuffer: 'a448017aaf21d8525fc10ae87aa6729d',
+    dataView: 'a448017aaf21d8525fc10ae87aa6729d',
+    inputError: 'MD4 입력은 바이트 배열이어야 합니다.',
+    finishedError: 'MD4 해시 계산이 이미 완료되었습니다.',
+  });
+});
+
+test('hash: 약한 레거시 해시의 보안 용도 비권장 안내', async ({ page }) => {
+  await openTool(page, 'hash');
+  await expect(page.locator('#content .note:not(.large-input-warning)')).toContainText(
+    'MD2, MD4, MD5, SHA-0, SHA-1은 현대 보안 용도로 안전하지 않습니다.',
+  );
+});
 
 const cases = [
   // 해시 생성 — "abc"의 표준 벡터 (RFC 1319/1320, FIPS 180/202)

@@ -28,15 +28,16 @@ Banner는 Ryan Youck, Doom은 Frans P. de Vries, Ghost는 myflix, Speed는 Claud
 ## 이모지 검색 데이터
 
 - 포함 파일: `assets/data/emoji.json`
-- 원본: Unicode Emoji 17.0 `emoji-test.txt`, CLDR 48.2 한국어·영어 annotation 데이터
-- 데이터 기준: Unicode Emoji 17.0, CLDR 48.2
+- 원본: `scripts/emoji-data-lock.json`에 고정된 Unicode Emoji `emoji-test.txt`,
+  CLDR 한국어·영어 annotation 데이터
+- 데이터 기준: `scripts/emoji-data-lock.json`과 생성 자산의 메타데이터에 기록
 - 라이선스: Unicode License v3
 - 변경: 스킨톤 등 조합용 컴포넌트를 제외한 기본 이모지의 문자·그룹·한국어 라벨과
   한국어/영어 검색어만 앱 전용 배열 형식으로 재구성하고 중복 검색어를 제거
 
 원자료의 저작권과 사용 조건은 [Unicode License v3](https://www.unicode.org/license.txt)를
 따릅니다. 고정한 Unicode 파일과 공식 `unicode-org/cldr` 릴리스 태그의 원본 URL,
-SHA-384, 변환 과정 및 최신 버전 확인은
+SHA-384는 `scripts/emoji-data-lock.json`에, 변환·검증·공식 안정판 갱신 과정은
 `scripts/generate_emoji_data.py`에 기록되어 있습니다.
 
 ## 로컬 고정 ESM/WASM

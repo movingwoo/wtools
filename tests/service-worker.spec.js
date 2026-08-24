@@ -1,4 +1,5 @@
 // 서비스 워커 무결성·오프라인 캐시 전용 테스트. 일반 spec과 달리 등록을 허용한다.
+import { readFileSync } from 'node:fs';
 import { test as base, expect } from '@playwright/test';
 import { cdnCache } from './cdn-cache.js';
 
@@ -7,6 +8,8 @@ test.use({ allowServiceWorker: true });
 
 const EXTERNAL_URL = 'https://cdn.jsdelivr.net/npm/js-yaml@4.1.0/dist/js-yaml.min.js';
 const VENDORED_PATH = '/assets/vendor/smol-toml-1.2.2.mjs';
+const emojiLock = JSON.parse(readFileSync(new URL('../scripts/emoji-data-lock.json', import.meta.url), 'utf8'));
+const emojiCount = Object.values(emojiLock.groupCounts).reduce((sum, count) => sum + count, 0);
 
 async function waitForControl(page) {
   await page.evaluate(async () => {
@@ -79,7 +82,7 @@ test('오프라인에서 직접 도구 URL 새로고침과 navigation fallback�
 
   await page.evaluate(() => { location.hash = '#/tool/emoji-picker'; });
   const emoji = page.locator('#content .tool-body');
-  await expect(emoji.locator('.note[role="status"]')).toContainText('1,914개');
+  await expect(emoji.locator('.note[role="status"]')).toContainText(`${emojiCount.toLocaleString('ko-KR')}개`);
   await emoji.getByPlaceholder('검색 (예: 하트, fire, 웃음)').fill('rocket');
   await expect(emoji.locator('button[title="로켓"]')).toBeVisible();
 

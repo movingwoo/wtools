@@ -1,6 +1,10 @@
 // stringtools.js — 문자열 / 텍스트 도구 정밀 테스트.
 // 시간/난수 의존 도구(lorem 랜덤 부분, dummy-data)는 정확값 대신 형식을 검증한다.
+import { readFileSync } from 'node:fs';
 import { test, expect, toolCases, openTool, ioSection, setOption, clickAction } from '../helpers.js';
+
+const emojiLock = JSON.parse(readFileSync(new URL('../../scripts/emoji-data-lock.json', import.meta.url), 'utf8'));
+const emojiCount = Object.values(emojiLock.groupCounts).reduce((sum, count) => sum + count, 0);
 
 const cases = [
   // 대소문자 변환
@@ -131,7 +135,7 @@ test('emoji-picker: 로컬 전체 데이터에서 한국어·영어로 검색하
 
   const body = page.locator('#content .tool-body');
   const info = body.locator('.note[role="status"]');
-  await expect(info).toContainText('1,914개');
+  await expect(info).toContainText(`${emojiCount.toLocaleString('ko-KR')}개`);
 
   await body.getByPlaceholder('검색 (예: 하트, fire, 웃음)').fill('로켓');
   const rocket = body.locator('button[title="로켓"]');
@@ -157,7 +161,7 @@ test('emoji-picker: 로컬 전체 데이터가 손상되면 기본 목록으로 
   await expect(body.locator('button[title="로켓 발사 rocket launch"]')).toBeVisible();
 });
 
-test('emoji-picker: 로컬 데이터가 고정한 Unicode 17 그룹과 검색 벡터를 보존한다', async ({ page }) => {
+test('emoji-picker: lock에 고정한 Unicode 그룹과 검색 벡터를 보존한다', async ({ page }) => {
   await page.goto('/');
   const summary = await page.evaluate(async () => {
     const response = await fetch('/assets/data/emoji.json');
@@ -182,11 +186,11 @@ test('emoji-picker: 로컬 데이터가 고정한 Unicode 17 그룹과 검색 �
   expect(summary).toMatchObject({
     version: 1,
     source: 'Unicode Emoji/CLDR',
-    unicode: '17.0',
-    cldr: '48.2',
-    count: 1914,
-    unique: 1914,
-    counts: { 0: 171, 1: 388, 3: 160, 4: 131, 5: 219, 6: 85, 7: 266, 8: 224, 9: 270 },
+    unicode: emojiLock.emojiVersion,
+    cldr: emojiLock.cldrVersion,
+    count: emojiCount,
+    unique: emojiCount,
+    counts: emojiLock.groupCounts,
   });
   expect(summary.rocket).toEqual(['🚀', 5, '로켓', expect.stringContaining('rocket')]);
   expect(summary.koreanFlag).toEqual(['🇰🇷', 9, '깃발: 대한민국', expect.stringContaining('south korea')]);

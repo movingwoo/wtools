@@ -43,7 +43,6 @@ jobs:
         run: |
           python3 scripts/vendor_dependencies.py --check
           python3 scripts/generate_emoji_data.py --check
-          python3 scripts/generate_emoji_data.py --check-latest
           python3 scripts/validate_static.py
           node scripts/check_browser_compat.mjs
 
@@ -56,5 +55,117 @@ jobs:
         shell: bash
         run: |
           echo '## 월간 품질·보안 점검' >> "$GITHUB_STEP_SUMMARY"
-          echo '- npm 보안 감사, 고정 자산 원본 해시, 최신 Emoji·CLDR, 브라우저 기준선, JSON Schema·IDN·ZIP/Tar 대표 벡터를 확인했습니다.' >> "$GITHUB_STEP_SUMMARY"
+          echo '- npm 보안 감사, 고정 자산 원본 해시, 브라우저 기준선, JSON Schema·IDN·ZIP/Tar 대표 벡터를 확인했습니다.' >> "$GITHUB_STEP_SUMMARY"
           echo '- 실제 CDN과 운영 헤더·PWA 검사는 nightly 워크플로 결과를 함께 확인하세요.' >> "$GITHUB_STEP_SUMMARY"
+
+  emoji-update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      pull-requests: write
+    env:
+      UPDATE_BRANCH: automation/update-emoji-data
+    steps:
+      - name: Check out default branch
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+
+      - name: Update from latest stable Emoji and CLDR sources
+        id: emoji
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          python3 scripts/generate_emoji_data.py --update
+          python3 scripts/update_cache_version.py
+          if git diff --quiet -- assets/data/emoji.json scripts/emoji-data-lock.json sw.js; then
+            echo 'changed=false' >> "$GITHUB_OUTPUT"
+          else
+            echo 'changed=true' >> "$GITHUB_OUTPUT"
+          fi
+          python3 - <<'PY' >> "$GITHUB_OUTPUT"
+          import json
+          from pathlib import Path
+          lock = json.loads(Path('scripts/emoji-data-lock.json').read_text())
+          print(f'emoji_version={lock["emojiVersion"]}')
+          print(f'cldr_version={lock["cldrVersion"]}')
+          PY
+
+      - name: Verify generated update
+        if: ${{ steps.emoji.outputs.changed == 'true' }}
+        run: |
+          python3 -m unittest discover -s scripts -p 'test_*.py'
+          python3 scripts/generate_emoji_data.py --check
+          python3 scripts/update_cache_version.py --check
+          python3 scripts/validate_static.py
+          git diff --check
+
+      - name: Commit and push update branch
+        if: ${{ steps.emoji.outputs.changed == 'true' }}
+        env:
+          EMOJI_VERSION: ${{ steps.emoji.outputs.emoji_version }}
+          CLDR_VERSION: ${{ steps.emoji.outputs.cldr_version }}
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git switch -C "$UPDATE_BRANCH"
+          git add assets/data/emoji.json scripts/emoji-data-lock.json sw.js
+          git commit -m "chore: update Emoji ${EMOJI_VERSION} and CLDR ${CLDR_VERSION} data"
+          if git fetch origin "$UPDATE_BRANCH"; then
+            remote_sha=$(git rev-parse FETCH_HEAD)
+            git push --force-with-lease="refs/heads/${UPDATE_BRANCH}:${remote_sha}" origin "HEAD:refs/heads/${UPDATE_BRANCH}"
+          else
+            git push origin "HEAD:refs/heads/${UPDATE_BRANCH}"
+          fi
+
+      - name: Create or refresh review pull request
+        if: ${{ steps.emoji.outputs.changed == 'true' }}
+        id: pull-request
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BASE_BRANCH: ${{ github.event.repository.default_branch }}
+          EMOJI_VERSION: ${{ steps.emoji.outputs.emoji_version }}
+          CLDR_VERSION: ${{ steps.emoji.outputs.cldr_version }}
+          PR_BODY: |
+            ## 요약
+
+            - 공식 최신 안정판인 Unicode Emoji와 CLDR 원자료로 로컬 검색 데이터를 재생성했습니다.
+            - 원본 URL·SHA-384·그룹별 개수 lock과 서비스 워커 cache revision을 함께 갱신했습니다.
+            - 이 PR은 자동 병합되지 않으며, 데이터와 브라우저 테스트 결과를 검토한 뒤 병합해야 합니다.
+
+            ## 자동 검증
+
+            - 생성기 단위 테스트
+            - 고정 원본 재현성 검사
+            - 서비스 워커 cache revision 검사
+            - 정적 사이트 검증 및 크기 예산
+        shell: bash
+        run: |
+          title="chore: update Emoji ${EMOJI_VERSION} and CLDR ${CLDR_VERSION} data"
+          pr_number=$(gh pr list --head "$UPDATE_BRANCH" --base "$BASE_BRANCH" --state open --json number --jq '.[0].number // empty')
+          if [ -n "$pr_number" ]; then
+            gh pr edit "$pr_number" --title "$title" --body "$PR_BODY"
+            pr_url=$(gh pr view "$pr_number" --json url --jq .url)
+          else
+            pr_url=$(gh pr create --base "$BASE_BRANCH" --head "$UPDATE_BRANCH" --title "$title" --body "$PR_BODY")
+          fi
+          echo "url=$pr_url" >> "$GITHUB_OUTPUT"
+
+      - name: Write Emoji update summary
+        if: ${{ always() }}
+        env:
+          CHANGED: ${{ steps.emoji.outputs.changed }}
+          PR_URL: ${{ steps.pull-request.outputs.url }}
+        shell: bash
+        run: |
+          echo '## Emoji·CLDR 자동 갱신' >> "$GITHUB_STEP_SUMMARY"
+          if [ "$CHANGED" = 'true' ]; then
+            echo "- 최신 공식 데이터 갱신 PR: $PR_URL" >> "$GITHUB_STEP_SUMMARY"
+          elif [ "$CHANGED" = 'false' ]; then
+            echo '- 자동 갱신이 필요한 호환 가능한 새 공식 데이터가 없습니다.' >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo '- 공식 데이터 확인 또는 갱신 중 오류가 발생했습니다. 작업 로그를 확인하세요.' >> "$GITHUB_STEP_SUMMARY"
+          fi

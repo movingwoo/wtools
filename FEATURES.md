@@ -81,7 +81,7 @@
 - 텍스트 통계 (글자/단어/줄 수 등)
 - 유니코드 문자 분석기 (문자별 코드포인트·UTF-8/UTF-16 바이트·종류, 자소 수)
 - 숨은 문자 탐지 / 정리 (제로폭·BOM·양방향 서식·특수 공백·위장 문자 검사 및 제거)
-- 이모지 피커/검색 (로컬 Unicode Emoji 17.0·CLDR 48.2 데이터 약 1,900개, 한국어/영어 검색)
+- 이모지 피커/검색 (로컬 공식 Unicode Emoji·CLDR 데이터 약 1,900개, 한국어/영어 검색)
 - ASCII 텍스트 배너 생성기 (자체 FIGfont 엔진, Standard/Big/Small/Slant/Banner/Block/Doom/Ghost/Shadow/Speed 로컬 글꼴)
 - 한글 도구 (한/영 키 오타 변환, 초성 추출, 로마자 표기, 자모 분해)
 - Lorem Ipsum / 한글 더미 텍스트 생성기

@@ -1,5 +1,5 @@
 // 데이터 포맷 변환
-import { tool, makeIO, h, kvTable, loadScript, loadModule, vendorUrl, LIB } from '../core.js';
+import { tool, makeIO, h, kvTable, formLabel, loadScript, loadModule, vendorUrl, LIB, download, createAsyncRunner, readFileChunks, throwIfAborted, formatBytes } from '../core.js';
 
 const CAT = '데이터 포맷 변환';
 
@@ -565,6 +565,435 @@ function objectsToRows(arr) {
   }))];
 }
 
+/* ---------- JSON Lines / NDJSON ---------- */
+const NDJSON_MAX_LINE_CHARS = 8 * 1024 * 1024;
+const RECORD_FILE_MAX_BYTES = 512 * 1024 * 1024;
+const YAML_FILE_MAX_BYTES = 32 * 1024 * 1024;
+const NDJSON_OUTPUT_MAX_BYTES = 128 * 1024 * 1024;
+
+function parseNdjsonLine(raw, lineNo) {
+  const line = lineNo === 1 ? raw.replace(/^\uFEFF/, '') : raw;
+  if (!line.trim()) return { empty: true };
+  if (line.length > NDJSON_MAX_LINE_CHARS)
+    throw new Error(`NDJSON 구문 오류: ${lineNo}행이 최대 ${(NDJSON_MAX_LINE_CHARS / 1024 / 1024)} MiB를 넘습니다.`);
+  try { return { value: JSON.parse(line) }; }
+  catch {
+    const preview = line.trim().slice(0, 80);
+    throw new Error(`NDJSON 구문 오류: ${lineNo}행의 JSON 문법이 올바르지 않습니다.${preview ? ` 입력: ${preview}` : ''}`);
+  }
+}
+
+export function parseNDJSON(text) {
+  const values = [];
+  text.split(/\n/).forEach((raw, index) => {
+    const parsed = parseNdjsonLine(raw.endsWith('\r') ? raw.slice(0, -1) : raw, index + 1);
+    if (!parsed.empty) values.push(parsed.value);
+  });
+  return values;
+}
+
+function requireRecordArray(value, format) {
+  if (!Array.isArray(value)) throw new Error(`${format}에서 레코드를 변환하려면 최상위 데이터가 배열이어야 합니다.`);
+  return value;
+}
+
+function requireCsvObjects(values) {
+  for (const [index, value] of values.entries()) {
+    if (!value || typeof value !== 'object' || Array.isArray(value))
+      throw new Error(`CSV로 변환할 ${index + 1}번째 레코드는 객체여야 합니다.`);
+  }
+  return values;
+}
+
+export function convertJsonLines(text, from, to, { csvDelim = ',', csvHeader = true } = {}) {
+  let values;
+  switch (from) {
+    case 'ndjson': values = parseNDJSON(text); break;
+    case 'json': values = requireRecordArray(JSON.parse(text), 'JSON'); break;
+    case 'yaml': values = requireRecordArray(jsyaml.load(text), 'YAML'); break;
+    case 'csv': values = rowsToObjects(parseCSV(text, csvDelim), csvHeader); break;
+    default: throw new Error(`지원하지 않는 입력 포맷입니다: ${from}`);
+  }
+  switch (to) {
+    case 'ndjson': return values.map((value) => JSON.stringify(value)).join('\n');
+    case 'json': return JSON.stringify(values, null, 2);
+    case 'yaml': return jsyaml.dump(values, { lineWidth: 120, noRefs: true });
+    case 'csv': {
+      const rows = objectsToRows(requireCsvObjects(values));
+      return toCSV(csvHeader ? rows : rows.slice(1), csvDelim);
+    }
+    default: throw new Error(`지원하지 않는 출력 포맷입니다: ${to}`);
+  }
+}
+
+async function streamNdjsonFile(file, { signal, progress, onRecord }) {
+  const decoder = new TextDecoder('utf-8', { fatal: true });
+  let pending = '', lineNo = 0, count = 0, yieldCount = 0;
+  const handleLine = async (raw) => {
+    lineNo++;
+    const line = raw.endsWith('\r') ? raw.slice(0, -1) : raw;
+    const parsed = parseNdjsonLine(line, lineNo);
+    if (parsed.empty) return;
+    await onRecord(parsed.value, lineNo, count++);
+    if (++yieldCount % 1000 === 0) {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      throwIfAborted(signal);
+    }
+  };
+  const decode = (bytes, stream) => {
+    try { return decoder.decode(bytes, { stream }); }
+    catch { throw new Error('파일이 올바른 UTF-8 텍스트가 아닙니다. 인코딩을 UTF-8로 바꿔 주세요.'); }
+  };
+  await readFileChunks(file, {
+    signal, chunkSize: 512 * 1024,
+    onProgress: progress,
+    async onChunk(bytes) {
+      pending += decode(bytes, true);
+      let newline;
+      while ((newline = pending.indexOf('\n')) >= 0) {
+        const line = pending.slice(0, newline);
+        pending = pending.slice(newline + 1);
+        await handleLine(line);
+      }
+      if (pending.length > NDJSON_MAX_LINE_CHARS)
+        throw new Error(`NDJSON 구문 오류: ${lineNo + 1}행이 최대 ${(NDJSON_MAX_LINE_CHARS / 1024 / 1024)} MiB를 넘습니다.`);
+    },
+  });
+  pending += decode(new Uint8Array(), false);
+  if (pending) await handleLine(pending);
+  return count;
+}
+
+async function streamJsonArrayFile(file, { signal, progress, onRecord }) {
+  const decoder = new TextDecoder('utf-8', { fatal: true });
+  let started = false, ended = false, inString = false, escaped = false;
+  let itemStarted = false, afterComma = false, depth = 0, item = '', count = 0, line = 1;
+  const emit = async () => {
+    const source = item.trim();
+    if (!source) throw new Error(`JSON 배열 구문 오류: ${line}행의 빈 배열 항목을 확인하세요.`);
+    let value;
+    try { value = JSON.parse(source); }
+    catch { throw new Error(`JSON 배열 구문 오류: ${count + 1}번째 항목의 JSON 문법이 올바르지 않습니다.`); }
+    await onRecord(value, count++);
+    item = '';
+    itemStarted = false;
+    afterComma = false;
+    if (count % 1000 === 0) {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      throwIfAborted(signal);
+    }
+  };
+  const consume = async (text) => {
+    for (let index = 0; index < text.length; index++) {
+      const char = text[index];
+      if (char === '\n') line++;
+      if (!started) {
+        if (/\s/.test(char) || char === '\uFEFF') continue;
+        if (char !== '[') throw new Error('JSON 파일의 최상위 데이터는 배열이어야 합니다.');
+        started = true;
+        continue;
+      }
+      if (ended) {
+        if (!/\s/.test(char)) throw new Error('JSON 배열이 끝난 뒤에는 공백만 올 수 있습니다.');
+        continue;
+      }
+      if (!itemStarted) {
+        if (/\s/.test(char)) continue;
+        if (char === ']') {
+          if (afterComma) throw new Error(`JSON 배열 구문 오류: ${line}행의 마지막 쉼표를 제거하세요.`);
+          ended = true;
+          continue;
+        }
+        if (char === ',') throw new Error(`JSON 배열 구문 오류: ${line}행의 빈 배열 항목을 확인하세요.`);
+        itemStarted = true;
+        if (char === '"') inString = true;
+        else if (char === '[' || char === '{') depth = 1;
+        item = char;
+        continue;
+      }
+      if (inString) {
+        item += char;
+        if (escaped) escaped = false;
+        else if (char === '\\') escaped = true;
+        else if (char === '"') inString = false;
+      } else if (char === '"') {
+        inString = true;
+        item += char;
+      } else if (char === '[' || char === '{') {
+        depth++;
+        item += char;
+      } else if (char === '}' || (char === ']' && depth > 0)) {
+        depth--;
+        if (depth < 0) throw new Error(`JSON 배열 구문 오류: ${line}행의 괄호 짝이 맞지 않습니다.`);
+        item += char;
+      } else if (depth === 0 && (char === ',' || char === ']')) {
+        await emit();
+        if (char === ',') afterComma = true;
+        else ended = true;
+      } else item += char;
+      if (item.length > NDJSON_MAX_LINE_CHARS)
+        throw new Error(`JSON 배열의 ${count + 1}번째 항목이 최대 ${NDJSON_MAX_LINE_CHARS / 1024 / 1024} MiB를 넘습니다.`);
+    }
+  };
+  const decode = (bytes, stream) => {
+    try { return decoder.decode(bytes, { stream }); }
+    catch { throw new Error('파일이 올바른 UTF-8 텍스트가 아닙니다. 인코딩을 UTF-8로 바꿔 주세요.'); }
+  };
+  await readFileChunks(file, {
+    signal, chunkSize: 512 * 1024, onProgress: progress,
+    onChunk: async (bytes) => consume(decode(bytes, true)),
+  });
+  await consume(decode(new Uint8Array(), false));
+  if (!started) throw new Error('JSON 파일이 비어 있습니다.');
+  if (!ended || itemStarted || inString || depth)
+    throw new Error('JSON 배열이 완전히 닫히지 않았습니다. 괄호와 문자열 따옴표를 확인하세요.');
+  return count;
+}
+
+async function parseCsvFileRows(file, delim, { signal, progress, onRow }) {
+  checkCsvDelimiter(delim);
+  const decoder = new TextDecoder('utf-8', { fatal: true });
+  let row = [], cell = '', inQuote = false, afterQuote = false;
+  let line = 1, quoteLine = 0, first = true, skipLf = false, quotedCr = false, rows = 0;
+  const emit = async () => {
+    row.push(cell);
+    const value = row;
+    row = [];
+    cell = '';
+    afterQuote = false;
+    if (!(value.length === 1 && value[0] === '')) {
+      await onRow(value, rows++);
+      if (rows % 1000 === 0) {
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        throwIfAborted(signal);
+      }
+    }
+  };
+  const consume = async (text) => {
+    for (let index = 0; index < text.length; index++) {
+      let char = text[index];
+      if (first) {
+        first = false;
+        if (char === '\uFEFF') continue;
+      }
+      if (skipLf) {
+        skipLf = false;
+        if (char === '\n') continue;
+      }
+      if (quotedCr) {
+        quotedCr = false;
+        if (char === '\n') { cell += '\n'; continue; }
+      }
+      if (inQuote) {
+        if (char === '"') { inQuote = false; afterQuote = true; }
+        else {
+          cell += char;
+          if (char === '\r') { line++; quotedCr = true; }
+          else if (char === '\n') line++;
+        }
+      } else if (afterQuote) {
+        if (char === '"') { cell += '"'; inQuote = true; afterQuote = false; }
+        else if (char === delim) { row.push(cell); cell = ''; afterQuote = false; }
+        else if (char === '\n' || char === '\r') {
+          if (char === '\r') skipLf = true;
+          await emit();
+          line++;
+        } else throw new Error(`CSV 구문 오류: ${line}행의 닫는 따옴표 뒤에는 구분자나 줄바꿈만 올 수 있습니다.`);
+      } else if (char === '"') {
+        if (cell) throw new Error(`CSV 구문 오류: ${line}행의 따옴표는 셀의 첫 문자에만 사용할 수 있습니다.`);
+        inQuote = true;
+        quoteLine = line;
+      } else if (char === delim) { row.push(cell); cell = ''; }
+      else if (char === '\n' || char === '\r') {
+        if (char === '\r') skipLf = true;
+        await emit();
+        line++;
+      } else cell += char;
+      if (cell.length > NDJSON_MAX_LINE_CHARS)
+        throw new Error(`CSV 구문 오류: ${line}행의 셀이 최대 ${NDJSON_MAX_LINE_CHARS / 1024 / 1024} MiB를 넘습니다.`);
+    }
+  };
+  const decode = (bytes, stream) => {
+    try { return decoder.decode(bytes, { stream }); }
+    catch { throw new Error('파일이 올바른 UTF-8 텍스트가 아닙니다. 인코딩을 UTF-8로 바꿔 주세요.'); }
+  };
+  await readFileChunks(file, {
+    signal, chunkSize: 512 * 1024, onProgress: progress,
+    onChunk: async (bytes) => consume(decode(bytes, true)),
+  });
+  await consume(decode(new Uint8Array(), false));
+  if (inQuote) throw new Error(`CSV 구문 오류: ${quoteLine}행에서 시작한 따옴표가 닫히지 않았습니다.`);
+  if (cell !== '' || row.length || afterQuote) await emit();
+  return rows;
+}
+
+async function readUtf8File(file, maxBytes, signal) {
+  if (file.size > maxBytes) throw new Error(`이 입력 포맷의 파일은 최대 ${formatBytes(maxBytes)}까지 처리할 수 있습니다.`);
+  throwIfAborted(signal);
+  let text;
+  try { text = new TextDecoder('utf-8', { fatal: true }).decode(await file.arrayBuffer()); }
+  catch { throw new Error('파일이 올바른 UTF-8 텍스트가 아닙니다. 인코딩을 UTF-8로 바꿔 주세요.'); }
+  throwIfAborted(signal);
+  return text.replace(/^\uFEFF/, '');
+}
+
+async function prepareRecordInput(file, format, options, task) {
+  if (file.size > RECORD_FILE_MAX_BYTES)
+    throw new Error(`파일은 최대 ${formatBytes(RECORD_FILE_MAX_BYTES)}까지 처리할 수 있습니다.`);
+  if (format === 'yaml') {
+    task.progress('YAML 목록을 읽는 중…');
+    const values = requireRecordArray(jsyaml.load(await readUtf8File(file, YAML_FILE_MAX_BYTES, task.signal)), 'YAML');
+    return {
+      async replay(onRecord, progress) {
+        for (const [index, value] of values.entries()) {
+          throwIfAborted(task.signal);
+          await onRecord(value, index);
+          if (index % 1000 === 999) await new Promise((resolve) => setTimeout(resolve, 0));
+          progress?.((index + 1) / Math.max(1, values.length));
+        }
+        return values.length;
+      },
+    };
+  }
+  if (format === 'csv') {
+    let firstRow = null, width = 0;
+    await parseCsvFileRows(file, options.csvDelim, {
+      signal: task.signal,
+      progress: (ratio) => task.progress(`CSV 열 구조를 읽는 중… ${Math.round(ratio * 15)}%`),
+      onRow(row, index) {
+        if (!index) firstRow = row;
+        width = Math.max(width, row.length);
+      },
+    });
+    if (!firstRow) throw new Error('CSV 파일에 레코드가 없습니다.');
+    const headers = uniqueHeaders(options.csvHeader ? firstRow : [], width);
+    return {
+      async replay(onRecord, progress) {
+        return parseCsvFileRows(file, options.csvDelim, {
+          signal: task.signal, progress,
+          async onRow(row, index) {
+            if (options.csvHeader && index === 0) return;
+            await onRecord(Object.fromEntries(headers.map((key, column) => [key, row[column] ?? ''])),
+              index - (options.csvHeader ? 1 : 0));
+          },
+        }).then((rows) => rows - (options.csvHeader ? 1 : 0));
+      },
+    };
+  }
+  const stream = format === 'ndjson' ? streamNdjsonFile : streamJsonArrayFile;
+  return {
+    replay(onRecord, progress) {
+      return stream(file, { signal: task.signal, progress, onRecord });
+    },
+  };
+}
+
+function outputFileInfo(format) {
+  return {
+    ndjson: ['ndjson', 'application/x-ndjson;charset=utf-8'],
+    json: ['json', 'application/json;charset=utf-8'],
+    yaml: ['yaml', 'application/yaml;charset=utf-8'],
+    csv: ['csv', 'text/csv;charset=utf-8'],
+  }[format];
+}
+
+async function chooseOutputHandle(name, format, direct) {
+  if (!direct) return null;
+  if (typeof window.showSaveFilePicker !== 'function')
+    throw new Error('이 브라우저는 디스크 직접 저장을 지원하지 않습니다. 호환 다운로드 방식을 선택하세요.');
+  const [, type] = outputFileInfo(format);
+  return window.showSaveFilePicker({
+    suggestedName: name,
+    types: [{ description: `${format.toUpperCase()} 파일`, accept: { [type.split(';')[0]]: [`.${name.split('.').pop()}`] } }],
+  });
+}
+
+async function createOutputSink(handle, type) {
+  const encoder = new TextEncoder();
+  const parts = [];
+  const writable = handle ? await handle.createWritable() : null;
+  let buffer = '', bufferBytes = 0, size = 0, closed = false;
+  const flush = async () => {
+    if (!buffer) return;
+    if (writable) await writable.write(buffer);
+    else parts.push(buffer);
+    buffer = '';
+    bufferBytes = 0;
+  };
+  return {
+    async write(piece) {
+      if (closed) throw new Error('이미 닫힌 출력 파일에는 쓸 수 없습니다.');
+      const bytes = encoder.encode(piece).byteLength;
+      size += bytes;
+      if (!writable && size > NDJSON_OUTPUT_MAX_BYTES)
+        throw new Error(`호환 다운로드 결과가 메모리 안전 한도 ${formatBytes(NDJSON_OUTPUT_MAX_BYTES)}를 넘습니다. 디스크 직접 저장을 선택하세요.`);
+      buffer += piece;
+      bufferBytes += bytes;
+      if (bufferBytes >= 1024 * 1024) await flush();
+    },
+    async close() {
+      await flush();
+      if (writable) await writable.close();
+      closed = true;
+      return writable ? null : new Blob(parts, { type });
+    },
+    async abort() {
+      if (!closed && writable) await writable.abort().catch(() => {});
+      closed = true;
+    },
+    get size() { return size; },
+  };
+}
+
+async function convertRecordFile(file, from, to, options, task) {
+  const [extension, type] = outputFileInfo(to);
+  const base = file.name.replace(/\.(?:ndjson|jsonl|json|ya?ml|csv|tsv|txt)$/i, '') || 'wtools-result';
+  const name = `${base}.${extension}`;
+  const handle = await chooseOutputHandle(name, to, options.direct);
+  const input = await prepareRecordInput(file, from, options, task);
+  const keys = new Set();
+  let count = await input.replay((value, index) => {
+    if (to === 'csv') {
+      if (!value || typeof value !== 'object' || Array.isArray(value))
+        throw new Error(`CSV로 변환할 ${index + 1}번째 레코드는 객체여야 합니다.`);
+      Object.keys(value).forEach((key) => keys.add(key));
+    }
+  }, (ratio) => task.progress(`입력 레코드를 검사하는 중… ${15 + Math.round(ratio * 30)}%`));
+  if (!count) throw new Error('파일에 변환할 레코드가 없습니다.');
+
+  const sink = await createOutputSink(handle, type);
+  let wrote = 0;
+  const headers = [...keys];
+  try {
+    if (to === 'json') await sink.write('[\n');
+    if (to === 'csv' && options.csvHeader) await sink.write(toCSV([headers], options.csvDelim));
+    await input.replay(async (value, index) => {
+      throwIfAborted(task.signal);
+      if (to === 'ndjson') await sink.write(JSON.stringify(value) + '\n');
+      else if (to === 'json') {
+        const json = JSON.stringify(value, null, 2).replace(/^/gm, '  ');
+        await sink.write(`${index ? ',\n' : ''}${json}`);
+      } else if (to === 'yaml') await sink.write(jsyaml.dump([value], { lineWidth: 120, noRefs: true }));
+      else if (to === 'csv') {
+        const row = headers.map((key) => {
+          const cell = value[key];
+          return cell == null ? '' : typeof cell === 'object' ? JSON.stringify(cell) : String(cell);
+        });
+        await sink.write(`${wrote || options.csvHeader ? '\n' : ''}${toCSV([row], options.csvDelim)}`);
+      }
+      wrote++;
+    }, (ratio) => task.progress(`파일을 변환하는 중… ${45 + Math.round(ratio * 55)}%`));
+    if (to === 'json') await sink.write('\n]\n');
+    throwIfAborted(task.signal);
+    const blob = await sink.close();
+    if (blob) task.download(name, blob);
+    return { name: handle?.name || name, count, size: sink.size, direct: !!handle };
+  } catch (error) {
+    await sink.abort();
+    throw error;
+  }
+}
+
 let tomlMod = null;
 async function toml() {
   return (tomlMod ??= await loadModule(vendorUrl('smolToml')));
@@ -644,6 +1073,104 @@ tool({
       },
       note: 'CSV 구분자·헤더 옵션은 입력 또는 출력 포맷이 CSV일 때 적용됩니다. 따옴표는 표준 CSV 방식(셀 전체를 감싸고 내부 따옴표는 ""로 이스케이프)으로 처리합니다. ENV 값은 숫자나 true/false처럼 보여도 문자열로 유지됩니다.',
     });
+  },
+});
+
+tool({
+  id: 'json-lines', cat: CAT, name: 'JSON Lines / NDJSON 변환',
+  desc: 'JSON·NDJSON·CSV·YAML 레코드를 변환하고 큰 NDJSON 파일을 줄 단위로 검사해 다운로드합니다.',
+  keywords: 'json lines jsonl ndjson newline delimited csv yaml streaming 대용량 줄 변환',
+  transfer: {
+    inputs: [{
+      id: 'input', label: 'JSON Lines 데이터', accepts: ['json', 'ndjson', 'csv', 'yaml'],
+      optionsByType: {
+        json: { options: { from: 'json' } }, ndjson: { options: { from: 'ndjson' } },
+        csv: { options: { from: 'csv' } }, yaml: { options: { from: 'yaml' } },
+      },
+    }],
+    outputs: ['json', 'ndjson', 'csv', 'yaml'].map((type) => ({
+      id: `json-lines-${type}`, label: `${type.toUpperCase()} 결과`, type,
+    })),
+  },
+  render(root) {
+    const formats = [['ndjson', 'NDJSON / JSON Lines'], ['json', 'JSON 배열'], ['csv', 'CSV'], ['yaml', 'YAML 목록']];
+    const delimiters = [[',', '쉼표 (,)'], ['\t', '탭 (TSV)'], [';', '세미콜론 (;)'], ['|', '파이프 (|)']];
+    root.append(h('h3', null, '텍스트 변환'));
+    makeIO(root, {
+      inputs: [{ id: 'input', label: '입력', rows: 12, value: '{"id":1,"name":"김민수"}\n{"id":2,"name":"이서연"}' }],
+      options: [
+        { id: 'from', label: '입력 포맷', type: 'select', values: formats, value: 'ndjson' },
+        { id: 'to', label: '출력 포맷', type: 'select', values: formats, value: 'json' },
+        { id: 'csvDelim', label: 'CSV 구분자', type: 'select', values: delimiters },
+        { id: 'csvHeader', label: 'CSV 헤더 포함', type: 'checkbox', value: true },
+      ],
+      actions: [{ id: 'convert', label: '변환' }, { id: 'download', label: '결과 다운로드', primary: false }],
+      autorun: false,
+      outputRows: 14,
+      transferOutput: { id: ({ opts }) => `json-lines-${opts.to}`, when: ({ result }) => !!String(result).trim() },
+      process(text, options, action) {
+        if (!text.trim()) return '';
+        const result = convertJsonLines(text, options.from, options.to, options);
+        if (action === 'download') {
+          const [extension, type] = outputFileInfo(options.to);
+          download(`wtools-json-lines.${extension}`, result + (result.endsWith('\n') ? '' : '\n'), type);
+        }
+        return result;
+      },
+      note: '빈 줄은 무시하고 잘못된 NDJSON은 줄 번호와 함께 중단합니다. CSV로 변환할 때는 각 레코드가 객체여야 하며 중첩 값은 JSON 문자열로 보존됩니다.',
+    });
+
+    root.append(h('h3', null, '파일 변환'));
+    const file = h('input', {
+      type: 'file', accept: '.ndjson,.jsonl,.json,.csv,.tsv,.yaml,.yml,text/plain,application/json,application/x-ndjson,text/csv,application/yaml',
+      'aria-label': '변환할 레코드 파일 선택',
+      'data-file-max-file': String(RECORD_FILE_MAX_BYTES),
+      'data-file-budget-note': 'NDJSON·JSON 배열·CSV는 512 KiB 청크로 읽습니다. YAML 입력은 최대 32 MiB입니다.',
+    });
+    const inputFormat = h('select', null, formats.map(([value, label]) => h('option', { value }, label)));
+    inputFormat.value = 'ndjson';
+    const outputFormat = h('select', null, formats.map(([value, label]) => h('option', { value }, label)));
+    outputFormat.value = 'json';
+    const csvDelim = h('select', null, delimiters.map(([value, label]) => h('option', { value }, label)));
+    const csvHeader = h('input', { type: 'checkbox' });
+    csvHeader.checked = true;
+    const saveMode = h('select', null,
+      h('option', { value: 'download' }, '호환 다운로드 (결과 128 MiB)'),
+      h('option', { value: 'direct' }, '디스크 직접 저장 (지원 브라우저)'));
+    const runButton = h('button', { class: 'btn primary', type: 'button' }, '파일 변환 및 다운로드');
+    const out = h('div');
+    const wrap = h('div', { class: 'io', 'aria-busy': 'false' },
+      formLabel(file, '레코드 파일 (UTF-8, 최대 512 MiB)', { class: 'io-label' }), file,
+      h('div', { class: 'opt-row' },
+        h('span', { class: 'opt-item' }, formLabel(inputFormat, '입력 포맷'), inputFormat),
+        h('span', { class: 'opt-item' }, formLabel(outputFormat, '출력 포맷'), outputFormat),
+        h('span', { class: 'opt-item' }, formLabel(csvDelim, 'CSV 구분자'), csvDelim),
+        h('span', { class: 'opt-item' }, formLabel(csvHeader, 'CSV 헤더 포함'), csvHeader),
+        h('span', { class: 'opt-item' }, formLabel(saveMode, '저장 방식'), saveMode)),
+      h('div', { class: 'btn-row' }, runButton),
+      h('div', { class: 'note' }, 'NDJSON·JSON 배열·CSV는 파일 전체를 메모리에 올리지 않고 레코드 단위로 검사합니다. YAML 문서는 구조상 전체 파싱하며 32 MiB로 제한합니다. 디스크 직접 저장은 File System Access API를 지원하는 브라우저에서 결과를 Blob에 모으지 않고 기록합니다.'),
+      out);
+    const runner = createAsyncRunner(wrap, {
+      controls: () => [file, inputFormat, outputFormat, csvDelim, csvHeader, saveMode, runButton],
+      errorOut: out,
+      onSuccess(result) {
+        out.replaceChildren(kvTable([
+          ['처리한 레코드', `${result.count.toLocaleString()}개`],
+          ['다운로드 파일', result.name],
+          ['결과 크기', formatBytes(result.size)],
+          ['저장 방식', result.direct ? '디스크 직접 저장' : '호환 다운로드'],
+        ]));
+      },
+      successMessage: '변환과 다운로드가 완료되었습니다.',
+    });
+    runButton.addEventListener('click', () => runner.run(async (task) => {
+      const selected = file.files?.[0];
+      if (!selected) throw new Error('변환할 레코드 파일을 선택하세요.');
+      return convertRecordFile(selected, inputFormat.value, outputFormat.value, {
+        csvDelim: csvDelim.value, csvHeader: csvHeader.checked, direct: saveMode.value === 'direct',
+      }, task);
+    }));
+    root.append(wrap);
   },
 });
 

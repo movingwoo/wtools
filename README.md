@@ -4,7 +4,7 @@ W-Tools는 브라우저에서 바로 실행되는 개발자 유틸리티 모음�
 모든 처리는 클라이언트에서 이루어지며, 입력 데이터는 서버로 전송되지 않습니다.
 
 다만 네트워크 조회 자체가 핵심인 도구는 예외입니다.  
-예를 들어 `DNS over HTTPS 조회`는 입력한 도메인을 Cloudflare DoH로 질의합니다.  
+예를 들어 `DNS over HTTPS 조회`는 입력한 도메인을 Cloudflare DoH로 질의하고, 인증서 온라인 검사는 인증서에 기록된 AIA·OCSP·CRL 주소로 요청합니다.  
 이처럼 외부 통신이 필요한 도구는 이름과 설명에 해당 사실을 명시합니다.
 
 W-Tools는 별도의 빌드 과정이 없는 순수 정적 사이트로 HTML과 Vanilla JavaScript ES 모듈로 구성되어 있습니다.  
@@ -24,12 +24,12 @@ PEM·JWK처럼 키가 포함될 수 있는 값은 매번 추가 동의를 받아
 | 카테고리 | 예시 |
 |---|---|
 | 인코딩 / 디코딩 | Base64, URL, JWT 생성·검증, 모스 부호, 진법 변환 |
-| 데이터 포맷 변환 | JSON↔YAML↔XML↔CSV↔TOML↔ENV, JSONPath/JMESPath, JSON Schema, 색상, 단위 |
+| 데이터 포맷 변환 | JSON↔YAML↔XML↔CSV↔TOML↔ENV, JSON Lines/NDJSON 파일 청크 변환·직접 저장, JSONPath/JMESPath, JSON Schema, 색상, 단위 |
 | 코드 포맷팅 / 개발 유틸 | JSON/SQL/JS 포맷터, 통합 Diff, 정규식, 시간대별 Crontab, Docker, cURL↔fetch |
 | 문자열 / 텍스트 | 대소문자, Slugify, 통계, 이모지, ASCII 텍스트 배너 |
 | 해싱 | MD/SHA/SHA3, HMAC, 파일 체크섬 |
 | 암호화 / 복호화 | AES, RSA, PGP, 비밀번호 해시, 토큰·패스프레이즈, TOTP/HOTP |
-| 공개키 / 인증서 | X.509, ASN.1, PEM↔Hex, SSH 키 |
+| 공개키 / 인증서 | X.509, PKCS#10 CSR, 키·인증서 일치, 신뢰 앵커·호스트명·AIA·OCSP·CRL 체인 검증, ASN.1, PEM↔Hex, SSH 키 |
 | 네트워크 | 서브넷, CIDR, MAC, DNS, User-Agent |
 | 날짜 / 시간 | Unix 타임스탬프, Filetime, 시간대, 스톱워치 |
 | 이미지 / 미디어 / QR | QR 생성, QR·바코드 카메라 인식, 이미지 포맷·크기·회전·자르기 변환 |
@@ -56,6 +56,8 @@ PEM·JWK처럼 키가 포함될 수 있는 값은 매번 추가 동의를 받아
 도구까지 중단시키지는 않습니다.
 
 WebAssembly를 쓰는 기능(비밀번호 해시의 Argon2, BLAKE/xxHash 해시, Zstandard 압축)은 Chrome 97, Firefox 102, Safari 16.4 이상이 필요하며 위 기준선이 이를 포함합니다.
+
+JSON Lines 파일 변환의 `디스크 직접 저장`은 File System Access API를 제공하는 브라우저에서만 표시된 경로로 스트리밍합니다. 지원하지 않는 Firefox·Safari에서는 모든 기능을 사용할 수 있지만 결과를 128 MiB 이하의 Blob으로 내려받는 호환 방식을 선택해야 합니다.
 
 ## 로컬에서 실행
 

@@ -7,7 +7,7 @@
      style-src에 'unsafe-inline'이 필요한 이유: 공통 UI 빌더(js/core.js의 h())가 인라인 style 객체를 CSSOM으로 직접 대입합니다.
      static.cloudflareinsights.com / cloudflareinsights.com: Cloudflare가 이 사이트를 서빙하며 자동 주입하는 Web Analytics 빔(beacon) 스크립트로, 저장소 소스에는 없습니다.
      'wasm-unsafe-eval': Argon2·BLAKE 해시 도구가 쓰는 WebAssembly 컴파일만 허용합니다. 이름과 달리 eval()과 new Function()은 그대로 차단되므로 'unsafe-eval'로 바꾸지 마세요. -->
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval' https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://unpkg.com https://static.cloudflareinsights.com; worker-src 'self' blob:; style-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://cdn.jsdelivr.net https://cloudflare-dns.com https://cloudflareinsights.com; object-src 'none'; base-uri 'self'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval' https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://unpkg.com https://static.cloudflareinsights.com; worker-src 'self' blob:; style-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https: http:; object-src 'none'; base-uri 'self'; form-action 'self'">
 <title>W-Tools — 웹 도구 모음</title>
 <meta name="description" content="브라우저에서 바로 실행되는 개발자 유틸리티 모음">
 <link rel="canonical" href="https://wtools.movingwoo.com/">

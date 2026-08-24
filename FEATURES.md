@@ -5,11 +5,11 @@
 ## 공통 기능
 
 - 검색창에 입력한 JWT, JSON, URL, Base64, 해시 형식 자동 감지 및 관련 도구 추천
-- 호환되는 표준 결과를 `다른 도구로 보내기`로 연결 (텍스트/Base64/Hex/PEM/JWK/ASN.1, URL, JSON/YAML/XML/CSV/TOML/ENV, 이미지 Data URI, 해시·체크섬)
+- 호환되는 표준 결과를 `다른 도구로 보내기`로 연결 (텍스트/Base64/Hex/PEM/JWK/ASN.1, URL, JSON/NDJSON/YAML/XML/CSV/TOML/ENV, 이미지 Data URI, 해시·체크섬)
 - 같은 도구 재전달, 대상 입력 칸과 포맷 옵션 자동 선택, 중앙 형식 검증을 지원하며 전달값은 URL·영구 저장소 없이 현재 탭 메모리에서 일회성 처리
 - PEM·JWK처럼 개인키·시크릿일 수 있는 값은 매번 추가 동의 후 전달
 - 모든 파일 입력에 공통 끌어놓기·클립보드 파일 붙여넣기 UI 적용 (accept/다중 선택 준수, 브라우저 내 처리 안내)
-- 사용자 입력을 외부로 보내는 도구에 전송 대상·항목·개인정보·CORS 의존성 사전 안내 (현재 Cloudflare DNS over HTTPS 조회)
+- 사용자 입력을 외부로 보내는 도구에 전송 대상·항목·개인정보·CORS 의존성 사전 안내 (Cloudflare DNS over HTTPS, 사용자가 명시적으로 실행한 인증서 AIA·OCSP·CRL 조회)
 - 도구 화면을 벗어날 때 타이머, 요청, 관찰자, 오브젝트 URL 등 사용 중인 리소스 자동 정리
 - 모바일에서 `/` 단축키로 사이드바 검색 열기
 - 존재하지 않는 도구 주소에 오류 안내 및 홈 이동 링크 제공
@@ -44,6 +44,7 @@
 ## 2. 데이터 포맷 변환
 
 - JSON ↔ YAML ↔ XML ↔ CSV ↔ TOML ↔ ENV(.env) 상호 변환 (CSV 구분자·헤더 옵션, 표준 따옴표 검증, 빈·중복 헤더 자동 보정)
+- JSON Lines/NDJSON ↔ JSON 배열/CSV/YAML 변환 (줄 번호 오류, BOM·CRLF, 텍스트·다운로드, NDJSON·JSON 배열·CSV 파일 512 KiB 청크 파싱, YAML 32 MiB 전체 파싱, 진행률·취소, 지원 브라우저 디스크 직접 저장과 128 MiB 호환 다운로드)
 - JSONPath / JMESPath 테스터
 - JSON Schema 검증(Draft 4/6/7/2019-09/2020-12 핵심 키워드) 및 샘플 생성 (공식 벡터 검증, 로컬 `$ref`, 조합·배열·패턴; 외부 `$ref`와 `$dynamicRef`, `unevaluated*`, `contentSchema`는 명시적으로 거부)
 - 리스트 변환기 (구분자 변경, 정렬, 중복 제거 등)
@@ -115,11 +116,16 @@
 ## 7. 공개키 / 인증서
 
 - X.509 인증서 파싱
+- PKCS#10 CSR 생성/파싱 (RSA/EC 개인키, Subject·DNS/IP/이메일 SAN, 자체 서명·약한 키/알고리즘 검사, CSR 다운로드)
+- 개인키·공개키·CSR·인증서의 SPKI 공개키 및 SHA-256 지문 일치 확인
+- 인증서 체인 자동 정렬과 기간·서명·Basic Constraints/keyCertSign·pathLen·DNS Name Constraints 검증, 정렬된 PEM 다운로드
+- 사용자 지정 신뢰 앵커 연결, TLS DNS/IP 호스트명·serverAuth 검사, 서명·기간을 검증한 로컬 CRL 폐기 판정
+- 사용자가 명시적으로 실행할 때 인증서에 기록된 AIA 중간 인증서를 보완하고 권한·CertID·기간·서명을 검증한 OCSP 및 온라인 CRL 상태 확인 (요청 대상·IP 노출·CORS 사전 안내, OS/브라우저 신뢰 저장소 대신 사용자 지정 앵커 사용)
 - ASN.1 Hex 문자열 파싱
 - PEM ↔ Hex 변환
 - JWK ↔ PEM 변환 (RSA/EC/Ed25519, RFC 7638 지문 계산)
 - SSH 호스트 키 파싱
-- RSA/DSA 개인키 정보 추출
+- RSA/EC 개인키 정보 추출
 
 ## 8. 네트워크
 

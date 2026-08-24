@@ -85,6 +85,11 @@ const TRANSFER_TYPES = Object.freeze({
   hash: { label: '해시', validate: (value) => /^(?:[0-9a-f]{8,}|\$[^\s]+|\{SSHA\}[^\s]+)$/i.test(String(value).trim()) },
   checksum: { label: '체크섬 목록', validate: (value) => String(value).trim().length > 0 },
   json: { label: 'JSON', validate(value) { try { JSON.parse(String(value)); return true; } catch { return false; } } },
+  ndjson: { label: 'NDJSON', validate(value) {
+    const lines = String(value).split(/\r?\n/).filter((line) => line.trim());
+    if (!lines.length) return false;
+    try { lines.forEach((line) => JSON.parse(line)); return true; } catch { return false; }
+  } },
   yaml: { label: 'YAML', validate: (value) => String(value).trim().length > 0 },
   xml: { label: 'XML', validate: (value) => /^\s*</.test(String(value)) },
   csv: { label: 'CSV', validate: (value) => String(value).includes(',') || String(value).includes('\t') },

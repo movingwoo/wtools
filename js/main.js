@@ -383,9 +383,10 @@ function renderToolNotFound(id) {
 function appendRuntimeNotices(body, t) {
   if (t.externalRequest) {
     const request = t.externalRequest;
+    const action = request.action || '조회 버튼';
     body.append(h('aside', { class: 'external-request-notice', 'aria-label': '외부 서버 사용 안내' },
       h('strong', null, '외부 서버 사용 안내'),
-      h('p', null, `조회 버튼을 누르면 ${request.service}로 다음 정보가 전송됩니다: ${request.sends}.`),
+      h('p', null, `${action}을 누르면 ${request.service}로 다음 정보가 전송됩니다: ${request.sends}.`),
       h('p', null, request.privacy),
       request.cors ? h('p', null, '외부 서버의 CORS 허용 응답이 필요하므로 네트워크나 브라우저 정책에 따라 조회가 실패할 수 있습니다.') : null));
   } else {

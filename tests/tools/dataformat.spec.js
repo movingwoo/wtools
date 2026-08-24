@@ -1,5 +1,5 @@
 // 데이터 포맷 변환 도구 정밀 테스트 — 포맷 간 변환 결과와 왕복(round-trip) 보존을 검증한다.
-import { test, expect, toolCases, openTool, ioSection, runIO } from '../helpers.js';
+import { test, expect, toolCases, openTool, ioSection, runIO, setOption, fillInputs, clickAction, uploadFile, grabDownload, kvValue } from '../helpers.js';
 
 const JSON_SRC = '{"name":"WTools","version":1,"tags":["web","tools"]}';
 const YAML_SRC = 'name: WTools\nversion: 1\ntags:\n  - web\n  - tools\n';
@@ -86,6 +86,56 @@ const cases = [
     inputs: 'id,note\n1,"값"oops', error: 'CSV 구문 오류: 2행의 닫는 따옴표 뒤에는 구분자나 줄바꿈만 올 수 있습니다.',
   },
   { name: 'data-convert: 잘못된 JSON은 에러', tool: 'data-convert', options: { '입력 포맷': 'json', '출력 포맷': 'yaml' }, inputs: '{bad json', output: /^⚠ .*JSON/ },
+
+  /* ---------- JSON Lines / NDJSON ---------- */
+  {
+    name: 'json-lines: NDJSON → JSON 배열', tool: 'json-lines', action: '변환',
+    options: { '입력 포맷': 'ndjson', '출력 포맷': 'json' },
+    inputs: '{"id":1,"name":"김민수"}\n{"id":2,"name":"이서연"}',
+    output: '[\n  {\n    "id": 1,\n    "name": "김민수"\n  },\n  {\n    "id": 2,\n    "name": "이서연"\n  }\n]',
+  },
+  {
+    name: 'json-lines: JSON 배열 → NDJSON', tool: 'json-lines', action: '변환',
+    options: { '입력 포맷': 'json', '출력 포맷': 'ndjson' },
+    inputs: '[{"id":1},{"id":2,"ok":true}]', output: '{"id":1}\n{"id":2,"ok":true}',
+  },
+  {
+    name: 'json-lines: NDJSON → CSV는 전체 키와 중첩 값을 보존', tool: 'json-lines', action: '변환',
+    options: { '입력 포맷': 'ndjson', '출력 포맷': 'csv' },
+    inputs: '{"id":1,"meta":{"active":true}}\n{"id":2,"name":"이서연"}',
+    output: 'id,meta,name\n1,"{""active"":true}",\n2,,이서연',
+  },
+  {
+    name: 'json-lines: CSV → NDJSON', tool: 'json-lines', action: '변환',
+    options: { '입력 포맷': 'csv', '출력 포맷': 'ndjson', 'CSV 구분자': ';' },
+    inputs: 'id;name\n1;김민수\n2;이서연', output: '{"id":"1","name":"김민수"}\n{"id":"2","name":"이서연"}',
+  },
+  {
+    name: 'json-lines: NDJSON → YAML 목록', tool: 'json-lines', action: '변환',
+    options: { '입력 포맷': 'ndjson', '출력 포맷': 'yaml' },
+    inputs: '{"id":1,"name":"김민수"}\n{"id":2,"name":"이서연"}',
+    output: '- id: 1\n  name: 김민수\n- id: 2\n  name: 이서연\n',
+  },
+  {
+    name: 'json-lines: BOM·CRLF·빈 줄 허용', tool: 'json-lines', action: '변환',
+    options: { '입력 포맷': 'ndjson', '출력 포맷': 'json' },
+    inputs: '\uFEFF{"id":1}\r\n\r\n{"id":2}\r\n', output: '[\n  {\n    "id": 1\n  },\n  {\n    "id": 2\n  }\n]',
+  },
+  {
+    name: 'json-lines: 잘못된 레코드는 실제 줄 번호로 에러', tool: 'json-lines', action: '변환',
+    options: { '입력 포맷': 'ndjson', '출력 포맷': 'json' },
+    inputs: '{"id":1}\n\n{"id":}', error: 'NDJSON 구문 오류: 3행의 JSON 문법이 올바르지 않습니다. 입력: {"id":}',
+  },
+  {
+    name: 'json-lines: JSON 객체 하나는 레코드 배열로 묵시 변환하지 않음', tool: 'json-lines', action: '변환',
+    options: { '입력 포맷': 'json', '출력 포맷': 'ndjson' },
+    inputs: '{"id":1}', error: 'JSON에서 레코드를 변환하려면 최상위 데이터가 배열이어야 합니다.',
+  },
+  {
+    name: 'json-lines: CSV 출력은 객체 레코드만 허용', tool: 'json-lines', action: '변환',
+    options: { '입력 포맷': 'ndjson', '출력 포맷': 'csv' },
+    inputs: '{"id":1}\n"문자열"', error: 'CSV로 변환할 2번째 레코드는 객체여야 합니다.',
+  },
 
   /* ---------- json-query ---------- */
   {
@@ -268,6 +318,193 @@ const cases = [
 ];
 
 toolCases('dataformat', cases);
+
+test('json-lines: 텍스트 결과를 선택한 포맷 파일로 다운로드한다', async ({ page }) => {
+  await openTool(page, 'json-lines');
+  const io = ioSection(page, 0);
+  await setOption(io, '입력 포맷', 'ndjson');
+  await setOption(io, '출력 포맷', 'json');
+  await fillInputs(io, '{"id":1}\n{"id":2}');
+  const result = await grabDownload(page, () => clickAction(io, '결과 다운로드'));
+  expect(result.name).toBe('wtools-json-lines.json');
+  expect(JSON.parse(result.bytes.toString('utf8'))).toEqual([{ id: 1 }, { id: 2 }]);
+});
+
+test('json-lines: 큰 NDJSON 파일을 청크 경계 너머까지 읽고 전체 키로 CSV를 만든다', async ({ page }) => {
+  await openTool(page, 'json-lines');
+  const io = ioSection(page, 1);
+  const records = Array.from({ length: 7000 }, (_, index) => ({
+    id: index + 1,
+    name: `행-${index + 1}-${'가'.repeat(70)}`,
+    nested: { even: index % 2 === 0 },
+    ...(index === 6999 ? { extra: '마지막 열' } : {}),
+  }));
+  const source = '\uFEFF' + records.map((record) => JSON.stringify(record)).join('\r\n');
+  await uploadFile(io, '변환할 레코드 파일 선택', {
+    name: 'large.jsonl', mimeType: 'application/x-ndjson', buffer: Buffer.from(source),
+  });
+  await setOption(io, '출력 포맷', 'csv');
+  const result = await grabDownload(page, () => clickAction(io, '파일 변환 및 다운로드'));
+  expect(result.name).toBe('large.csv');
+  const csv = result.bytes.toString('utf8');
+  const lines = csv.split('\n');
+  expect(lines).toHaveLength(7001);
+  expect(lines[0]).toBe('id,name,nested,extra');
+  expect(lines[1]).toContain('1,행-1-');
+  expect(lines[1]).toContain('"{""even"":true}"');
+  expect(lines.at(-1)).toContain('7000,행-7000-');
+  expect(lines.at(-1).endsWith(',마지막 열')).toBe(true);
+  await expect.poll(() => kvValue(io, '처리한 레코드')).toBe('7,000개');
+});
+
+test('json-lines: 파일의 잘못된 JSON을 실제 줄 번호와 함께 중단한다', async ({ page }) => {
+  await openTool(page, 'json-lines');
+  const io = ioSection(page, 1);
+  await uploadFile(io, '변환할 레코드 파일 선택', {
+    name: 'broken.ndjson', mimeType: 'application/x-ndjson', buffer: Buffer.from('{"id":1}\n\n{"id":}\n'),
+  });
+  await clickAction(io, '파일 변환 및 다운로드');
+  await expect(io.locator('.error').first()).toContainText('NDJSON 구문 오류: 3행의 JSON 문법이 올바르지 않습니다.');
+  await expect(io.locator('.io-status')).toContainText('처리 실패');
+});
+
+test('json-lines: 대용량 파일 변환을 취소할 수 있다', async ({ page }) => {
+  await openTool(page, 'json-lines');
+  const io = ioSection(page, 1);
+  const source = Array.from({ length: 300_000 }, (_, index) => `{"id":${index}}`).join('\n');
+  await uploadFile(io, '변환할 레코드 파일 선택', {
+    name: 'cancel.ndjson', mimeType: 'application/x-ndjson', buffer: Buffer.from(source),
+  });
+  await clickAction(io, '파일 변환 및 다운로드');
+  const cancel = io.getByRole('button', { name: '취소', exact: true });
+  await expect(cancel).toBeVisible();
+  await cancel.click();
+  await expect(io.locator('.io-status')).toHaveText('작업이 취소되었습니다.');
+});
+
+test('json-lines: JSON 배열 파일을 청크 파싱해 NDJSON으로 디스크에 직접 저장한다', async ({ page }) => {
+  await page.addInitScript(() => {
+    window.__directFile = { chunks: [], closed: false, aborted: false };
+    window.showSaveFilePicker = async (options) => ({
+      name: options.suggestedName,
+      async createWritable() {
+        return {
+          async write(chunk) { window.__directFile.chunks.push(String(chunk)); },
+          async close() { window.__directFile.closed = true; },
+          async abort() { window.__directFile.aborted = true; },
+        };
+      },
+    });
+  });
+  await openTool(page, 'json-lines');
+  const io = ioSection(page, 1);
+  const records = Array.from({ length: 9000 }, (_, index) => ({
+    id: index + 1,
+    text: `${'가'.repeat(35)}-${index + 1}`,
+    nested: [index, { active: index % 2 === 0 }],
+  }));
+  await uploadFile(io, '변환할 레코드 파일 선택', {
+    name: 'records.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(records)),
+  });
+  await setOption(io, '입력 포맷', 'json');
+  await setOption(io, '출력 포맷', 'ndjson');
+  await setOption(io, '저장 방식', 'direct');
+  await clickAction(io, '파일 변환 및 다운로드');
+  await expect(io).toHaveAttribute('aria-busy', 'false', { timeout: 20000 });
+  await expect.poll(() => kvValue(io, '처리한 레코드')).toBe('9,000개');
+  expect(await kvValue(io, '저장 방식')).toBe('디스크 직접 저장');
+  const saved = await page.evaluate(() => ({ ...window.__directFile, text: window.__directFile.chunks.join('') }));
+  expect(saved.closed).toBe(true);
+  expect(saved.aborted).toBe(false);
+  const lines = saved.text.trim().split('\n').map(JSON.parse);
+  expect(lines).toHaveLength(records.length);
+  expect(lines[0]).toEqual(records[0]);
+  expect(lines.at(-1)).toEqual(records.at(-1));
+});
+
+test('json-lines: 디스크 직접 저장 미지원 브라우저는 호환 방식을 안내한다', async ({ page }) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(window, 'showSaveFilePicker', { value: undefined, configurable: true });
+  });
+  await openTool(page, 'json-lines');
+  const io = ioSection(page, 1);
+  await uploadFile(io, '변환할 레코드 파일 선택', {
+    name: 'records.ndjson', mimeType: 'application/x-ndjson', buffer: Buffer.from('{"id":1}\n'),
+  });
+  await setOption(io, '저장 방식', 'direct');
+  await clickAction(io, '파일 변환 및 다운로드');
+  await expect(io.locator('.error').first()).toContainText('이 브라우저는 디스크 직접 저장을 지원하지 않습니다. 호환 다운로드 방식을 선택하세요.');
+});
+
+test('json-lines: 디스크 직접 저장 쓰기 실패 시 부분 파일을 중단한다', async ({ page }) => {
+  await page.addInitScript(() => {
+    window.__directFileAborted = false;
+    window.showSaveFilePicker = async () => ({
+      name: 'records.ndjson',
+      async createWritable() {
+        return {
+          async write() { throw new Error('디스크 쓰기 실패'); },
+          async close() {},
+          async abort() { window.__directFileAborted = true; },
+        };
+      },
+    });
+  });
+  await openTool(page, 'json-lines');
+  const io = ioSection(page, 1);
+  await uploadFile(io, '변환할 레코드 파일 선택', {
+    name: 'records.ndjson', mimeType: 'application/x-ndjson', buffer: Buffer.from('{"id":1}\n'),
+  });
+  await setOption(io, '출력 포맷', 'ndjson');
+  await setOption(io, '저장 방식', 'direct');
+  await clickAction(io, '파일 변환 및 다운로드');
+  await expect(io.locator('.error').first()).toContainText('디스크 쓰기 실패');
+  await expect.poll(() => page.evaluate(() => window.__directFileAborted)).toBe(true);
+});
+
+test('json-lines: 따옴표·줄바꿈이 있는 CSV 파일을 JSON 배열로 변환한다', async ({ page }) => {
+  await openTool(page, 'json-lines');
+  const io = ioSection(page, 1);
+  const source = 'id,name,note\r\n1,홍길동,"첫 줄\r\n둘째 줄"\r\n2,"이""서연",완료\r\n';
+  await uploadFile(io, '변환할 레코드 파일 선택', {
+    name: 'records.csv', mimeType: 'text/csv', buffer: Buffer.from(source),
+  });
+  await setOption(io, '입력 포맷', 'csv');
+  await setOption(io, '출력 포맷', 'json');
+  const result = await grabDownload(page, () => clickAction(io, '파일 변환 및 다운로드'));
+  expect(result.name).toBe('records.json');
+  expect(JSON.parse(result.bytes.toString('utf8'))).toEqual([
+    { id: '1', name: '홍길동', note: '첫 줄\r\n둘째 줄' },
+    { id: '2', name: '이"서연', note: '완료' },
+  ]);
+});
+
+test('json-lines: YAML 목록 파일을 NDJSON으로 변환한다', async ({ page }) => {
+  await openTool(page, 'json-lines');
+  const io = ioSection(page, 1);
+  await uploadFile(io, '변환할 레코드 파일 선택', {
+    name: 'records.yaml', mimeType: 'application/yaml',
+    buffer: Buffer.from('- id: 1\n  tags: [a, b]\n- id: 2\n  active: true\n'),
+  });
+  await setOption(io, '입력 포맷', 'yaml');
+  await setOption(io, '출력 포맷', 'ndjson');
+  const result = await grabDownload(page, () => clickAction(io, '파일 변환 및 다운로드'));
+  expect(result.name).toBe('records.ndjson');
+  expect(result.bytes.toString('utf8').trim().split('\n').map(JSON.parse)).toEqual([
+    { id: 1, tags: ['a', 'b'] }, { id: 2, active: true },
+  ]);
+});
+
+test('json-lines: JSON 파일의 후행 쉼표를 명확히 거부한다', async ({ page }) => {
+  await openTool(page, 'json-lines');
+  const io = ioSection(page, 1);
+  await uploadFile(io, '변환할 레코드 파일 선택', {
+    name: 'broken.json', mimeType: 'application/json', buffer: Buffer.from('[{"id":1},]'),
+  });
+  await setOption(io, '입력 포맷', 'json');
+  await clickAction(io, '파일 변환 및 다운로드');
+  await expect(io.locator('.error').first()).toContainText('마지막 쉼표를 제거하세요.');
+});
 
 /* ---------- 왕복(round-trip) 변환 ---------- */
 

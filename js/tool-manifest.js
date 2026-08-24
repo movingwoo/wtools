@@ -354,6 +354,73 @@ export const TOOL_MANIFESTS = Object.freeze([
     "externalLibrary": true
   },
   {
+    "id": "json-lines",
+    "cat": "데이터 포맷 변환",
+    "name": "JSON Lines / NDJSON 변환",
+    "desc": "JSON·NDJSON·CSV·YAML 레코드를 변환하고 큰 NDJSON 파일을 줄 단위로 검사해 다운로드합니다.",
+    "keywords": "json lines jsonl ndjson newline delimited csv yaml streaming 대용량 줄 변환",
+    "transfer": {
+      "inputs": [
+        {
+          "id": "input",
+          "label": "JSON Lines 데이터",
+          "accepts": [
+            "json",
+            "ndjson",
+            "csv",
+            "yaml"
+          ],
+          "optionsByType": {
+            "json": {
+              "options": {
+                "from": "json"
+              }
+            },
+            "ndjson": {
+              "options": {
+                "from": "ndjson"
+              }
+            },
+            "csv": {
+              "options": {
+                "from": "csv"
+              }
+            },
+            "yaml": {
+              "options": {
+                "from": "yaml"
+              }
+            }
+          }
+        }
+      ],
+      "outputs": [
+        {
+          "id": "json-lines-json",
+          "label": "JSON 결과",
+          "type": "json"
+        },
+        {
+          "id": "json-lines-ndjson",
+          "label": "NDJSON 결과",
+          "type": "ndjson"
+        },
+        {
+          "id": "json-lines-csv",
+          "label": "CSV 결과",
+          "type": "csv"
+        },
+        {
+          "id": "json-lines-yaml",
+          "label": "YAML 결과",
+          "type": "yaml"
+        }
+      ]
+    },
+    "module": "./tools/dataformat.js",
+    "externalLibrary": true
+  },
+  {
     "id": "list-convert",
     "cat": "데이터 포맷 변환",
     "name": "리스트 변환기",
@@ -895,6 +962,108 @@ export const TOOL_MANIFESTS = Object.freeze([
         {
           "id": "input",
           "label": "PEM 인증서",
+          "accepts": [
+            "pem"
+          ]
+        }
+      ]
+    },
+    "module": "./tools/pki.js",
+    "externalLibrary": true
+  },
+  {
+    "id": "pkcs10-csr",
+    "cat": "공개키 / 인증서",
+    "name": "PKCS#10 CSR 생성 / 파싱",
+    "desc": "개인키로 인증서 서명 요청(CSR)을 만들거나 CSR의 주체, SAN, 공개키와 자체 서명을 검사합니다.",
+    "keywords": "pkcs10 csr certificate signing request create parse san 인증서 서명 요청",
+    "transfer": {
+      "inputs": [
+        {
+          "id": "privateKey",
+          "label": "개인키 PEM",
+          "accepts": [
+            "pem"
+          ]
+        },
+        {
+          "id": "csr",
+          "label": "CSR PEM",
+          "accepts": [
+            "pem"
+          ]
+        }
+      ],
+      "outputs": [
+        {
+          "id": "csr",
+          "label": "CSR PEM",
+          "type": "pem"
+        }
+      ]
+    },
+    "module": "./tools/pki.js",
+    "externalLibrary": true
+  },
+  {
+    "id": "key-cert-match",
+    "cat": "공개키 / 인증서",
+    "name": "키·CSR·인증서 일치 확인",
+    "desc": "개인키나 공개키, CSR, X.509 인증서에서 공개키를 추출해 같은 키 쌍인지 비교합니다.",
+    "keywords": "private public key csr certificate match spki fingerprint modulus 키 인증서 일치",
+    "transfer": {
+      "inputs": [
+        {
+          "id": "key",
+          "label": "개인키 또는 공개키",
+          "accepts": [
+            "pem"
+          ]
+        },
+        {
+          "id": "csr",
+          "label": "CSR",
+          "accepts": [
+            "pem"
+          ]
+        },
+        {
+          "id": "certificate",
+          "label": "인증서",
+          "accepts": [
+            "pem"
+          ]
+        }
+      ]
+    },
+    "module": "./tools/pki.js",
+    "externalLibrary": true
+  },
+  {
+    "id": "certificate-chain",
+    "cat": "공개키 / 인증서",
+    "name": "인증서 체인 / 신뢰 검증",
+    "desc": "X.509 체인을 정렬하고 신뢰 앵커·호스트명·제약·서명·CRL과 선택적 AIA/OCSP 상태를 검사합니다.",
+    "keywords": "x509 certificate chain trust verify hostname root intermediate aia ocsp crl revocation 인증서 신뢰 검증",
+    "externalRequest": {
+      "service": "인증서에 기록된 AIA·OCSP·CRL HTTP(S) 서버",
+      "sends": "AIA·CRL 조회 요청, OCSP 인증서 식별 정보 및 일반적인 접속 정보(IP 등)",
+      "privacy": "“체인 검증”은 입력한 인증서 내용을 외부 서버로 전송하지 않습니다. 민감한 사설 인증서는 온라인 확인 전에 인증서에 기록된 대상 주소를 확인하세요.",
+      "cors": true,
+      "action": "“온라인 AIA·OCSP·CRL 확인” 버튼"
+    },
+    "transfer": {
+      "inputs": [
+        {
+          "id": "chain",
+          "label": "인증서 체인 PEM",
+          "accepts": [
+            "pem"
+          ]
+        },
+        {
+          "id": "anchors",
+          "label": "신뢰 앵커 PEM",
           "accepts": [
             "pem"
           ]

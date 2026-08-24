@@ -21,7 +21,7 @@
 | CryptoJS | 4.2.0 | MIT | 파일 해시 Worker |
 | smol-toml | 1.2.2 | BSD-3-Clause | TOML 변환 |
 | brotli-compress | 1.3.3 | Apache-2.0 | Brotli 압축 |
-| brotli, base64-js | 1.3.3, 1.5.1 | MIT | Brotli 해제 |
+| brotli | 1.3.3 | MIT | Brotli 해제 |
 | @bokuweb/zstd-wasm | 0.0.27 | MIT | Zstandard 압축 및 WASM |
 | fzstd | 0.1.1 | MIT | Zstandard 해제 |
 | seek-bzip | 2.0.0 | MIT | Bzip2 해제 |
@@ -29,9 +29,10 @@
 | gifenc | 1.0.3 | MIT | GIF 변환 |
 | OpenPGP.js | 5.11.1 | LGPL-3.0-or-later | PGP 키·암복호화 |
 
-각 파일은 위 패키지의 배포본을 그대로 사용합니다. 단, 브라우저에서 로컬 하위 자산을
-찾도록 Brotli 해제 모듈의 `base64-js` import와 Zstandard 모듈의 WASM 상대 경로만
-바꾸며, 원본 해시와 변환 결과 해시를 모두 등록부에서 검증합니다.
+각 파일은 위 패키지의 배포본을 기준으로 사용합니다. 단, Brotli 해제 모듈의
+`base64-js` import는 W-Tools 공통 Base64 모듈로 바꾸고 Zstandard 모듈의 WASM 상대
+경로를 로컬 자산에 맞게 바꿉니다. 원본 해시와 변환 결과 해시를 모두 등록부에서
+검증합니다.
 
 ## 테스트 전용 의존성
 

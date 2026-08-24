@@ -98,6 +98,7 @@ npx playwright test --project=chromium
 CI와 동일한 세 브라우저 구성을 검사하려면 `npx playwright install chromium firefox webkit`으로 브라우저를 설치한 뒤 `npx playwright test`를 실행합니다.
 
 GitHub Actions는 모든 PR과 `main` 브랜치 푸시에서 정적 검사, JavaScript 구문 검사, 공백 오류 검사와 HTTP 앱 셸 스모크 테스트를 실행합니다. 브라우저 검사는 하나의 고정된 컨테이너에서 Chromium 전체 테스트와 Firefox 및 WebKit 핵심 스모크 테스트를 순차적으로 실행합니다.
+`main` 검증과 별도로 공식 GitHub Pages Actions가 저장소 루트의 정적 사이트를 배포합니다.
 
 매주 정기 호환성 잡은 digest로 고정한 Playwright 1.32.3 컨테이너의 Chromium 112
 (Chrome 110에 가장 가까운 제공 엔진), Firefox 111(기준 115보다 더 낮음), WebKit 16.4에서
@@ -125,7 +126,7 @@ manifest.json       PWA 매니페스트 (설치, 아이콘, 테마 색상)
 sw.js               서비스워커; 앱 셸 사전 캐시 + network-first 갱신으로 오프라인 지원
 tests/              Playwright 브라우저 테스트 (CI 전용, 자체 package.json — 사이트 배포와 무관)
 scripts/            의존성 없는 저장소·정적 사이트 검증 스크립트
-.github/workflows/  PR 검사, nightly 운영 점검, 최소 브라우저·월간 의존성 점검
+.github/workflows/  PR 검사, Pages 배포, nightly 운영 점검, 최소 브라우저·월간 의존성 점검
 ```
 
 jsrsasign, pako, figlet 같은 classic script는 SRI로 검증하면서 해당 도구를 열 때 CDN에서 **지연 로드**합니다.  

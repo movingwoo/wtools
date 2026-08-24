@@ -9,6 +9,7 @@
 
 - GitHub Actions의 checkout·setup-node·cache를 Node.js 24 기반 최신 메이저로 올려 폐기된 Node.js 20 런타임 경고 제거
 - GitHub Pages를 레거시 브랜치 빌드에서 Node.js 24 기반 공식 Actions 정적 배포 워크플로로 전환
+- 모든 도구 상단에 반복되던 브라우저 내 처리 및 외부 라이브러리 로드 안내 제거
 
 ## [1.3.0] - 2026-08-24
 

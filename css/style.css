@@ -568,7 +568,7 @@ canvas, iframe, video { max-width: 100%; }
 }
 .scan-result:not(:empty) { margin-top: 12px; }
 
-.local-processing-notice, .library-load-notice, .file-budget-note {
+.file-budget-note {
   margin: 0 0 12px;
   padding: 9px 11px;
   border: 1px solid var(--border);
@@ -583,8 +583,7 @@ canvas, iframe, video { max-width: 100%; }
 .transfer-sensitive label { flex: 1; }
 
 @media (forced-colors: active) {
-  .btn, .card, .note, .external-request-notice, .local-processing-notice,
-  .library-load-notice, textarea, input, select { border: 1px solid CanvasText; }
+  .btn, .card, .note, .external-request-notice, textarea, input, select { border: 1px solid CanvasText; }
   .error, .io-status.error, .transfer-error { color: Mark; }
   .search-current, .nav-item a.active { outline: 2px solid Highlight; }
   .scanner-guide { border-color: CanvasText; box-shadow: none; }

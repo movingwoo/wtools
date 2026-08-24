@@ -4,7 +4,7 @@ importScripts('./js/sw-integrity.js');
 
 const CACHE_PREFIX = 'wtools-';
 // scripts/update_cache_version.py가 앱 셸 내용의 SHA-256 앞 12자리와 일치시킨다.
-const CACHE_REVISION = 'bfe1d6ffd7fe';
+const CACHE_REVISION = 'a4840ec3f2a9';
 const CACHE_NAME = CACHE_PREFIX + 'shell-' + CACHE_REVISION;
 const EXTERNAL_CACHE_PREFIX = CACHE_PREFIX + 'external-';
 const EXTERNAL_CACHE_NAME = EXTERNAL_CACHE_PREFIX + 'v2';
@@ -45,6 +45,7 @@ const APP_SHELL = [
   './assets/vendor/zstd-wasm-0.0.27.wasm',
   './js/core.js',
   './js/dependencies.js',
+  './js/lib/media/image-data.js',
   './js/main.js',
   './js/tool-manifest.js',
   './js/sw-integrity.js',
@@ -64,6 +65,8 @@ const APP_SHELL = [
   './js/tools/network.js',
   './js/tools/pki.js',
   './js/tools/stringtools.js',
+  './js/workers/archive-codec.js',
+  './js/workers/file-hash.js',
 ];
 
 self.addEventListener('install', (event) => {

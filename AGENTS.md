@@ -22,6 +22,8 @@ js/core.js          Tool registry, shared UI builders, byte helpers, and lazy lo
 js/main.js          Tool manifest registration, lazy module loader, hash router, sidebar, search, and generated home page
 js/tool-manifest.js Generated search/home metadata and tool-to-module mapping
 js/tools/*.js       Category modules; each module registers multiple related tools
+js/lib/**           First-party, DOM-independent algorithms and format implementations
+js/workers/**       Module Worker entry points for expensive first-party implementations
 assets/             Static images and icons
 manifest.json       PWA manifest (installability, icons, theme color)
 sw.js               Service worker; precaches the app shell, then network-first for offline support
@@ -34,6 +36,7 @@ scripts/            Dependency-free repository and static-site validation script
 .github/workflows/  validate.yml on every PR and main push; nightly.yml once a day
 FEATURES.md         Feature inventory grouped by category
 README.md           User-facing project documentation
+DEVELOPMENT_GUIDE.md Code boundaries, size budgets, dependency replacement, and release rules
 ```
 
 ## Running and Validation
@@ -51,7 +54,7 @@ CI (`.github/workflows/validate.yml`) checks JavaScript syntax, validates regist
 ```bash
 cd tests
 npm ci
-npm run test:collect -- --project=chromium  # 러너 기동 및 테스트 수집 빠른 검사
+npm run test:collect -- --project=chromium  # quick runner startup and test collection check
 npx playwright install chromium
 npx playwright test --project=chromium
 npx playwright install firefox webkit        # optional: add Firefox/WebKit smoke projects
@@ -136,15 +139,17 @@ Prefer shared APIs from `js/core.js` instead of duplicating them:
 
 ## Implementation Conventions
 
+- Write technical and developer-only documentation in English. Keep `README.md`, `TODO.md`, and documents intended for end users in Korean; Korean strings may also appear in technical code examples when they intentionally demonstrate required user-facing copy.
 - Follow the style of the surrounding module: ES modules, two-space indentation, semicolons, single-quoted strings, and concise browser-native code.
 - Make focused changes. Do not add a framework, build tooling, or package dependency for a small feature.
-- Prefer Web APIs and existing helpers. If a substantial library is necessary, load it lazily only when the relevant tool opens; pin its version and add it to `LIB` when it is reusable.
-- Keep only `CryptoJS` and `jsyaml` as eagerly loaded globals unless the site architecture is intentionally revised.
+- Follow `DEVELOPMENT_GUIDE.md` for module boundaries, size budgets, Worker use, external-dependency replacements, and release gates.
+- Prefer Web APIs and existing helpers. Do not replace an existing runtime dependency with another package and call it an internal implementation. If a new external runtime library is unavoidable for an unrelated feature, document the reason, load it lazily, pin it, and register it in `LIB`.
+- Do not add eagerly loaded globals. `CryptoJS` and `jsyaml` are temporary legacy exceptions only until their replacement work is complete.
 - Stay within the browser baseline documented in `README.md` (Chrome/Edge 110, Firefox 115, Safari 16.4). Regex lookbehind, `structuredClone`, `findLast`, `toSorted`/`toReversed`/`with`, and import maps are available; `Intl.Segmenter` is not (Firefox 125) and stays behind a `typeof` guard. Tool implementations are dynamically imported, so a parse failure is isolated to that module, but the minimum syntax policy still applies to every module and is checked by `scripts/check_browser_compat.mjs` plus the scheduled baseline-engine job.
 - Validate input and throw `Error` objects with clear Korean messages. Avoid silent failures and unexplained coercion.
 - Preserve responsiveness, keyboard access, semantic labels, and the existing automatic light/dark theme.
 - Revoke object URLs and stop timers or workers when their lifetime ends. Avoid blocking the main thread for large inputs when a chunked or asynchronous approach is practical.
-- For algorithms not reasonably covered by a suitable dependency, a small self-contained implementation in the category module is acceptable; match existing implementations such as archive encoders and legacy hashes.
+- Keep only one-tool implementations of roughly 8 KiB or less in a category module. Put larger, shared, standard-sensitive, or Worker-backed first-party implementations under `js/lib/` and keep `js/tools/` focused on registration and UI adaptation.
 - Never commit secrets, private keys, generated user data, or local machine artifacts.
 
 ## Adding or Changing a Tool

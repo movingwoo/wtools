@@ -93,13 +93,6 @@ globalThis.WTOOLS_DEPENDENCIES = {
       "kind": "script",
       "tools": ["js/tools/archive.js"]
     },
-    "jsqr": {
-      "url": "https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js",
-      "integrity": "sha384-b5Ya4Bq3qCyz39m2ISh+4DxjAIljdeFwK/BsXLuj9gugaNwAcj/ia15fxNZL9Nlx",
-      "license": "Apache-2.0",
-      "kind": "script",
-      "tools": ["js/tools/media.js"]
-    },
     "jsonpath": {
       "url": "https://unpkg.com/jsonpath-plus@10.3.0/dist/index-browser-umd.min.cjs",
       "integrity": "sha384-hGQPqOxTPM4foQNgrQgUmEiH4XmDBHG/JM6hBfraI4LJ9LA9V/tDGADiGRXeC9/c",
@@ -215,14 +208,6 @@ globalThis.WTOOLS_DEPENDENCIES = {
       "sourceIntegrity": "sha384-1gyPa+NXP6qrwcxIm0AZ1qJ8VDd40VpPFdVp0FVLx3oYko16nZcVpzp0cJE7HXsI",
       "license": "ISC",
       "tools": ["js/tools/archive.js"]
-    },
-    "gifenc": {
-      "path": "assets/vendor/gifenc-1.0.3.mjs",
-      "integrity": "sha384-EfUTDezHroFGSc5auU2WaufI20uFOnrsAzmsj3A3jth9RGB9bc+Qv5ILBF//UBZz",
-      "source": "https://cdn.jsdelivr.net/npm/gifenc@1.0.3/+esm",
-      "sourceIntegrity": "sha384-EfUTDezHroFGSc5auU2WaufI20uFOnrsAzmsj3A3jth9RGB9bc+Qv5ILBF//UBZz",
-      "license": "MIT",
-      "tools": ["js/tools/media.js"]
     },
     "openpgp": {
       "path": "assets/vendor/openpgp-5.11.1.min.mjs",

@@ -184,7 +184,7 @@ function drawFinder(matrix, functions, centerRow, centerColumn) {
   }
 }
 
-function alignmentPositions(version) {
+export function qrAlignmentPositions(version) {
   if (version === 1) return [];
   const size = version * 4 + 17;
   const count = Math.floor(version / 7) + 2;
@@ -244,7 +244,7 @@ function baseMatrix(version, level) {
   drawFinder(matrix, functions, 3, 3);
   drawFinder(matrix, functions, 3, size - 4);
   drawFinder(matrix, functions, size - 4, 3);
-  const positions = alignmentPositions(version);
+  const positions = qrAlignmentPositions(version);
   for (const row of positions) for (const column of positions) {
     if (!functions[row][column]) drawAlignment(matrix, functions, row, column);
   }
@@ -257,7 +257,7 @@ function baseMatrix(version, level) {
   return { matrix, functions };
 }
 
-function maskBit(mask, row, column) {
+export function qrMaskBit(mask, row, column) {
   const product = row * column;
   if (mask === 0) return (row + column) % 2 === 0;
   if (mask === 1) return row % 2 === 0;
@@ -283,7 +283,7 @@ function fillData(base, functions, codewords, level, mask) {
         if (functions[row][column]) continue;
         const dark = bitIndex < codewords.length * 8
           && ((codewords[bitIndex >>> 3] >>> (7 - (bitIndex & 7))) & 1) !== 0;
-        matrix[row][column] = dark !== maskBit(mask, row, column) ? 1 : 0;
+        matrix[row][column] = dark !== qrMaskBit(mask, row, column) ? 1 : 0;
         bitIndex++;
       }
     }
@@ -387,4 +387,18 @@ export function encodeQrBytes(input, options = {}) {
 export function encodeQr(text, options = {}) {
   if (typeof text !== 'string') throw new TypeError('QR 입력은 문자열이어야 합니다.');
   return encodeQrBytes(new TextEncoder().encode(text), options);
+}
+
+// QR specification data shared with the decoder. Callers may safely mutate the returned values.
+export function qrBlockInfo(version, levelName) {
+  const level = LEVELS[String(levelName).toUpperCase()];
+  if (!Number.isInteger(version) || version < 1 || version > 40 || !level)
+    throw new RangeError('QR 버전 또는 오류 복원 레벨이 올바르지 않습니다.');
+  return blockInfo(version, level).map((block) => ({ ...block }));
+}
+
+export function qrFunctionModules(version) {
+  if (!Number.isInteger(version) || version < 1 || version > 40)
+    throw new RangeError('QR 버전은 1~40이어야 합니다.');
+  return baseMatrix(version, LEVELS.M).functions.map((row) => row.slice());
 }

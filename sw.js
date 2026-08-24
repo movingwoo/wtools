@@ -4,10 +4,10 @@ importScripts('./js/sw-integrity.js');
 
 const CACHE_PREFIX = 'wtools-';
 // scripts/update_cache_version.py가 앱 셸 내용의 SHA-256 앞 12자리와 일치시킨다.
-const CACHE_REVISION = 'df6dcc7136c3';
+const CACHE_REVISION = 'ab47cf67c42c';
 const CACHE_NAME = CACHE_PREFIX + 'shell-' + CACHE_REVISION;
 const EXTERNAL_CACHE_PREFIX = CACHE_PREFIX + 'external-';
-const EXTERNAL_CACHE_NAME = EXTERNAL_CACHE_PREFIX + 'v3';
+const EXTERNAL_CACHE_NAME = EXTERNAL_CACHE_PREFIX + 'v4';
 const dependencies = self.WTOOLS_DEPENDENCIES;
 const externalIntegrity = new Map(Object.values(dependencies.cdn)
   .map(({ url, integrity }) => [url, integrity]));
@@ -46,7 +46,6 @@ const APP_SHELL = [
   './assets/vendor/brotli-compress-1.3.3.mjs',
   './assets/vendor/brotli-decompress-1.3.3.mjs',
   './assets/vendor/fzstd-0.1.1.mjs',
-  './assets/vendor/gifenc-1.0.3.mjs',
   './assets/vendor/lz4js-0.2.0.mjs',
   './assets/vendor/openpgp-5.11.1.min.mjs',
   './assets/vendor/seek-bzip-2.0.0.mjs',
@@ -59,8 +58,10 @@ const APP_SHELL = [
   './js/lib/crypto/md4.js',
   './js/lib/diff/myers.js',
   './js/lib/media/image-data.js',
+  './js/lib/media/gif.js',
   './js/lib/network/user-agent.js',
   './js/lib/qr/encoder.js',
+  './js/lib/qr/decoder.js',
   './js/lib/text/figlet.js',
   './js/main.js',
   './js/tool-manifest.js',
@@ -83,6 +84,8 @@ const APP_SHELL = [
   './js/tools/stringtools.js',
   './js/workers/archive-codec.js',
   './js/workers/file-hash.js',
+  './js/workers/gif-encode.js',
+  './js/workers/qr-decode.js',
 ];
 
 self.addEventListener('install', (event) => {

@@ -160,6 +160,19 @@ test('checksum-file: 여러 파일을 한 번에 처리', async ({ page }) => {
   await expect(content).toContainText('d41d8cd98f00b204e9800998ecf8427e');
 });
 
+test('checksum-file: 큰 파일 해시를 취소하면 Worker와 진행 상태를 정리한다', async ({ page }) => {
+  test.setTimeout(60_000);
+  await openTool(page, 'checksum-file');
+  const content = page.locator('#content');
+  await uploadFile(content, '파일 선택 (여러 개 가능, 브라우저 밖으로 전송되지 않습니다)', {
+    name: 'large.bin', mimeType: 'application/octet-stream', buffer: Buffer.alloc(16 * 1024 * 1024, 0x61),
+  });
+  await expect(content.locator('.io')).toHaveAttribute('aria-busy', 'true');
+  await content.getByRole('button', { name: '취소' }).click();
+  await expect(content.locator('.io')).toHaveAttribute('aria-busy', 'false');
+  await expect(content).toContainText('작업이 취소되었습니다.');
+});
+
 test('checksum-file: 직접 입력한 체크섬의 일치와 불일치를 검증', async ({ page }) => {
   await openTool(page, 'checksum-file');
   const content = page.locator('#content');
@@ -217,7 +230,7 @@ test('checksum-file: 빈 체크섬 파일을 거부', async ({ page }) => {
   await uploadFile(content, '체크섬 파일 가져오기 (선택, 최대 1MB)', {
     name: 'SHA256SUMS', mimeType: 'application/octet-stream', buffer: Buffer.alloc(0),
   });
-  await expect(content.locator('.io-status')).toHaveText('체크섬 파일이 비어 있습니다.');
+  await expect(content.locator('.io-status')).toHaveText('처리 실패: 체크섬 파일이 비어 있습니다.');
   await expect(content.locator('.io')).toHaveAttribute('aria-busy', 'false');
 });
 

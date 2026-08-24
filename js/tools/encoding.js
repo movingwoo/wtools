@@ -41,7 +41,11 @@ tool({
   keywords: 'b64 encode decode',
   transfer: {
     inputs: [{ id: 'input', label: '입력', accepts: ['text', 'base64'] }],
-    outputs: [{ id: 'decoded-json', label: '디코딩한 JSON', type: 'json', targets: ['json-format', 'data-convert'] }],
+    outputs: [
+      { id: 'base64', label: 'Base64 결과', type: 'base64' },
+      { id: 'decoded-json', label: '디코딩한 JSON', type: 'json', targets: ['json-format', 'data-convert'] },
+      { id: 'decoded-text', label: '디코딩한 텍스트', type: 'text' },
+    ],
   },
   render(root) {
     makeIO(root, {
@@ -53,12 +57,12 @@ tool({
       ],
       actions: [{ id: 'enc', label: '인코딩' }, { id: 'dec', label: '디코딩' }],
       transferOutput: {
-        id: 'decoded-json',
-        when: ({ result, actionId }) => {
-          if (actionId !== 'dec' || !String(result).trim()) return false;
-          JSON.parse(result);
-          return true;
+        id: ({ result, actionId }) => {
+          if (actionId === 'enc') return 'base64';
+          try { JSON.parse(result); return 'decoded-json'; }
+          catch { return 'decoded-text'; }
         },
+        when: ({ result }) => !!String(result).trim(),
       },
       process(text, o, action) {
         let alpha = STD_B64;
@@ -292,11 +296,19 @@ tool({
   id: 'url-encode', cat: CAT, name: 'URL 인코딩/디코딩',
   desc: 'URL 퍼센트 인코딩(%XX)을 적용하거나 해제합니다.',
   keywords: 'percent encodeURIComponent urlencode urldecode query escape',
+  transfer: {
+    inputs: [{ id: 'input', label: '입력', accepts: ['url', 'text'] }],
+    outputs: [{ id: 'url', label: 'URL 결과', type: 'url' }],
+  },
   render(root) {
     makeIO(root, {
       inputs: [{ id: 'input', label: '입력', placeholder: 'https://example.com/?q=한글 검색' }],
       options: [{ id: 'mode', label: '방식', type: 'select', values: [['component', '전체 인코딩 (encodeURIComponent)'], ['uri', 'URL 구조 유지 (encodeURI)']] }],
       actions: [{ id: 'enc', label: '인코딩' }, { id: 'dec', label: '디코딩' }],
+      transferOutput: {
+        id: 'url',
+        when: ({ result }) => { new URL(String(result)); return true; },
+      },
       process(text, o, action) {
         if (action === 'dec') return decodeURIComponent(text.replace(/\+/g, '%20'));
         return o.mode === 'uri' ? encodeURI(text) : encodeURIComponent(text);
@@ -309,10 +321,15 @@ tool({
   id: 'url-parser', cat: CAT, name: 'URL 파서',
   desc: 'URL을 프로토콜, 호스트, 경로, 쿼리 파라미터 등으로 분해합니다.',
   keywords: 'uri url parse query string qs parameter params',
+  transfer: {
+    inputs: [{ id: 'input', label: 'URL', accepts: ['url'] }],
+    outputs: [{ id: 'url', label: '원본 URL', type: 'url' }],
+  },
   render(root) {
     makeIO(root, {
       inputs: [{ id: 'input', label: 'URL', rows: 3, placeholder: 'https://user:pw@example.com:8080/path/page?a=1&b=한글#frag' }],
       outputHTML: true,
+      transferOutput: { id: 'url', value: ({ input }) => input },
       process(text) {
         if (!text.trim()) return '';
         const u = new URL(text.trim());
@@ -432,8 +449,35 @@ function punyDecode(encoded) {
 
 // IDN에서 마침표로 인정하는 문자들(전각 마침표, 한중일 마침표 등)까지 라벨 구분자로 본다.
 const IDN_DOT = /[.。．｡]/;
-const toAsciiLabel = (label) => (/^[\x00-\x7f]*$/.test(label) ? label : 'xn--' + punyEncode(label));
 const toUnicodeLabel = (label) => (/^xn--/i.test(label) ? punyDecode(label.slice(4).toLowerCase()) : label);
+
+function idnAsciiLabel(label) {
+  const normalized = label.normalize('NFC');
+  if (/^[\x00-\x20\x7f/:@\[\]\\]+$/.test(normalized) || /[\x00-\x20\x7f/:@\[\]\\]/.test(normalized))
+    throw new Error(`IDN에 사용할 수 없는 문자가 있습니다: ${label}`);
+  if (normalized.startsWith('-') || normalized.endsWith('-'))
+    throw new Error(`도메인 라벨은 하이픈으로 시작하거나 끝날 수 없습니다: ${label}`);
+  if (normalized.includes('_')) throw new Error(`IDNA2008 도메인 라벨에는 밑줄을 사용할 수 없습니다: ${label}`);
+  if (/^[\x00-\x7f]+$/.test(normalized) && normalized.length > 63)
+    throw new Error(`ASCII 라벨이 63자를 넘습니다: ${label}`);
+  let ascii;
+  try { ascii = new URL(`http://${normalized}.example/`).hostname.slice(0, -'.example'.length); }
+  catch { throw new Error(`UTS #46 / IDNA 규칙에 맞지 않는 도메인 라벨입니다: ${label}`); }
+  if (!ascii || /[^a-z0-9-]/i.test(ascii))
+    throw new Error(`UTS #46 / IDNA 규칙에 맞지 않는 도메인 라벨입니다: ${label}`);
+  if (ascii.length > 63) throw new Error(`ASCII 라벨이 63자를 넘습니다: ${ascii}`);
+  return ascii.toLowerCase();
+}
+
+function idnScripts(label) {
+  const scripts = [
+    ['라틴', /\p{Script=Latin}/u], ['키릴', /\p{Script=Cyrillic}/u], ['그리스', /\p{Script=Greek}/u],
+    ['한글', /\p{Script=Hangul}/u], ['한자', /\p{Script=Han}/u], ['히라가나', /\p{Script=Hiragana}/u],
+    ['가타카나', /\p{Script=Katakana}/u], ['아랍', /\p{Script=Arabic}/u], ['데바나가리', /\p{Script=Devanagari}/u],
+  ].filter(([, pattern]) => pattern.test(label)).map(([name]) => name);
+  const cjk = new Set(['한자', '히라가나', '가타카나']);
+  return scripts.length > 1 && !scripts.every((script) => cjk.has(script)) ? scripts : [];
+}
 
 tool({
   id: 'punycode', cat: CAT, name: 'Punycode / IDN 변환',
@@ -452,12 +496,18 @@ tool({
         const hostMatch = authority.match(/^(?:([^@]*)@)?([^:]+)(:\d+)?$/);
         if (!hostMatch) throw new Error('도메인을 해석할 수 없습니다.');
         const [, userinfo, host, port = ''] = hostMatch;
-        const labels = host.split(IDN_DOT);
+        const labels = host.split(IDN_DOT).map((label) => label.normalize('NFC'));
         if (labels.some((label) => !label) && labels.length > 1)
           throw new Error('도메인 라벨이 비어 있습니다(마침표가 연속되었는지 확인하세요).');
 
-        const ascii = labels.map(toAsciiLabel);
-        const unicode = labels.map(toUnicodeLabel);
+        const unicode = labels.map(toUnicodeLabel).map((label) => label.normalize('NFC'));
+        const ascii = unicode.map(idnAsciiLabel);
+        if (ascii.join('.').length > 253) throw new Error('ASCII 도메인 전체 길이는 253자 이하여야 합니다.');
+        // xn-- 입력도 같은 유니코드 라벨로 왕복되는지 확인해 비정규 Punycode를 거부한다.
+        labels.forEach((label, index) => {
+          if (/^xn--/i.test(label) && idnAsciiLabel(unicode[index]) !== label.toLowerCase())
+            throw new Error(`정규 IDNA 표기로 왕복되지 않는 Punycode 라벨입니다: ${label}`);
+        });
         const rebuild = (parts) => (scheme ? scheme : '') + (userinfo ? userinfo + '@' : '') + parts.join('.') + port + rest;
         const box = h('div', null, kvTable([
           ['ASCII (Punycode)', rebuild(ascii)],
@@ -471,12 +521,15 @@ tool({
               h('td', null, unicode[idx]),
               h('td', { class: 'mono' }, ascii[idx]),
               h('td', null, ascii[idx].length + ' / 63')))));
-        const tooLong = ascii.filter((label) => label.length > 63);
-        if (tooLong.length)
-          box.append(h('p', { class: 'error' }, `ASCII 라벨이 63자를 넘습니다: ${tooLong.join(', ')}`));
+        const mixed = unicode.flatMap((label) => {
+          const scripts = idnScripts(label);
+          return scripts.length ? [`${label} (${scripts.join(' + ')})`] : [];
+        });
+        if (mixed.length) box.append(h('p', { class: 'idn-warning', role: 'alert' },
+          `혼합 스크립트 라벨은 피싱에 악용될 수 있으므로 철자를 다시 확인하세요: ${mixed.join(', ')}`));
         return box;
       },
-      note: '대소문자 정규화나 금지 문자 검사(IDNA2008 매핑)까지는 하지 않습니다. 표기 변환만 수행합니다.',
+      note: '브라우저 URL 표준의 UTS #46 매핑과 IDNA 길이·금지 문자·NFC 정규화를 적용합니다. 혼합 스크립트는 변환하되 피싱 위험을 경고합니다.',
     });
   },
 });

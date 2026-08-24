@@ -23,8 +23,8 @@ IMPORT_REF = re.compile(r"""^\s*import(?:[\s\S]*?\sfrom\s*)?['"]([^'"]+)['"];?""
 TOOL_REF = re.compile(r"""(?:tool|symTool|pakoTool)\(\s*\{\s*id:\s*'([^']+)'""")
 CAT_REF = re.compile(r"""const CAT = '([^']+)';""")
 PLAYWRIGHT_CI_IMAGES = {
-  '1.50.1': 'mcr.microsoft.com/playwright:v1.50.1-noble@sha256:'
-            'ac7053180325ef75d31774c458d0bb9b55ac153ae1be3d104b80c6c1bb6a067c',
+  '1.62.1': 'mcr.microsoft.com/playwright:v1.62.1-noble@sha256:'
+            'dcc5531e97840b9b5e794f2814476b21571c5124a3fca2267d73041f56e7580e',
 }
 DEPENDENCY_REGISTRY_PATTERN = re.compile(
   r'globalThis\.WTOOLS_DEPENDENCIES = (\{.*?\});\n\nObject\.freeze',
@@ -80,9 +80,15 @@ def parse_categories(validation: Validation) -> set[str]:
 def validate_tools(validation: Validation) -> None:
   categories = parse_categories(validation)
   main = (ROOT / 'js/main.js').read_text(encoding='utf-8')
+  manifest_path = ROOT / 'js/tool-manifest.js'
+  try:
+    manifest = manifest_path.read_text(encoding='utf-8')
+  except OSError as error:
+    validation.error(f'js/tool-manifest.js: {error}')
+    manifest = ''
   imported_modules = {
     (ROOT / 'js' / ref).resolve()
-    for ref in re.findall(r"""import ['"](\./tools/[^'"]+\.js)['"];""", main)
+    for ref in re.findall(r'"module": "(\./tools/[^\"]+\.js)"', manifest)
   }
   tool_modules = set((ROOT / 'js/tools').glob('*.js'))
   tool_specs = set((ROOT / 'tests/tools').glob('*.spec.js'))
@@ -92,9 +98,9 @@ def validate_tools(validation: Validation) -> None:
   }
 
   for missing in sorted(tool_modules - imported_modules):
-    validation.error(f'js/main.js: tool module is not imported: {missing.relative_to(ROOT)}')
+    validation.error(f'js/tool-manifest.js: tool module is not mapped: {missing.relative_to(ROOT)}')
   for extra in sorted(imported_modules - tool_modules):
-    validation.error(f'js/main.js: imported tool module is missing: {extra.relative_to(ROOT)}')
+    validation.error(f'js/tool-manifest.js: mapped tool module is missing: {extra.relative_to(ROOT)}')
   for missing in sorted(expected_specs - tool_specs):
     module = ROOT / 'js/tools' / f'{missing.name.removesuffix(".spec.js")}.js'
     validation.error(
@@ -122,6 +128,19 @@ def validate_tools(validation: Validation) -> None:
       if not re.fullmatch(r'[a-z0-9]+(?:-[a-z0-9]+)*', tool_id):
         validation.error(f'{path.relative_to(ROOT)}: invalid tool ID: {tool_id}')
     ids.extend(module_ids)
+
+  manifest_ids = re.findall(r'^    "id": "([a-z0-9-]+)",$', manifest, re.MULTILINE)
+  if Counter(manifest_ids) != Counter(ids):
+    missing = sorted(set(ids) - set(manifest_ids))
+    extra = sorted(set(manifest_ids) - set(ids))
+    validation.error(
+      f'js/tool-manifest.js: metadata IDs differ from implementations '
+      f'(missing={missing}, extra={extra})'
+    )
+  if "import { TOOL_MANIFESTS } from './tool-manifest.js';" not in main:
+    validation.error('js/main.js: tool manifest import is required')
+  if 'registerToolManifests(TOOL_MANIFESTS);' not in main:
+    validation.error('js/main.js: tool metadata must be registered before routing')
 
   for tool_id, count in Counter(ids).items():
     if count > 1:
@@ -164,8 +183,8 @@ def load_dependencies(validation: Validation) -> dict:
   except json.JSONDecodeError as error:
     validation.error(f'js/dependencies.js: invalid dependency registry: {error}')
     return {'cdn': {}, 'vendored': {}}
-  if set(dependencies) != {'cdn', 'vendored', 'reviewed'}:
-    validation.error('js/dependencies.js: registry must contain cdn, vendored, and reviewed')
+  if set(dependencies) != {'cdn', 'vendored', 'tests', 'reviewed'}:
+    validation.error('js/dependencies.js: registry must contain cdn, vendored, tests, and reviewed')
   reviewed = dependencies.get('reviewed')
   try:
     time.strptime(reviewed, '%Y-%m-%d')
@@ -178,8 +197,35 @@ def validate_dependencies(validation: Validation) -> set[Path]:
   dependencies = load_dependencies(validation)
   cdn = dependencies.get('cdn', {})
   vendored = dependencies.get('vendored', {})
+  test_dependencies = dependencies.get('tests', {})
   urls: set[str] = set()
   paths: set[Path] = set()
+
+  try:
+    package = json.loads((ROOT / 'tests/package.json').read_text(encoding='utf-8'))
+    lock = json.loads((ROOT / 'tests/package-lock.json').read_text(encoding='utf-8'))
+  except (OSError, json.JSONDecodeError) as error:
+    validation.error(f'test dependency registry: {error}')
+    package, lock = {}, {'packages': {}}
+  expected_tests = {
+    'playwright': ('@playwright/test', 'node_modules/@playwright/test'),
+    'axeCore': ('axe-core', 'node_modules/axe-core'),
+  }
+  if set(test_dependencies) != set(expected_tests):
+    validation.error('js/dependencies.js: tests must register playwright and axeCore')
+  for asset_id, (package_name, lock_path) in expected_tests.items():
+    entry = test_dependencies.get(asset_id, {})
+    source = f'js/dependencies.js tests.{asset_id}'
+    if set(entry) != {'version', 'source', 'integrity', 'license', 'use'}:
+      validation.error(f'{source}: fields must be version, source, integrity, license, use')
+      continue
+    locked = lock.get('packages', {}).get(lock_path, {})
+    if package.get('devDependencies', {}).get(package_name) != entry['version']:
+      validation.error(f'{source}: version differs from tests/package.json')
+    for key in ('version', 'resolved', 'integrity', 'license'):
+      registry_key = {'resolved': 'source'}.get(key, key)
+      if locked.get(key) != entry.get(registry_key):
+        validation.error(f'{source}: {registry_key} differs from tests/package-lock.json')
 
   for asset_id, entry in cdn.items():
     source = f'js/dependencies.js cdn.{asset_id}'
@@ -208,7 +254,9 @@ def validate_dependencies(validation: Validation) -> set[Path]:
       validation.error(f'{source}: fields must be {", ".join(sorted(required))}')
       continue
     if entry['source'] in urls:
-      validation.error(f'{source}: duplicate source URL: {entry["source"]}')
+      matching_cdn = next((item for item in cdn.values() if item['url'] == entry['source']), None)
+      if not matching_cdn or matching_cdn['integrity'] != entry['sourceIntegrity']:
+        validation.error(f'{source}: duplicate source URL has different integrity: {entry["source"]}')
     urls.add(entry['source'])
     if not VERSIONED_URL_PATTERN.search(entry['source']):
       validation.error(f'{source}: source URL does not pin a semantic version')
@@ -303,10 +351,24 @@ def validate_document_assets(validation: Validation) -> set[Path]:
   except (json.JSONDecodeError, OSError) as error:
     validation.error(f'manifest.json: {error}')
     return set()
+  for key, expected in {'id': './', 'start_url': './', 'scope': './', 'display': 'standalone'}.items():
+    if manifest.get(key) != expected:
+      validation.error(f'manifest.json: {key} must be {expected!r}')
   for icon in manifest.get('icons', []):
     target = local_path(icon.get('src', ''), ROOT)
     if target:
       validation.require_file(target, 'manifest.json')
+      if target.is_file() and icon.get('type') == 'image/png':
+        data = target.read_bytes()
+        if len(data) < 24 or data[:8] != b'\x89PNG\r\n\x1a\n':
+          validation.error(f'manifest.json: icon is not a PNG: {target.relative_to(ROOT)}')
+        else:
+          dimensions = f'{int.from_bytes(data[16:20], "big")}x{int.from_bytes(data[20:24], "big")}'
+          if dimensions != icon.get('sizes'):
+            validation.error(
+              f'manifest.json: {target.relative_to(ROOT)} is {dimensions}, '
+              f'not declared {icon.get("sizes")}'
+            )
   return validation.checked_files
 
 
@@ -418,7 +480,55 @@ def validate_app_shell(validation: Validation, vendored_paths: set[Path]) -> lis
   }
   for path in sorted(required - normalized):
     validation.error(f'sw.js APP_SHELL: required local asset is not cached: {path.relative_to(ROOT)}')
+
+  revision_match = re.search(r"const CACHE_REVISION = '([0-9a-f]{12})';", source)
+  digest = hashlib.sha256()
+  for ref in refs:
+    if ref == './':
+      continue
+    relative = ref.removeprefix('./')
+    path = ROOT / relative
+    if not path.is_file():
+      continue
+    data = path.read_bytes()
+    if path == ROOT / 'sw.js':
+      data = re.sub(
+        rb"const CACHE_REVISION = '[0-9a-f]{12}';",
+        b"const CACHE_REVISION = '<revision>';",
+        data,
+      )
+    digest.update(relative.encode())
+    digest.update(b'\0')
+    digest.update(data)
+    digest.update(b'\0')
+  expected_revision = digest.hexdigest()[:12]
+  if not revision_match or revision_match.group(1) != expected_revision:
+    validation.error(
+      f'sw.js: CACHE_REVISION must be {expected_revision}; '
+      'run python3 scripts/update_cache_version.py'
+    )
   return refs
+
+
+def validate_initial_load_budget(validation: Validation) -> None:
+  initial_scripts = [
+    ROOT / 'js/theme.js',
+    ROOT / 'js/main.js',
+    ROOT / 'js/core.js',
+    ROOT / 'js/tool-manifest.js',
+    ROOT / 'js/dependencies.js',
+  ]
+  total = sum(path.stat().st_size for path in initial_scripts if path.is_file())
+  budget = 140 * 1024
+  if total > budget:
+    validation.error(
+      f'initial local JavaScript is {total} bytes; budget is {budget} bytes '
+      '(theme, main, core, manifest, dependencies)'
+    )
+  main_source = (ROOT / 'js/main.js').read_text(encoding='utf-8')
+  if re.search(r"^import\s+['\"]\./tools/", main_source, re.MULTILINE):
+    validation.error('js/main.js: tool implementations must stay dynamically imported')
+  print(f'Initial local JavaScript budget: {total}/{budget} bytes.')
 
 
 def validate_http(validation: Validation, base_url: str, refs: list[str]) -> None:
@@ -451,6 +561,7 @@ def main() -> int:
   vendored_paths = validate_dependencies(validation)
   validate_node_versions(validation)
   validate_playwright_ci(validation)
+  validate_initial_load_budget(validation)
   refs = validate_app_shell(validation, vendored_paths)
   if args.base_url:
     validate_http(validation, args.base_url, refs)

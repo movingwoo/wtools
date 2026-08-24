@@ -18,6 +18,7 @@
 
 | 패키지 | 버전 | 라이선스 | 사용 범위 |
 |---|---:|---|---|
+| CryptoJS | 4.2.0 | MIT | 파일 해시 Worker |
 | smol-toml | 1.2.2 | BSD-3-Clause | TOML 변환 |
 | brotli-compress | 1.3.3 | Apache-2.0 | Brotli 압축 |
 | brotli, base64-js | 1.3.3, 1.5.1 | MIT | Brotli 해제 |
@@ -31,3 +32,9 @@
 각 파일은 위 패키지의 배포본을 그대로 사용합니다. 단, 브라우저에서 로컬 하위 자산을
 찾도록 Brotli 해제 모듈의 `base64-js` import와 Zstandard 모듈의 WASM 상대 경로만
 바꾸며, 원본 해시와 변환 결과 해시를 모두 등록부에서 검증합니다.
+
+## 테스트 전용 의존성
+
+정적 사이트 배포물에는 포함되지 않으며 CI에서만 사용합니다. Playwright 1.62.1은
+Apache-2.0, axe-core 4.10.3은 MPL-2.0 라이선스입니다. npm 배포본 URL과 SHA-512는
+`js/dependencies.js`와 `tests/package-lock.json`에서 함께 검증합니다.

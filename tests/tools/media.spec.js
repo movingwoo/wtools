@@ -82,7 +82,7 @@ test.describe('media', () => {
       await uploadFile(content, c.upload.label, c.upload.file);
       for (const [label, value] of Object.entries(c.options ?? {})) await setOption(content, label, value);
       for (const text of c.htmlContains ?? []) await expect(content).toContainText(text);
-      if (c.htmlError) await expect(content.locator('.error').first()).toHaveText(c.htmlError);
+      if (c.htmlError) await expect(content.locator('.error').first()).toContainText(c.htmlError);
       for (const [key, expected] of Object.entries(c.kv ?? {})) {
         await expect(content.locator('table.kv tr').filter({ has: page.getByText(key, { exact: true }) })).toContainText(expected);
       }
@@ -341,6 +341,21 @@ test('image-convert: 포맷 한계와 재인코딩 방식을 UI에 표시', asyn
   await expect(content.getByLabel('JPEG/GIF/BMP 배경색')).toHaveValue('#ffffff');
 });
 
+test('image-convert: 손상 파일과 픽셀 상한 초과를 부분 실패로 요약한다', async ({ page }) => {
+  await openTool(page, 'image-convert');
+  const content = page.locator('#content');
+  const oversized = Buffer.from(RED_PNG);
+  oversized.writeUInt32BE(20_000, 16);
+  oversized.writeUInt32BE(20_000, 20);
+  await uploadFile(content, '이미지 선택 (여러 장 가능)', [
+    { name: 'broken.png', mimeType: 'image/png', buffer: Buffer.from('not an image') },
+    { name: 'huge.png', mimeType: 'image/png', buffer: oversized },
+  ]);
+  await expect(content).toContainText('로드 실패');
+  await expect(content).toContainText('broken.png');
+  await expect(content).toContainText('40,000,000픽셀');
+});
+
 for (const { format, name, magic, label } of formats) {
   test(`image-convert: ${label}로 변환`, async ({ page }) => {
     await openTool(page, 'image-convert');
@@ -447,7 +462,8 @@ test('image-convert: 잘못된 사용자 자르기 영역을 거부', async ({ p
   await setOption(content, '공통 자르기', 'custom');
   await setOption(content, '공통 자르기 X(%)', '60');
   await setOption(content, '공통 폭(%)', '50');
-  await expect(content.getByRole('alert')).toContainText('자르기 영역은 이미지 경계(100%) 안에 있어야 합니다.');
+  await expect(content.locator('.error').filter({ hasText: '자르기 영역은' }))
+    .toContainText('자르기 영역은 이미지 경계(100%) 안에 있어야 합니다.');
 });
 
 test('image-convert: 파일별 편집 설정이 공통 편집 설정보다 우선', async ({ page }) => {

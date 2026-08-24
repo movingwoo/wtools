@@ -3,7 +3,9 @@ importScripts('./js/dependencies.js');
 importScripts('./js/sw-integrity.js');
 
 const CACHE_PREFIX = 'wtools-';
-const CACHE_NAME = CACHE_PREFIX + 'shell-v10';
+// scripts/update_cache_version.py가 앱 셸 내용의 SHA-256 앞 12자리와 일치시킨다.
+const CACHE_REVISION = '608dddddc93b';
+const CACHE_NAME = CACHE_PREFIX + 'shell-' + CACHE_REVISION;
 const EXTERNAL_CACHE_PREFIX = CACHE_PREFIX + 'external-';
 const EXTERNAL_CACHE_NAME = EXTERNAL_CACHE_PREFIX + 'v2';
 const dependencies = self.WTOOLS_DEPENDENCIES;
@@ -16,6 +18,7 @@ const {
   verifiedCached,
   fetchVerified,
   IntegrityError,
+  diagnosticErrorResponse,
   integrityErrorResponse,
 } = self.WTOOLS_INTEGRITY;
 const APP_SHELL = [
@@ -27,6 +30,7 @@ const APP_SHELL = [
   './assets/favicon-192.png',
   './assets/favicon-512.png',
   './assets/favicon-512-maskable.png',
+  './assets/vendor/crypto-js-4.2.0.min.js',
   './assets/eff-short-wordlist-1.txt',
   './assets/vendor/base64-js-1.5.1.mjs',
   './assets/vendor/brotli-compress-1.3.3.mjs',
@@ -42,6 +46,7 @@ const APP_SHELL = [
   './js/core.js',
   './js/dependencies.js',
   './js/main.js',
+  './js/tool-manifest.js',
   './js/sw-integrity.js',
   './js/theme.js',
   './js/tools/archive.js',
@@ -149,7 +154,7 @@ self.addEventListener('fetch', (event) => {
         const fallback = await caches.match(new URL('./index.html', self.registration.scope));
         if (fallback) return fallback;
       }
-      throw error;
+      return diagnosticErrorResponse('SWN001', '오프라인 캐시에서 요청한 자산을 찾지 못했습니다.', 503);
     }
   })());
 });

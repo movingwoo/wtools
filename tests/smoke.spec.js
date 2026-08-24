@@ -319,6 +319,24 @@ test('파일 입력 공통 UI가 accept와 단일/다중 선택을 지킨다', a
   expect(await content.getByLabel('이미지 선택 (여러 장 가능)').evaluate((input) => input.files.length)).toBe(0);
 });
 
+test('공통 파일 예산은 경계값과 다중 파일 총합을 일관되게 판정한다', async ({ page }) => {
+  await page.goto('/');
+  const result = await page.evaluate(async () => {
+    const { assessFileBudget, FILE_BUDGET } = await import('/js/core.js');
+    const file = (size) => ({ size });
+    return {
+      exactWarning: assessFileBudget([file(FILE_BUDGET.warnFileBytes)]),
+      overWarning: assessFileBudget([file(FILE_BUDGET.warnFileBytes + 1)]),
+      totalWarning: assessFileBudget([file(32 * 1024 * 1024), file(32 * 1024 * 1024 + 1)]),
+      hard: assessFileBudget([file(FILE_BUDGET.maxFileBytes + 1)]),
+    };
+  });
+  expect(result.exactWarning.warnings).toEqual([]);
+  expect(result.overWarning.warnings).toHaveLength(1);
+  expect(result.totalWarning.warnings.join(' ')).toContain('총합');
+  expect(result.hard.hard).toHaveLength(1);
+});
+
 test('결과를 주소·저장소에 남기지 않고 호환 도구로 전달한다', async ({ page }) => {
   await page.goto('/#/tool/base64');
   const io = page.locator('#content .io');
@@ -361,6 +379,55 @@ test('여러 입력을 받는 전달 대상에서 입력 칸을 선택한다', a
   await expect(page.locator('#content textarea.mono:not(.out)').nth(1)).toHaveValue(
     JSON.stringify(JSON.parse(schema), null, 2),
   );
+});
+
+test('같은 도구 재전달과 포맷별 옵션 자동 선택이 일회성으로 동작한다', async ({ page }) => {
+  await page.goto('/#/tool/data-convert');
+  let io = page.locator('#content .io');
+  await io.getByLabel('출력 포맷').selectOption('yaml');
+  await io.getByRole('button', { name: '다른 도구로 보내기' }).click();
+  await io.getByLabel('전달할 도구').selectOption('data-convert');
+  await io.getByRole('button', { name: '보내기', exact: true }).click();
+  io = page.locator('#content .io');
+  await expect(io.getByLabel('입력 포맷')).toHaveValue('yaml');
+  await expect(io.locator('textarea.mono:not(.out)').first()).toHaveValue(/name: WTools/);
+
+  await page.locator('.brand').click();
+  await expect(page.locator('.home h1')).toHaveText('W-Tools');
+  await page.goto('/#/tool/data-convert');
+  await expect(page.locator('#content textarea.mono:not(.out)').first()).not.toHaveValue(/name: WTools/);
+});
+
+test('PEM/JWK 민감 값은 추가 동의 후에만 같은 도구로 전달된다', async ({ page }) => {
+  await page.goto('/#/tool/jwk-pem');
+  const io = page.locator('#content .io');
+  const jwk = '{"kty":"OKP","crv":"Ed25519","x":"11qYAYLef1bPZ9miucR7t4cNa-FHCbEwPXdN5aCBP_I"}';
+  await io.locator('textarea.mono:not(.out)').fill(jwk);
+  await io.getByRole('button', { name: 'JWK → PEM' }).click();
+  await io.getByRole('button', { name: '다른 도구로 보내기' }).click();
+  await io.getByLabel('전달할 도구').selectOption('jwk-pem');
+  await io.getByRole('button', { name: '보내기', exact: true }).click();
+  await expect(io.locator('.transfer-error')).toContainText('동의');
+  await io.getByLabel(/민감한 값을 한 번 전달/).check();
+  await io.getByRole('button', { name: '보내기', exact: true }).click();
+  await expect(page.locator('#content textarea.mono:not(.out)').first()).toHaveValue(/BEGIN PUBLIC KEY/);
+});
+
+test('Data URI 전달과 잘못된 URL 결과 차단이 중앙 검증을 따른다', async ({ page }) => {
+  const uri = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAA';
+  await page.goto('/#/tool/base64-image');
+  let io = page.locator('#content .io').nth(1);
+  await io.locator('textarea.mono:not(.out)').fill(uri);
+  await io.getByRole('button', { name: '다른 도구로 보내기' }).click();
+  await io.getByLabel('전달할 도구').selectOption('base64-image');
+  await io.getByRole('button', { name: '보내기', exact: true }).click();
+  await expect(page.locator('#content .io').nth(1).locator('textarea.mono:not(.out)')).toHaveValue(uri);
+
+  await page.goto('/#/tool/url-encode');
+  io = page.locator('#content .io');
+  await io.locator('textarea.mono:not(.out)').fill('https://example.com/a b');
+  await io.getByRole('button', { name: '인코딩' }).click();
+  await expect(io.getByRole('button', { name: '다른 도구로 보내기' })).toBeHidden();
 });
 
 test('JSON·JWT payload·해시 결과의 우선 연결이 동작한다', async ({ page }) => {

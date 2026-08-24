@@ -1,5 +1,9 @@
 // 암호화 / 복호화
-import { tool, makeIO, h, formLabel, kvTable, strToBytes, bytesToStr, bytesToHex, hexToBytes, bytesToB64, b64ToBytes, concatBytes, decodeInput, encodeOutput, loadScript, loadModule, vendorUrl, LIB, copyBtn } from '../core.js';
+import {
+  tool, makeIO, h, formLabel, kvTable, strToBytes, bytesToStr, bytesToHex, hexToBytes,
+  bytesToB64, b64ToBytes, concatBytes, decodeInput, encodeOutput, loadScript, loadModule,
+  vendorUrl, LIB, copyBtn, createAsyncRunner, requireFeature,
+} from '../core.js';
 
 const CAT = '암호화 / 복호화';
 
@@ -283,6 +287,7 @@ tool({
         { id: 'keyFormat', label: '직접 키 형식', type: 'select', values: [['hex', 'Hex'], ['base64', 'Base64'], ['text', 'UTF-8']] },
         { id: 'bundle', label: '결과 구성', type: 'select', values: [['package', '자체 포함(권장)'], ['raw', '암호문만(호환용)']] },
         { id: 'ofmt', label: '암호문 형식', type: 'select', values: [['base64', 'Base64'], ['hex', 'Hex']] },
+        { id: 'legacyConfirm', label: '취약한 ECB 새 암호화 허용', type: 'checkbox' },
       ],
       actions: [{ id: 'enc', label: '암호화' }, { id: 'dec', label: '복호화' }],
       autorun: false,
@@ -292,6 +297,8 @@ tool({
         const selectedBits = +o.keySize;
         if (!AES_MODES.has(selectedMode)) throw new Error('지원하지 않는 AES 모드입니다.');
         if (!AES_KEY_SIZES.has(selectedBits)) throw new Error('AES 키 크기는 128, 192, 256비트 중 하나여야 합니다.');
+        if (!decrypt && selectedMode === 'ECB' && !o.legacyConfirm)
+          throw new Error('ECB 새 암호화는 패턴을 노출합니다. 호환 목적이라면 “취약한 ECB 새 암호화 허용”을 먼저 선택하세요.');
 
         if (o.keyMode === 'openssl') {
           if (selectedMode === 'GCM') throw new Error('OpenSSL 레거시 키 유도는 GCM에서 지원하지 않습니다. PBKDF2 또는 직접 키를 사용하세요.');
@@ -362,10 +369,13 @@ function symTool({ id, name, algo, keySizes, desc, keywords }) {
           { id: 'mode', label: '모드', type: 'select', values: ['CBC', 'CFB', 'CTR', 'OFB', 'ECB'] },
           { id: 'kdf', label: '키 유도', type: 'select', values: [['passphrase', '비밀번호(OpenSSL)'], ['raw', '키 직접(Hex/UTF-8)']] },
           { id: 'ofmt', label: '암호문 형식', type: 'select', values: [['base64', 'Base64'], ['hex', 'Hex']] },
+          { id: 'legacyConfirm', label: '레거시 새 암호화 허용', type: 'checkbox' },
         ].filter(Boolean),
         actions: [{ id: 'enc', label: '암호화' }, { id: 'dec', label: '복호화' }],
         autorun: false,
         process(v, o, action) {
+          if (action === 'enc' && (id === 'des' || id === 'tripledes' || o.mode === 'ECB') && !o.legacyConfirm)
+            throw new Error('DES/3DES/ECB 새 암호화는 안전하지 않습니다. 호환 목적이라면 “레거시 새 암호화 허용”을 먼저 선택하세요.');
           const cfg = { mode: CryptoJS.mode[o.mode], padding: o.mode === 'CTR' || o.mode === 'CFB' || o.mode === 'OFB' ? CryptoJS.pad.NoPadding : CryptoJS.pad.Pkcs7 };
           let keyParam;
           if (o.kdf === 'raw') {
@@ -641,6 +651,7 @@ tool({
       async process(v, o, action) {
         if (!v.password) throw new Error('비밀번호를 입력하세요.');
         if (o.alg.startsWith('argon2')) {
+          requireFeature('wasm', typeof WebAssembly !== 'undefined');
           await loadScript(LIB.hashWasm);
           if (action === 'verify') {
             const hash = v.encoded.trim();
@@ -775,36 +786,37 @@ tool({
     let priv = '', pub = '';
     const privTa = h('textarea', { class: 'mono', rows: 10, readonly: true });
     const pubTa = h('textarea', { class: 'mono', rows: 8, readonly: true });
-    const sizeSel = h('select', null, [2048, 3072, 4096, 1024].map((s) => h('option', { value: s }, s + ' bit')));
-    const status = h('span', { style: { marginLeft: '10px', color: 'var(--muted)' } });
+    const sizeSel = h('select', null, [2048, 3072, 4096].map((s) => h('option', { value: s }, s + ' bit')));
+    const status = h('div', { class: 'io-status', role: 'status', 'aria-live': 'polite' });
     const btn = h('button', { class: 'btn primary', type: 'button' }, '키 생성');
-    btn.addEventListener('click', async () => {
-      status.textContent = '생성 중... (몇 초 소요될 수 있습니다)';
-      btn.disabled = true;
-      try {
+    const wrap = h('div', { class: 'io' },
+      h('div', { class: 'opt-row' }, h('span', { class: 'opt-item' }, formLabel(sizeSel, '키 크기'), sizeSel), btn),
+      h('p', { class: 'note' }, '새 키는 2048비트 이상만 생성합니다. 1024비트 키는 기존 자료 분석·복호화·검증 용도로만 다른 도구에서 읽을 수 있습니다.'),
+      status,
+      h('div', { style: { marginTop: '12px' } },
+        h('div', { class: 'out-head' }, formLabel(privTa, '개인키 (PKCS#8 PEM)', { class: 'io-label' }), copyBtn(() => privTa.value)), privTa,
+        h('div', { class: 'out-head' }, formLabel(pubTa, '공개키 (SPKI PEM)', { class: 'io-label' }), copyBtn(() => pubTa.value)), pubTa));
+    const runner = createAsyncRunner(wrap, {
+      controls: () => [sizeSel, btn], status, cancelable: false,
+      runningMessage: '생성 중… (몇 초 소요될 수 있습니다)',
+    });
+    btn.addEventListener('click', () => runner.run(async (task) => {
         await loadScript(LIB.jsrsasign);
         await new Promise((r) => setTimeout(r, 30));
         const kp = KEYUTIL.generateKeypair('RSA', +sizeSel.value);
+        if (!task.active()) return;
         priv = KEYUTIL.getPEM(kp.prvKeyObj, 'PKCS8PRV');
         pub = KEYUTIL.getPEM(kp.pubKeyObj);
         privTa.value = priv;
         pubTa.value = pub;
-        status.textContent = '완료!';
-      } catch (e) {
-        status.textContent = '오류: ' + e.message;
-      }
-      btn.disabled = false;
-    });
-    root.append(
-      h('div', { class: 'opt-row' }, h('span', { class: 'opt-item' }, formLabel(sizeSel, '키 크기'), sizeSel), btn, status),
-      h('div', { class: 'io', style: { marginTop: '12px' } },
-        h('div', { class: 'out-head' }, formLabel(privTa, '개인키 (PKCS#8 PEM)', { class: 'io-label' }), copyBtn(() => privTa.value)), privTa,
-        h('div', { class: 'out-head' }, formLabel(pubTa, '공개키 (SPKI PEM)', { class: 'io-label' }), copyBtn(() => pubTa.value)), pubTa));
+    }));
+    root.append(wrap);
   },
 });
 
 // PEM(SPKI 공개키 / PKCS#8 개인키) → WebCrypto RSA-OAEP 키
 async function importRsaOaepKey(pem, format, usage) {
+  requireFeature('webcrypto', !!globalThis.crypto?.subtle);
   const type = format === 'spki' ? 'PUBLIC KEY' : 'PRIVATE KEY';
   const m = pem.match(new RegExp(`-----BEGIN ${type}-----([\\s\\S]+?)-----END ${type}-----`));
   if (!m) throw new Error(`${format === 'spki' ? '공개키(SPKI)' : '개인키(PKCS#8)'} PEM을 입력하세요. (-----BEGIN ${type}----- 블록)`);
@@ -826,7 +838,7 @@ tool({
         { id: 'text', label: '입력', rows: 4, value: 'RSA 테스트 메시지' },
         { id: 'key', label: '키 (PEM: 암호화·검증=공개키 / 복호화·서명=개인키)', rows: 8, placeholder: '-----BEGIN PUBLIC KEY-----' },
       ],
-      options: [{ id: 'hash', label: '서명 해시', type: 'select', values: ['SHA256', 'SHA1', 'SHA384', 'SHA512'] }],
+      options: [{ id: 'hash', label: '서명 해시', type: 'select', values: [['SHA256', 'SHA-256'], ['SHA384', 'SHA-384'], ['SHA512', 'SHA-512'], ['SHA1', 'SHA-1 (검증 호환 전용)']] }],
       actions: [{ id: 'enc', label: '암호화' }, { id: 'dec', label: '복호화' }, { id: 'sign', label: '서명' }, { id: 'verify', label: '검증' }],
       autorun: false, outputRows: 6,
       async process(v, o, action) {
@@ -849,6 +861,7 @@ tool({
         }
         await loadScript(LIB.jsrsasign);
         if (action === 'sign') {
+          if (o.hash === 'SHA1') throw new Error('SHA-1 서명 생성은 차단됩니다. 기존 SHA-1 서명 검증만 지원합니다.');
           const sig = new KJUR.crypto.Signature({ alg: o.hash + 'withRSA' });
           sig.init(key);
           sig.updateString(v.text);

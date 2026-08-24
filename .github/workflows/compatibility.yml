@@ -1,0 +1,47 @@
+name: Minimum browser compatibility
+
+on:
+  schedule:
+    # 매주 월요일 04:20 KST
+    - cron: '20 19 * * 0'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  baseline-engines:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    container:
+      # Playwright 1.32.3: Chromium 112(Chrome 110 근접), Firefox 111(기준보다 낮음), WebKit 16.4.
+      image: mcr.microsoft.com/playwright:v1.32.3-jammy@sha256:821472c31a97a7ccfc4dd4ab80c52b9239c467280287a60193498180fdc5ce97
+      options: --user 1001
+    strategy:
+      fail-fast: false
+      matrix:
+        browser: [chromium, firefox, webkit]
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+
+      - name: Check baseline syntax and APIs
+        run: node scripts/check_browser_compat.mjs
+
+      - name: Install matching legacy test driver without downloading browsers
+        working-directory: tests
+        env:
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+        run: npm install --no-save --ignore-scripts --force @playwright/test@1.32.3
+
+      - name: Run closest baseline engine
+        working-directory: tests
+        env:
+          WTOOLS_BASELINE_BROWSER: ${{ matrix.browser }}
+        run: npx playwright test --config=playwright.minimum.config.js

@@ -1,7 +1,7 @@
 // 테스트용 이미지·인증서 재료 생성기.
 // 바이너리 파일과 개인키를 저장소에 커밋하지 않도록, 필요한 재료를 테스트 실행 중에 만든다.
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import zlib from 'node:zlib';
@@ -126,7 +126,7 @@ export const PKI = {
   san: ['test.wtools.local', 'www.test.wtools.local', '127.0.0.1'],
 };
 
-export function makeTestPki() {
+export function makeTestPki({ workflow = false } = {}) {
   const dir = mkdtempSync(join(tmpdir(), 'wtools-pki-'));
   const run = (...args) => execFileSync('openssl', args, { cwd: dir, stdio: ['ignore', 'pipe', 'pipe'] });
   try {
@@ -145,14 +145,93 @@ export function makeTestPki() {
     // ecparam은 SEC1을 내놓는다. WebCrypto가 읽는 PKCS#8 형태도 함께 만들어 둔다.
     run('pkcs8', '-topk8', '-nocrypt', '-in', 'ec.pem', '-out', 'ec-pkcs8.pem');
     run('pkcs8', '-topk8', '-in', 'rsa.pem', '-out', 'rsa-enc.pem', '-v2', 'aes-256-cbc', '-passout', 'pass:' + PKI.passphrase);
+    if (workflow) {
+      run('req', '-new', '-key', 'rsa.pem', '-out', 'request.csr', '-sha256', '-subj', PKI.subject,
+        '-addext', `subjectAltName=DNS:${PKI.san[0]},DNS:${PKI.san[1]},IP:${PKI.san[2]}`,
+        '-addext', 'basicConstraints=critical,CA:FALSE',
+        '-addext', 'keyUsage=critical,digitalSignature,keyEncipherment');
+      run('req', '-x509', '-newkey', 'rsa:2048', '-keyout', 'root-key.pem', '-out', 'root.pem', '-nodes',
+        '-days', String(PKI.days), '-sha256', '-subj', '/C=KR/O=WTools Test/CN=WTools Root CA',
+        '-addext', 'basicConstraints=critical,CA:TRUE,pathlen:1',
+        '-addext', 'keyUsage=critical,keyCertSign,cRLSign', '-addext', 'subjectKeyIdentifier=hash');
+      run('req', '-new', '-newkey', 'rsa:2048', '-keyout', 'intermediate-key.pem', '-out', 'intermediate.csr', '-nodes',
+        '-sha256', '-subj', '/C=KR/O=WTools Test/CN=WTools Intermediate CA',
+        '-addext', 'basicConstraints=critical,CA:TRUE,pathlen:0',
+        '-addext', 'keyUsage=critical,keyCertSign,cRLSign', '-addext', 'subjectKeyIdentifier=hash',
+        '-addext', 'authorityInfoAccess=caIssuers;URI:https://status.wtools.test/root.der',
+        '-addext', 'crlDistributionPoints=URI:https://status.wtools.test/root.crl');
+      run('x509', '-req', '-in', 'intermediate.csr', '-CA', 'root.pem', '-CAkey', 'root-key.pem', '-CAcreateserial',
+        '-out', 'intermediate.pem', '-days', String(PKI.days), '-sha256', '-copy_extensions', 'copy');
+      mkdirSync(join(dir, 'newcerts'));
+      writeFileSync(join(dir, 'index.txt'), '');
+      writeFileSync(join(dir, 'leaf-serial'), '1000\n');
+      writeFileSync(join(dir, 'crlnumber'), '1000\n');
+      writeFileSync(join(dir, 'intermediate-ca.cnf'), `
+[ ca ]
+default_ca = CA_default
+
+[ CA_default ]
+database = index.txt
+serial = leaf-serial
+crlnumber = crlnumber
+new_certs_dir = newcerts
+certificate = intermediate.pem
+private_key = intermediate-key.pem
+default_md = sha256
+default_days = ${PKI.days}
+default_crl_days = 30
+policy = policy_any
+x509_extensions = server_cert
+copy_extensions = copy
+unique_subject = no
+
+[ policy_any ]
+countryName = optional
+stateOrProvinceName = optional
+localityName = optional
+organizationName = optional
+organizationalUnitName = optional
+commonName = supplied
+emailAddress = optional
+
+[ server_cert ]
+basicConstraints = critical,CA:FALSE
+keyUsage = critical,digitalSignature,keyEncipherment
+extendedKeyUsage = serverAuth
+subjectKeyIdentifier = hash
+authorityKeyIdentifier = keyid,issuer
+authorityInfoAccess = OCSP;URI:https://status.wtools.test/ocsp,caIssuers;URI:https://status.wtools.test/intermediate.der
+crlDistributionPoints = URI:https://status.wtools.test/intermediate.crl
+`);
+      run('ca', '-batch', '-config', 'intermediate-ca.cnf', '-in', 'request.csr', '-out', 'leaf.pem', '-notext');
+      run('x509', '-in', 'intermediate.pem', '-outform', 'DER', '-out', 'intermediate.der');
+      run('ca', '-gencrl', '-config', 'intermediate-ca.cnf', '-out', 'clean-crl.pem');
+      run('ocsp', '-index', 'index.txt', '-rsigner', 'intermediate.pem', '-rkey', 'intermediate-key.pem',
+        '-CA', 'intermediate.pem', '-issuer', 'intermediate.pem', '-cert', 'leaf.pem',
+        '-respout', 'ocsp-good.der', '-ndays', '7');
+      run('ca', '-batch', '-config', 'intermediate-ca.cnf', '-revoke', 'leaf.pem', '-crl_reason', 'keyCompromise');
+      run('ca', '-gencrl', '-config', 'intermediate-ca.cnf', '-out', 'revoked-crl.pem');
+      run('ocsp', '-index', 'index.txt', '-rsigner', 'intermediate.pem', '-rkey', 'intermediate-key.pem',
+        '-CA', 'intermediate.pem', '-issuer', 'intermediate.pem', '-cert', 'leaf.pem',
+        '-respout', 'ocsp-revoked.der', '-ndays', '7');
+    }
     const read = (name) => readFileSync(join(dir, name), 'utf8');
-    return {
+    const result = {
       cert: read('cert.pem'), rsaKey: read('rsa.pem'), ecKey: read('ec.pem'),
       rsaPublicKey: read('rsa-public.pem'), ecPublicKey: read('ec-public.pem'),
       ec384Key: read('ec384.pem'), ec384PublicKey: read('ec384-public.pem'),
       ec521Key: read('ec521.pem'), ec521PublicKey: read('ec521-public.pem'),
       ecPkcs8Key: read('ec-pkcs8.pem'), encryptedRsaKey: read('rsa-enc.pem'),
     };
+    if (workflow) Object.assign(result, {
+      csr: read('request.csr'), leafCert: read('leaf.pem'),
+      intermediateCert: read('intermediate.pem'), rootCert: read('root.pem'),
+      intermediateDer: readFileSync(join(dir, 'intermediate.der')),
+      cleanCrl: read('clean-crl.pem'), revokedCrl: read('revoked-crl.pem'),
+      ocspGood: readFileSync(join(dir, 'ocsp-good.der')),
+      ocspRevoked: readFileSync(join(dir, 'ocsp-revoked.der')),
+    });
+    return result;
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

@@ -1,20 +1,10 @@
 // main.js — 라우터 / 사이드바 / 홈 화면
-import { tools, categories, h, enhanceFileInputs, stageToolInput } from './core.js';
-import './tools/encoding.js';
-import './tools/dataformat.js';
-import './tools/devfmt-format.js';
-import './tools/devfmt-convert.js';
-import './tools/devfmt-diff.js';
-import './tools/devfmt-reference.js';
-import './tools/stringtools.js';
-import './tools/hashing.js';
-import './tools/cryptotools.js';
-import './tools/pki.js';
-import './tools/network.js';
-import './tools/datetime.js';
-import './tools/media.js';
-import './tools/mathtools.js';
-import './tools/archive.js';
+import {
+  tools, categories, h, enhanceFileInputs, stageToolInput, registerToolManifests, cleanupToolRoot,
+} from './core.js';
+import { TOOL_MANIFESTS } from './tool-manifest.js';
+
+registerToolManifests(TOOL_MANIFESTS);
 
 const nav = document.getElementById('nav');
 const content = document.getElementById('content');
@@ -33,6 +23,8 @@ let detectionTimer = null;
 let cleanupCurrentTool = null;
 let searchResultIndex = -1;
 let navLinkId = 0;
+let routeSequence = 0;
+const moduleLoads = new Map();
 
 function decodeB64UrlJson(part) {
   const normalized = part.replace(/-/g, '+').replace(/_/g, '/');
@@ -201,8 +193,8 @@ const collapsed = new Set(loadStoredList('wtools-collapsed'));
 const saveCollapsed = () => saveStoredList('wtools-collapsed', collapsed);
 
 function navItem(t) {
-  return h('div', { class: 'nav-item' },
-    h('a', { id: `nav-tool-${++navLinkId}`, href: '#/tool/' + t.id, 'data-id': t.id, 'data-search': (t.name + ' ' + t.id + ' ' + (t.desc || '') + ' ' + (t.keywords || '')).toLowerCase() }, t.name),
+  return h('div', { class: 'nav-item', id: `nav-tool-${++navLinkId}`, role: 'treeitem', 'aria-level': '2' },
+    h('a', { href: '#/tool/' + t.id, 'data-id': t.id, 'data-search': (t.name + ' ' + t.id + ' ' + (t.desc || '') + ' ' + (t.keywords || '')).toLowerCase() }, t.name),
     starBtn(t.id));
 }
 
@@ -212,18 +204,18 @@ function buildNav() {
   let categoryId = 0;
   const favList = favoriteList();
   if (favList.length) {
-    nav.append(h('div', { class: 'cat favorites' },
-      h('div', { class: 'cat-title' }, '⭐ 즐겨찾기'),
-      favList.map((t) => navItem(t))));
+    nav.append(h('div', { class: 'cat favorites', role: 'group', 'aria-label': '즐겨찾기' },
+      h('div', { class: 'cat-title', 'aria-hidden': 'true' }, '⭐ 즐겨찾기'),
+      h('div', { role: 'group' }, favList.map((t) => navItem(t)))));
   }
   for (const [cat, list] of byCat()) {
     if (!list.length) continue;
     const itemsId = `nav-category-${++categoryId}`;
     const isCollapsed = collapsed.has(cat);
-    const items = h('div', { class: 'cat-items', id: itemsId }, list.map((t) => navItem(t)));
-    const sec = h('div', { class: 'cat' + (collapsed.has(cat) ? ' collapsed' : ''), 'data-cat': cat },
+    const items = h('div', { class: 'cat-items', id: itemsId, role: 'group' }, list.map((t) => navItem(t)));
+    const sec = h('div', { class: 'cat' + (collapsed.has(cat) ? ' collapsed' : ''), 'data-cat': cat, role: 'group' },
       h('button', {
-        class: 'cat-title', type: 'button',
+        class: 'cat-title', type: 'button', role: 'treeitem', 'aria-level': '1',
         'aria-label': `${cat} 카테고리`,
         'aria-expanded': String(!isCollapsed), 'aria-controls': itemsId,
         onclick: () => {
@@ -256,7 +248,7 @@ function setCurrentSearchResult(index) {
   searchResultIndex = (index + results.length) % results.length;
   const current = results[searchResultIndex];
   current.classList.add('search-current');
-  search.setAttribute('aria-activedescendant', current.id);
+  search.setAttribute('aria-activedescendant', current.closest('[role="treeitem"]')?.id || '');
   current.scrollIntoView({
     block: 'nearest',
     behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth',
@@ -388,7 +380,58 @@ function renderToolNotFound(id) {
   document.title = '도구를 찾을 수 없습니다 — W-Tools';
 }
 
-function renderTool(id) {
+function appendRuntimeNotices(body, t) {
+  if (t.externalRequest) {
+    const request = t.externalRequest;
+    const action = request.action || '조회 버튼';
+    body.append(h('aside', { class: 'external-request-notice', 'aria-label': '외부 서버 사용 안내' },
+      h('strong', null, '외부 서버 사용 안내'),
+      h('p', null, `${action}을 누르면 ${request.service}로 다음 정보가 전송됩니다: ${request.sends}.`),
+      h('p', null, request.privacy),
+      request.cors ? h('p', null, '외부 서버의 CORS 허용 응답이 필요하므로 네트워크나 브라우저 정책에 따라 조회가 실패할 수 있습니다.') : null));
+  } else {
+    body.append(h('p', { class: 'local-processing-notice' }, '입력과 파일은 이 브라우저 안에서만 처리되며 외부 서버로 전송되지 않습니다.'));
+  }
+  if (t.externalLibrary) body.append(h('p', { class: 'library-load-notice' },
+    '일부 기능은 검증된 외부 라이브러리를 처음 불러올 때 네트워크 연결이 필요하며, 이후 오프라인 캐시를 사용할 수 있습니다.'));
+}
+
+function loadToolModule(t, retry = false) {
+  if (!retry && moduleLoads.has(t.module)) return moduleLoads.get(t.module);
+  const specifier = retry ? `${t.module}?retry=${Date.now()}` : t.module;
+  const promise = import(specifier).catch((error) => {
+    moduleLoads.delete(t.module);
+    throw error;
+  });
+  moduleLoads.set(t.module, promise);
+  return promise;
+}
+
+async function renderToolBody(t, body, token, retry = false) {
+  body.setAttribute('aria-busy', 'true');
+  body.replaceChildren(h('p', { class: 'tool-loading', role: 'status' }, retry ? '도구 모듈을 다시 불러오는 중…' : '도구 모듈을 불러오는 중…'));
+  try {
+    await loadToolModule(t, retry);
+    if (token !== routeSequence || !body.isConnected) return;
+    if (typeof t.render !== 'function') throw new Error('도구 구현이 등록되지 않았습니다.');
+    body.replaceChildren();
+    appendRuntimeNotices(body, t);
+    const cleanup = t.render(body);
+    if (typeof cleanup === 'function') cleanupCurrentTool.toolCleanup = cleanup;
+    enhanceFileInputs(body);
+    body.setAttribute('aria-busy', 'false');
+  } catch (error) {
+    if (token !== routeSequence || !body.isConnected) return;
+    body.setAttribute('aria-busy', 'false');
+    body.replaceChildren(
+      h('div', { class: 'tool-load-error error', 'data-error-code': 'MOD001' },
+        h('strong', null, '도구 모듈을 불러오지 못했습니다. (MOD001)'),
+        h('p', null, '네트워크 연결 또는 오프라인 캐시를 확인한 뒤 다시 시도하세요.'),
+        h('button', { class: 'btn small', type: 'button', onclick: () => renderToolBody(t, body, token, true) }, '다시 시도')));
+  }
+}
+
+function renderTool(id, token) {
   const t = tools.find((x) => x.id === id);
   if (!t) { renderToolNotFound(id); return; }
   content.innerHTML = '';
@@ -399,24 +442,13 @@ function renderTool(id) {
       h('p', { class: 'desc' }, t.desc || '')),
     h('div', { class: 'tool-body' }));
   content.append(box);
-  try {
-    const body = box.querySelector('.tool-body');
-    if (t.externalRequest) {
-      const request = t.externalRequest;
-      body.append(h('aside', { class: 'external-request-notice', 'aria-label': '외부 서버 사용 안내' },
-        h('strong', null, '외부 서버 사용 안내'),
-        h('p', null, `조회 버튼을 누르면 ${request.service}로 다음 정보가 전송됩니다: ${request.sends}.`),
-        h('p', null, request.privacy),
-        request.cors ? h('p', null, '외부 서버의 CORS 허용 응답이 필요하므로 네트워크나 브라우저 정책에 따라 조회가 실패할 수 있습니다.') : null));
-    }
-    const cleanup = t.render(body);
-    if (typeof cleanup === 'function') cleanupCurrentTool = cleanup;
-    enhanceFileInputs(box.querySelector('.tool-body'));
-  } catch (e) {
-    // 사용자에게는 안내 문구를 보여주되, 예외 자체는 콘솔에 남겨 진단·자동 검사가 가능하게 한다.
-    console.error(`도구 "${t.id}" 렌더링 실패:`, e);
-    box.append(h('p', { class: 'error' }, '도구 로드 중 오류: ' + e.message));
-  }
+  const body = box.querySelector('.tool-body');
+  const cleanup = () => {
+    try { cleanup.toolCleanup?.(); } finally { cleanupToolRoot(body); }
+  };
+  cleanup.toolCleanup = null;
+  cleanupCurrentTool = cleanup;
+  renderToolBody(t, body, token);
   document.title = t.name + ' — W-Tools';
 }
 
@@ -438,6 +470,7 @@ function syncNavActive() {
 }
 
 function route() {
+  const token = ++routeSequence;
   if (cleanupCurrentTool) {
     try { cleanupCurrentTool(); }
     catch (e) { console.error('도구 리소스 정리 중 오류:', e); }
@@ -446,7 +479,7 @@ function route() {
   const hash = location.hash || '#/';
   const m = hash.match(/^#\/tool\/([\w-]+)/);
   syncNavActive();
-  if (m) renderTool(m[1]);
+  if (m) renderTool(m[1], token);
   else { document.title = 'W-Tools — 웹 도구 모음'; renderHome(); }
   content.scrollTop = 0;
   window.scrollTo(0, 0);
@@ -492,7 +525,10 @@ if ('serviceWorker' in navigator) {
           location.reload();
         });
       })
-      .catch(() => { /* 오프라인 지원은 선택 사항이므로 무시한다. */ });
+      .catch(() => {
+        externalWarning.textContent = '오프라인 지원을 준비하지 못했습니다. 온라인 상태에서 새로고침해 복구하세요. (SWR001)';
+        externalWarning.classList.remove('hidden');
+      });
   });
 }
 

@@ -2,6 +2,7 @@
   "name": "W-Tools",
   "short_name": "W-Tools",
   "description": "브라우저에서 바로 실행되는 개발자 유틸리티 모음",
+  "id": "./",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",

@@ -339,6 +339,7 @@ for (const toolId of ['des', 'tripledes', 'blowfish']) {
     await openTool(page, toolId);
     const io = ioSection(page);
     const plain = '왕복 테스트 round trip!';
+    await setOption(io, '레거시 새 암호화 허용', true);
     await fillInputs(io, [plain, 'test-password']);
     await clickAction(io, '암호화');
     const out = io.locator('textarea.out');
@@ -390,7 +391,7 @@ test('password-hash: bcrypt 생성 후 검증 왕복', async ({ page }) => {
 test('rsa: 키 생성 → 암복호화 → 서명/검증 통합', async ({ page }) => {
   test.setTimeout(90_000); // RSA 키 생성은 수 초가 걸릴 수 있다
   await openTool(page, 'rsa-keygen');
-  await page.getByLabel('키 크기').selectOption('1024'); // 테스트용 최소 크기
+  await page.getByLabel('키 크기').selectOption('2048');
   await page.getByRole('button', { name: '키 생성' }).click();
   const privTa = page.locator('#content textarea.mono').nth(0);
   const pubTa = page.locator('#content textarea.mono').nth(1);
@@ -420,6 +421,33 @@ test('rsa: 키 생성 → 암복호화 → 서명/검증 통합', async ({ page 
   await fillInputs(io, [`${message}\n---SIGNATURE---\n${sig}`, pub]);
   await clickAction(io, '검증');
   await expect(out).toHaveValue('✔ 서명이 유효합니다.');
+});
+
+test('레거시 암호와 ECB 새 암호화는 명시적 확인 전 차단된다', async ({ page }) => {
+  await openTool(page, 'des');
+  let io = ioSection(page);
+  await fillInputs(io, ['새 비밀', 'password']);
+  await clickAction(io, '암호화');
+  await expect(io.locator('textarea.out')).toHaveValue(/레거시 새 암호화 허용/);
+
+  await openTool(page, 'aes');
+  io = ioSection(page);
+  await setOption(io, '모드', 'ECB');
+  await fillInputs(io, ['새 비밀', 'password']);
+  await clickAction(io, '암호화');
+  await expect(io.locator('textarea.out')).toHaveValue(/취약한 ECB 새 암호화 허용/);
+});
+
+test('RSA 키 생성은 2048비트 이상만 제공하고 SHA-1 서명 생성은 차단한다', async ({ page }) => {
+  await openTool(page, 'rsa-keygen');
+  await expect(page.getByLabel('키 크기').locator('option')).toHaveText(['2048 bit', '3072 bit', '4096 bit']);
+
+  await openTool(page, 'rsa-crypt');
+  const io = ioSection(page);
+  await setOption(io, '서명 해시', 'SHA1');
+  await fillInputs(io, ['메시지', '-----BEGIN PRIVATE KEY-----\nAA==\n-----END PRIVATE KEY-----']);
+  await clickAction(io, '서명');
+  await expect(io.locator('textarea.out')).toHaveValue(/SHA-1 서명 생성은 차단/);
 });
 
 // PGP 키 생성 → 암호화/복호화 왕복 (openpgp ESM CDN 로드 포함)

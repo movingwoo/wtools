@@ -17,7 +17,8 @@ W-Tools는 별도의 빌드 과정이 없는 순수 정적 사이트로 HTML과 
 PEM·JWK처럼 키가 포함될 수 있는 값은 매번 추가 동의를 받아야 전달됩니다.  
 파일 입력 도구는 끌어놓기와 클립보드 파일 붙여넣기를 공통으로 지원합니다.
 
-전체 도구 목록은 [FEATURES.md](FEATURES.md), 릴리즈별 변경 사항은 [CHANGELOG.md](CHANGELOG.md)에서 확인할 수 있습니다.
+전체 도구 목록은 [FEATURES.md](FEATURES.md), 릴리즈별 변경 사항은 [CHANGELOG.md](CHANGELOG.md)에서 확인할 수 있습니다.  
+코드 분리·크기 예산·외부 의존성 교체와 릴리즈 기준은 [DEVELOPMENT_GUIDE.md](DEVELOPMENT_GUIDE.md)를 따릅니다.
 
 ## 기능 카테고리
 
@@ -121,12 +122,15 @@ js/main.js          해시 기반 라우터 / 사이드바 / 홈 화면
 js/tool-manifest.js 검색·홈용 도구 메타데이터와 지연 로드 모듈 매핑(자동 생성)
 js/theme.js         초기 테마 적용 + 시스템/라이트/다크 전환
 js/tools/*.js       카테고리별 도구 구현 (모듈별로 분리)
+js/lib/**           DOM과 분리한 자체 알고리즘·포맷 구현
+js/workers/**       계산량이 큰 자체 구현의 모듈 Worker 진입점
 assets/             아이콘·이미지 및 검토·고정한 제3자 ESM/WASM
 manifest.json       PWA 매니페스트 (설치, 아이콘, 테마 색상)
 sw.js               서비스워커; 앱 셸 사전 캐시 + network-first 갱신으로 오프라인 지원
 tests/              Playwright 브라우저 테스트 (CI 전용, 자체 package.json — 사이트 배포와 무관)
 scripts/            의존성 없는 저장소·정적 사이트 검증 스크립트
 .github/workflows/  PR 검사, Pages 배포, nightly 운영 점검, 최소 브라우저·월간 의존성 점검
+DEVELOPMENT_GUIDE.md 구현 구조, 크기 예산, 의존성 교체 및 릴리즈 규칙
 ```
 
 jsrsasign, pako, figlet 같은 classic script는 SRI로 검증하면서 해당 도구를 열 때 CDN에서 **지연 로드**합니다.  

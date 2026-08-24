@@ -19,7 +19,10 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 LOCAL_REF = re.compile(r"""(?:src|href)=["']([^"'#]+)["']""")
-IMPORT_REF = re.compile(r"""^\s*import(?:[\s\S]*?\sfrom\s*)?['"]([^'"]+)['"];?""", re.MULTILINE)
+MODULE_REF = re.compile(
+  r"""(?:^\s*import(?:[\s\S]*?\sfrom\s*)?['"]([^'"]+)['"]|\bimport\(\s*['"]([^'"]+)['"]\s*\))""",
+  re.MULTILINE,
+)
 TOOL_REF = re.compile(r"""(?:tool|symTool|pakoTool)\(\s*\{\s*id:\s*'([^']+)'""")
 CAT_REF = re.compile(r"""const CAT = '([^']+)';""")
 PLAYWRIGHT_CI_IMAGES = {
@@ -66,6 +69,10 @@ def local_path(ref: str, parent: Path) -> Path | None:
   if parsed.scheme or parsed.netloc or ref.startswith(('data:', '#')):
     return None
   return (parent / urllib.parse.unquote(parsed.path)).resolve()
+
+
+def module_refs(source: str) -> list[str]:
+  return [static or dynamic for static, dynamic in MODULE_REF.findall(source)]
 
 
 def parse_categories(validation: Validation) -> set[str]:
@@ -154,12 +161,59 @@ def validate_tools(validation: Validation) -> None:
 def validate_imports(validation: Validation) -> None:
   for path in sorted((ROOT / 'js').rglob('*.js')):
     source = path.read_text(encoding='utf-8')
-    for ref in IMPORT_REF.findall(source):
+    for ref in module_refs(source):
       if not ref.startswith('.'):
         continue
       target = local_path(ref, path.parent)
       if target:
         validation.require_file(target, str(path.relative_to(ROOT)))
+
+
+def validate_architecture_boundaries(validation: Validation) -> None:
+  lib_root = (ROOT / 'js' / 'lib').resolve()
+  worker_root = (ROOT / 'js' / 'workers').resolve()
+  tool_root = ROOT / 'js' / 'tools'
+
+  def under(path: Path, parent: Path) -> bool:
+    try:
+      path.resolve().relative_to(parent)
+      return True
+    except ValueError:
+      return False
+
+  if lib_root.is_dir():
+    for path in sorted(lib_root.rglob('*.js')):
+      source = path.read_text(encoding='utf-8')
+      for ref in module_refs(source):
+        target = local_path(ref, path.parent)
+        if target and not under(target, lib_root):
+          validation.error(
+            f'{path.relative_to(ROOT)}: first-party implementation modules may only import js/lib modules'
+          )
+
+  if worker_root.is_dir():
+    for path in sorted(worker_root.rglob('*.js')):
+      source = path.read_text(encoding='utf-8')
+      for ref in module_refs(source):
+        target = local_path(ref, path.parent)
+        if target and not under(target, lib_root):
+          validation.error(
+            f'{path.relative_to(ROOT)}: Worker modules may only import js/lib modules'
+          )
+
+  for path in sorted(tool_root.glob('*.js')):
+    source = path.read_text(encoding='utf-8')
+    has_inline_worker = (
+      re.search(r'\b[A-Za-z0-9_]*WORKER_SOURCE\s*=', source)
+      or re.search(
+        r'''new\s+Blob\s*\([\s\S]*?type\s*:\s*['"](?:text|application)/javascript['"]''',
+        source,
+      )
+    )
+    if has_inline_worker:
+      validation.error(
+        f'{path.relative_to(ROOT)}: inline Worker source is not allowed; use a js/workers entry point'
+      )
 
 
 def sha384(data: bytes) -> str:
@@ -531,6 +585,36 @@ def validate_initial_load_budget(validation: Validation) -> None:
   print(f'Initial local JavaScript budget: {total}/{budget} bytes.')
 
 
+def validate_module_size_budgets(validation: Validation) -> None:
+  tool_budget = 80 * 1024
+  implementation_budget = 128 * 1024
+  tool_paths = sorted((ROOT / 'js' / 'tools').glob('*.js'))
+  lib_root = ROOT / 'js' / 'lib'
+  worker_root = ROOT / 'js' / 'workers'
+  implementation_paths = sorted(lib_root.rglob('*.js')) if lib_root.is_dir() else []
+  worker_paths = sorted(worker_root.rglob('*.js')) if worker_root.is_dir() else []
+
+  for path in tool_paths:
+    size = path.stat().st_size
+    if size > tool_budget:
+      validation.error(
+        f'{path.relative_to(ROOT)} is {size} bytes; tool module budget is {tool_budget} bytes '
+        '(move substantial implementations to js/lib)'
+      )
+  for path in [*implementation_paths, *worker_paths]:
+    size = path.stat().st_size
+    if size > implementation_budget:
+      validation.error(
+        f'{path.relative_to(ROOT)} is {size} bytes; implementation module budget is '
+        f'{implementation_budget} bytes (split independently loaded functionality)'
+      )
+  largest_tool = max((path.stat().st_size for path in tool_paths), default=0)
+  print(
+    f'Module size budgets: largest tool {largest_tool}/{tool_budget} bytes; '
+    f'{len(implementation_paths) + len(worker_paths)} implementation/worker modules checked.'
+  )
+
+
 def validate_http(validation: Validation, base_url: str, refs: list[str]) -> None:
   for ref in refs:
     url = urllib.parse.urljoin(base_url.rstrip('/') + '/', ref.removeprefix('./'))
@@ -557,11 +641,13 @@ def main() -> int:
   validation = Validation()
   validate_tools(validation)
   validate_imports(validation)
+  validate_architecture_boundaries(validation)
   validate_document_assets(validation)
   vendored_paths = validate_dependencies(validation)
   validate_node_versions(validation)
   validate_playwright_ci(validation)
   validate_initial_load_budget(validation)
+  validate_module_size_budgets(validation)
   refs = validate_app_shell(validation, vendored_paths)
   if args.base_url:
     validate_http(validation, args.base_url, refs)

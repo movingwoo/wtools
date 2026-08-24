@@ -11,6 +11,14 @@ const IMAGE_LIMITS = Object.freeze({
   maxDimension: 16_384,
 });
 const bytesToAscii = (bytes) => String.fromCharCode(...bytes);
+let imageDataModule = null;
+
+function loadImageDataModule() {
+  return imageDataModule ??= import('../lib/media/image-data.js').catch((cause) => {
+    imageDataModule = null;
+    throw new Error('이미지 포맷 모듈을 불러오지 못했습니다.', { cause });
+  });
+}
 
 function assertImageDimensions(name, width, height, currentTotal = 0) {
   if (!Number.isInteger(width) || !Number.isInteger(height) || width < 1 || height < 1)
@@ -583,6 +591,13 @@ tool({
       conversionController?.abort();
       items = [];
       fileEdits.innerHTML = '';
+      let readExif;
+      try { ({ readExif } = await loadImageDataModule()); }
+      catch (error) {
+        file.disabled = false;
+        info.textContent = error.message;
+        return;
+      }
       const failed = [];
       let totalPixels = 0;
       for (const f of list) {
@@ -1053,58 +1068,11 @@ const EXIF_TAGS = {
   0x920a: '초점 거리', 0xa002: '이미지 너비', 0xa003: '이미지 높이',
   0xa403: '화이트밸런스', 0xa405: '35mm 환산 초점거리', 0xa433: '렌즈 제조사', 0xa434: '렌즈 모델',
 };
-function readExif(bytes) {
-  if (bytes[0] !== 0xff || bytes[1] !== 0xd8) return null;
-  let tiff = null, i = 2;
-  while (i + 4 < bytes.length && bytes[i] === 0xff) {
-    const marker = bytes[i + 1];
-    if (marker === 0xda) break;
-    const len = (bytes[i + 2] << 8) | bytes[i + 3];
-    if (marker === 0xe1 && String.fromCharCode(...bytes.subarray(i + 4, i + 8)) === 'Exif') { tiff = i + 10; break; }
-    i += 2 + len;
-  }
-  if (tiff == null) return null;
-  const dv = new DataView(bytes.buffer, bytes.byteOffset + tiff);
-  const le = dv.getUint16(0) === 0x4949;
-  const u16 = (o) => dv.getUint16(o, le), u32 = (o) => dv.getUint32(o, le);
-  const SIZE = { 1: 1, 2: 1, 3: 2, 4: 4, 5: 8, 7: 1, 9: 4, 10: 8 };
-  function readVal(type, count, off) {
-    if (type === 2) {
-      let s = '';
-      for (let k = 0; k < count; k++) { const c = dv.getUint8(off + k); if (!c) break; s += String.fromCharCode(c); }
-      return s.trim();
-    }
-    const rd = (o) =>
-      type === 3 ? u16(o) : type === 4 ? u32(o) : type === 9 ? dv.getInt32(o, le) :
-      type === 5 ? u32(o) / (u32(o + 4) || 1) : type === 10 ? dv.getInt32(o, le) / (dv.getInt32(o + 4, le) || 1) :
-      dv.getUint8(o);
-    const vals = [];
-    for (let k = 0; k < Math.min(count, 16); k++) vals.push(rd(off + k * SIZE[type]));
-    return count === 1 ? vals[0] : vals;
-  }
-  function readIFD(offset) {
-    const entries = {};
-    if (offset + 2 > dv.byteLength) return entries;
-    const n = u16(offset);
-    for (let e = 0; e < n; e++) {
-      const base = offset + 2 + e * 12;
-      if (base + 12 > dv.byteLength) break;
-      const tag = u16(base), type = u16(base + 2), count = u32(base + 4);
-      if (!SIZE[type]) continue;
-      const size = SIZE[type] * count;
-      const off = size <= 4 ? base + 8 : u32(base + 8);
-      if (off + size > dv.byteLength) continue;
-      entries[tag] = readVal(type, count, off);
-    }
-    return entries;
-  }
-  const ifd0 = readIFD(u32(4));
-  return {
-    ifd0,
-    exif: ifd0[0x8769] != null ? readIFD(ifd0[0x8769]) : {},
-    gps: ifd0[0x8825] != null ? readIFD(ifd0[0x8825]) : {},
-  };
-}
+const EXIF_METADATA_LABELS = {
+  APP1: 'APP1 (EXIF/XMP)',
+  APP13: 'APP13 (IPTC)',
+  COM: 'COM (주석)',
+};
 function exifRows({ ifd0, exif, gps }) {
   const fmtVal = (tag, v) => {
     if (tag === 0x829a && v > 0 && v < 1) return `1/${Math.round(1 / v)} 초`;
@@ -1128,36 +1096,6 @@ function exifRows({ ifd0, exif, gps }) {
   }
   return rows;
 }
-function stripJpeg(bytes) {
-  const keep = [bytes.subarray(0, 2)];
-  const removed = [];
-  const META = { 0xe1: 'APP1 (EXIF/XMP)', 0xed: 'APP13 (IPTC)', 0xfe: 'COM (주석)' };
-  let i = 2;
-  while (i + 4 <= bytes.length && bytes[i] === 0xff) {
-    const marker = bytes[i + 1];
-    if (marker === 0xda) { keep.push(bytes.subarray(i)); break; } // SOS부터 끝까지 그대로
-    const len = (bytes[i + 2] << 8) | bytes[i + 3];
-    if (META[marker]) { if (!removed.includes(META[marker])) removed.push(META[marker]); }
-    else keep.push(bytes.subarray(i, i + 2 + len));
-    i += 2 + len;
-  }
-  return { blob: new Blob(keep, { type: 'image/jpeg' }), removed };
-}
-function stripPng(bytes) {
-  const keep = [bytes.subarray(0, 8)];
-  const removed = [];
-  const STRIP = new Set(['tEXt', 'zTXt', 'iTXt', 'eXIf', 'tIME']);
-  let i = 8;
-  while (i + 8 <= bytes.length) {
-    const len = ((bytes[i] << 24) | (bytes[i + 1] << 16) | (bytes[i + 2] << 8) | bytes[i + 3]) >>> 0;
-    const type = String.fromCharCode(bytes[i + 4], bytes[i + 5], bytes[i + 6], bytes[i + 7]);
-    if (STRIP.has(type)) { if (!removed.includes(type)) removed.push(type); }
-    else keep.push(bytes.subarray(i, i + 12 + len));
-    i += 12 + len;
-    if (type === 'IEND') break;
-  }
-  return { blob: new Blob(keep, { type: 'image/png' }), removed };
-}
 
 tool({
   id: 'exif-viewer', cat: CAT, name: 'EXIF 뷰어 / 메타데이터 제거',
@@ -1176,6 +1114,7 @@ tool({
     file.addEventListener('change', () => runner.run(async (task) => {
       const list = [...file.files];
       if (!list.length) throw new Error('확인할 사진을 선택하세요.');
+      const { readExif, stripJpegMetadata, stripPngMetadata } = await loadImageDataModule();
       out.innerHTML = '';
       const many = list.length > 1;
       const zipRow = h('div', { class: 'btn-row', style: { marginBottom: '10px' } });
@@ -1201,7 +1140,9 @@ tool({
             sec.append(h('h4', null, 'EXIF 정보'),
               rows.length ? kvTable(rows) : h('p', { class: 'note' }, meta ? '주요 EXIF 태그가 비어 있습니다.' : 'EXIF 데이터가 없습니다.'));
           }
-          const { blob, removed } = isJpeg ? stripJpeg(bytes) : stripPng(bytes);
+          const stripped = isJpeg ? stripJpegMetadata(bytes) : stripPngMetadata(bytes);
+          const blob = new Blob([stripped.bytes], { type: isJpeg ? 'image/jpeg' : 'image/png' });
+          const removed = stripped.removed.map((name) => EXIF_METADATA_LABELS[name] || name);
           const saved = f.size - blob.size;
           const cleanName = f.name.replace(/(\.[^.]+)?$/, (m) => '_clean' + m);
           if (removed.length) {
@@ -1245,27 +1186,7 @@ tool({
   },
 });
 
-/* ---------- 파비콘 생성기 (PNG 내장 ICO 빌더) ---------- */
-function buildICO(pngs, sizes) {
-  let offset = 6 + 16 * pngs.length;
-  const buf = new Uint8Array(offset + pngs.reduce((a, p) => a + p.length, 0));
-  const dv = new DataView(buf.buffer);
-  dv.setUint16(2, 1, true); // type: icon
-  dv.setUint16(4, pngs.length, true);
-  pngs.forEach((p, i) => {
-    const e = 6 + i * 16;
-    buf[e] = sizes[i] >= 256 ? 0 : sizes[i];
-    buf[e + 1] = sizes[i] >= 256 ? 0 : sizes[i];
-    dv.setUint16(e + 4, 1, true); // planes
-    dv.setUint16(e + 6, 32, true); // bpp
-    dv.setUint32(e + 8, p.length, true);
-    dv.setUint32(e + 12, offset, true);
-    buf.set(p, offset);
-    offset += p.length;
-  });
-  return new Blob([buf], { type: 'image/x-icon' });
-}
-
+/* ---------- 파비콘 생성기 ---------- */
 tool({
   id: 'favicon-gen', cat: CAT, name: '파비콘 생성기',
   desc: '이미지 한 장으로 favicon.ico와 여러 크기의 PNG 파비콘, HTML 태그를 만듭니다.',
@@ -1280,6 +1201,7 @@ tool({
       if (!f) return;
       out.innerHTML = '생성 중...';
       try {
+        const { buildIco } = await loadImageDataModule();
         const bmp = await safeCreateImageBitmap(f);
         const sq = Math.min(bmp.width, bmp.height); // 정사각형이 아니면 중앙 크롭
         const sx = (bmp.width - sq) / 2, sy = (bmp.height - sq) / 2;
@@ -1290,7 +1212,7 @@ tool({
         });
         const pngBlob = (c) => new Promise((res) => c.toBlob(res, 'image/png'));
         const icoPngs = await Promise.all(canvases.slice(0, 3).map(async (c) => new Uint8Array(await (await pngBlob(c)).arrayBuffer())));
-        const ico = buildICO(icoPngs, [16, 32, 48]);
+        const ico = new Blob([buildIco(icoPngs, [16, 32, 48])], { type: 'image/x-icon' });
         out.innerHTML = '';
         const row = h('div', { style: { display: 'flex', gap: '14px', flexWrap: 'wrap', alignItems: 'flex-end', margin: '10px 0' } });
         canvases.forEach((c, i) => {

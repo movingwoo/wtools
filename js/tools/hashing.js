@@ -345,55 +345,25 @@ const FILE_CHECKSUM_ALGORITHMS = {
   'SHA-256': { length: 64, worker: 'SHA256' },
   'SHA-512': { length: 128, worker: 'SHA512' },
 };
-
-const FILE_HASH_WORKER_SOURCE = `
-const CRYPTO_JS_URL = ${JSON.stringify(vendorUrl('cryptoJsWorker'))};
-const hashers = new Map();
-let loaded = false;
-function load() {
-  if (!loaded) { importScripts(CRYPTO_JS_URL); loaded = true; }
-}
-self.onmessage = ({ data }) => {
-  try {
-    load();
-    if (data.type === 'start') {
-      const algorithm = CryptoJS.algo[data.algorithm];
-      if (!algorithm) throw new Error('지원하지 않는 파일 해시 알고리즘입니다.');
-      hashers.set(data.job, algorithm.create());
-      self.postMessage({ request: data.request });
-      return;
-    }
-    const hasher = hashers.get(data.job);
-    if (!hasher) throw new Error('파일 해시 작업 상태를 찾지 못했습니다.');
-    if (data.type === 'chunk') {
-      hasher.update(CryptoJS.lib.WordArray.create(new Uint8Array(data.bytes)));
-      self.postMessage({ request: data.request });
-      return;
-    }
-    if (data.type === 'finish') {
-      const digest = hasher.finalize().toString();
-      hashers.delete(data.job);
-      self.postMessage({ request: data.request, digest });
-      return;
-    }
-    throw new Error('알 수 없는 파일 해시 요청입니다.');
-  } catch (error) {
-    self.postMessage({ request: data.request, error: error?.message || String(error) });
-  }
-};`;
+const FILE_HASH_WORKER_URL = new URL('../workers/file-hash.js', import.meta.url);
+const FILE_HASH_CRYPTO_JS_URL = vendorUrl('cryptoJsWorker');
 
 function fileHashWorker(signal) {
   requireFeature('worker', typeof Worker !== 'undefined');
-  const url = URL.createObjectURL(new Blob([FILE_HASH_WORKER_SOURCE], { type: 'text/javascript' }));
-  const worker = new Worker(url);
+  throwIfAborted(signal);
+  const worker = new Worker(FILE_HASH_WORKER_URL);
   const pending = new Map();
   let requestId = 0;
+  let closed = false;
   const close = (error) => {
+    if (closed) return;
+    closed = true;
     worker.terminate();
-    URL.revokeObjectURL(url);
+    signal?.removeEventListener('abort', abort);
     for (const { reject } of pending.values()) reject(error);
     pending.clear();
   };
+  const abort = () => close(new DOMException('작업이 취소되었습니다.', 'AbortError'));
   worker.addEventListener('message', ({ data }) => {
     const task = pending.get(data.request);
     if (!task) return;
@@ -405,7 +375,7 @@ function fileHashWorker(signal) {
     event.preventDefault();
     close(new Error(event.message || '파일 해시 Worker를 실행하지 못했습니다.'));
   });
-  signal?.addEventListener('abort', () => close(new DOMException('작업이 취소되었습니다.', 'AbortError')), { once: true });
+  signal?.addEventListener('abort', abort, { once: true });
   return {
     request(message, transfer = []) {
       throwIfAborted(signal);
@@ -430,7 +400,9 @@ async function hashFilesInWorker(files, task) {
       for (const [name, config] of Object.entries(FILE_CHECKSUM_ALGORITHMS)) {
         throwIfAborted(task.signal);
         const job = `${fileIndex}:${algorithmIndex++}`;
-        await client.request({ type: 'start', job, algorithm: config.worker });
+        await client.request({
+          type: 'start', job, algorithm: config.worker, cryptoJsUrl: FILE_HASH_CRYPTO_JS_URL,
+        });
         await readFileChunks(file, {
           signal: task.signal,
           onChunk: async (bytes) => client.request({ type: 'chunk', job, bytes }, [bytes.buffer]),

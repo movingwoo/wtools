@@ -181,52 +181,18 @@ const CODEC_URLS = {
   zstdDecompress: vendorUrl('zstdDecompress'),
   bzip2Decompress: vendorUrl('bzip2Decompress'),
 };
-const CODEC_WORKER_SOURCE = `
-const URLS = ${JSON.stringify(CODEC_URLS)};
-self.onmessage = async ({ data: { codec, action, bytes, level } }) => {
-  try {
-    let result;
-    if (codec === 'brotli') {
-      if (action === 'comp') {
-        const module = await import(URLS.brotliCompress);
-        result = await module.compress(bytes, { quality: level });
-      } else {
-        const module = await import(URLS.brotliDecompress);
-        const decompress = module.default || module.decompress || module;
-        result = decompress(bytes);
-      }
-    } else if (codec === 'zstd') {
-      if (action === 'comp') {
-        const module = await import(URLS.zstdCompress);
-        await module.init();
-        result = module.compress(bytes, level);
-      } else {
-        const module = await import(URLS.zstdDecompress);
-        result = module.decompress(bytes);
-      }
-    } else if (codec === 'bzip2' && action === 'decomp') {
-      const module = await import(URLS.bzip2Decompress);
-      result = (module.default || module).decode(bytes);
-    } else throw new Error('지원하지 않는 압축 작업입니다.');
-    const output = Uint8Array.from(result || []);
-    self.postMessage({ output }, [output.buffer]);
-  } catch (error) {
-    self.postMessage({ error: error?.message || String(error) });
-  }
-};`;
+const CODEC_WORKER_URL = new URL('../workers/archive-codec.js', import.meta.url);
 
 function runCodecWorker(codec, action, bytes, level, signal, tasks) {
   if (typeof Worker === 'undefined') return Promise.reject(new Error('이 브라우저는 Web Worker를 지원하지 않습니다.'));
   const input = bytes.byteOffset === 0 && bytes.byteLength === bytes.buffer.byteLength ? bytes : bytes.slice();
   return new Promise((resolve, reject) => {
-    const url = URL.createObjectURL(new Blob([CODEC_WORKER_SOURCE], { type: 'text/javascript' }));
-    const worker = new Worker(url, { type: 'module' });
+    const worker = new Worker(CODEC_WORKER_URL, { type: 'module' });
     let settled = false;
     const finish = (error, output) => {
       if (settled) return;
       settled = true;
       worker.terminate();
-      URL.revokeObjectURL(url);
       signal?.removeEventListener('abort', abort);
       tasks.delete(cancel);
       if (error) reject(error);
@@ -243,7 +209,7 @@ function runCodecWorker(codec, action, bytes, level, signal, tasks) {
       event.preventDefault();
       finish(new Error(event.message || '압축 Worker를 실행하지 못했습니다.'));
     });
-    worker.postMessage({ codec, action, bytes: input, level }, [input.buffer]);
+    worker.postMessage({ codec, action, bytes: input, level, urls: CODEC_URLS }, [input.buffer]);
   });
 }
 

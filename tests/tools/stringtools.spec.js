@@ -149,7 +149,7 @@ test('emoji-picker: 전체 데이터가 손상되면 기본 목록으로 대체�
   await expect(body.locator('button[title="로켓 발사 rocket launch"]')).toBeVisible();
 });
 
-test('ascii-art: figlet로 실제 배너를 생성한다', async ({ page }) => {
+test('ascii-art: 자체 FIGfont 엔진으로 실제 배너를 생성한다', async ({ page }) => {
   await openTool(page, 'ascii-art');
 
   const io = page.locator('#content .io');
@@ -157,4 +157,106 @@ test('ascii-art: figlet로 실제 배너를 생성한다', async ({ page }) => {
   await expect(io.locator('textarea.out')).toHaveValue(
     '  _   _ ___ \n | | | |_ _|\n | |_| || | \n |  _  || | \n |_| |_|___|\n            ',
   );
+});
+
+test('ascii-art: 10개 로컬 글꼴이 고정 FIGlet 출력 벡터와 일치한다', async ({ page }) => {
+  const expected = {
+    Standard: ' __        ______  \n \\ \\      / /___ \\ \n  \\ \\ /\\ / /  __) |\n   \\ V  V /  / __/ \n    \\_/\\_/  |_____|\n                   ',
+    Big: ' __          _____  \n \\ \\        / /__ \\ \n  \\ \\  /\\  / /   ) |\n   \\ \\/  \\/ /   / / \n    \\  /\\  /   / /_ \n     \\/  \\/   |____|\n                    \n                    ',
+    Small: ' __      _____ \n \\ \\    / /_  )\n  \\ \\/\\/ / / / \n   \\_/\\_/ /___|\n               ',
+    Slant: ' _       _____ \n| |     / /__ \\\n| | /| / /__/ /\n| |/ |/ // __/ \n|__/|__//____/ \n               ',
+    Banner: ' #     #  #####  \n #  #  # #     # \n #  #  #       # \n #  #  #  #####  \n #  #  # #       \n #  #  # #       \n  ## ##  ####### \n                 ',
+    Block: '                           \n _|          _|    _|_|    \n _|          _|  _|    _|  \n _|    _|    _|      _|    \n   _|  _|  _|      _|      \n     _|  _|      _|_|_|_|  \n                           \n                           ',
+    Doom: ' _    _  _____ \n| |  | |/ __  \\\n| |  | |`\' / /\'\n| |/\\| |  / /  \n\\  /\\  /./ /___\n \\/  \\/ \\_____/\n               \n               ',
+    Ghost: '  (`\\ .-\') /`         \n   `.( OO ),\'         \n,--./  .--.  .-----.  \n|      |  | / ,-.   \\ \n|  |   |  |,\'-\'  |  | \n|  |.\'.|  |_)  .\'  /  \n|         |  .\'  /__  \n|   ,\'.   | |       | \n\'--\'   \'--\' `-------\' ',
+    Shadow: ' \\ \\        / ___ \\  \n  \\ \\  \\   /     ) | \n   \\ \\  \\ /     __/  \n    \\_/\\_/    _____| \n                     ',
+    Speed: '___       _______ \n__ |     / /_|__ \\\n__ | /| / /____/ /\n__ |/ |/ / _  __/ \n____/|__/  /____/ \n                  ',
+  };
+  await openTool(page, 'ascii-art');
+  const io = ioSection(page);
+  const input = io.locator('textarea.mono:not(.out)');
+  const output = io.locator('textarea.out');
+  for (const [font, vector] of Object.entries(expected)) {
+    await setOption(io, '폰트', font);
+    await input.fill('W2');
+    await expect(output, `${font} 출력`).toHaveValue(vector);
+  }
+});
+
+test('ascii-art: 파서 오류·여러 줄·큰 입력 경계를 처리한다', async ({ page }) => {
+  await page.goto('/');
+  const result = await page.evaluate(async () => {
+    const { parseFigFont, renderFiglet } = await import('/js/lib/text/figlet.js');
+    const source = await (await fetch('/assets/data/figlet/Standard.flf')).text();
+    const font = parseFigFont(source);
+    const errors = [];
+    for (const invalid of ['not-a-font', source.split('\n').slice(0, 10).join('\n')]) {
+      try {
+        parseFigFont(invalid);
+      } catch (error) {
+        errors.push(error.message);
+      }
+    }
+    try {
+      renderFiglet('한글', font);
+    } catch (error) {
+      errors.push(error.message);
+    }
+    return {
+      glyphs: font.glyphs.size,
+      multiline: renderFiglet('A\nB', font),
+      largeLength: renderFiglet('A'.repeat(1024), font).length,
+      errors,
+    };
+  });
+
+  expect(result.glyphs).toBe(95);
+  expect(result.multiline).toBe(
+    '     _    \n    / \\   \n   / _ \\  \n  / ___ \\ \n /_/__ \\_\\\n | __ )   \n |  _ \\   \n | |_) |  \n |____/   \n          ',
+  );
+  expect(result.largeLength).toBeGreaterThan(6_000);
+  expect(result.errors).toEqual([
+    'Invalid FIGfont header.',
+    'FIGfont is missing ASCII glyph data.',
+    'Unsupported FIGfont character: U+D55C',
+  ]);
+});
+
+test('ascii-art: 빈 입력과 비 ASCII 입력을 한국어로 처리한다', async ({ page }) => {
+  await openTool(page, 'ascii-art');
+  const io = ioSection(page);
+  const input = io.locator('textarea.mono:not(.out)');
+  const output = io.locator('textarea.out');
+  await input.fill('   ');
+  await expect(output).toHaveValue('');
+  await input.fill('안녕');
+  await expect(output).toHaveValue(/영문, 숫자 및 ASCII 기호만 입력/);
+});
+
+test('ascii-art: 손상된 내장 글꼴을 받은 뒤 다시 시도할 수 있다', async ({ page }) => {
+  const pattern = '**/assets/data/figlet/Standard.flf';
+  await page.route(pattern, (route) => route.fulfill({ status: 200, body: 'invalid font' }));
+  await openTool(page, 'ascii-art');
+  const io = ioSection(page);
+  const input = io.locator('textarea.mono:not(.out)');
+  const output = io.locator('textarea.out');
+  await input.fill('HI');
+  await expect(output).toHaveValue(/내장 폰트 데이터가 올바르지 않습니다/);
+
+  await page.unroute(pattern);
+  await input.fill('OK');
+  await expect(output).toHaveValue(/_/);
+});
+
+test('ascii-art: 외부 figlet 스크립트와 글꼴을 요청하지 않는다', async ({ page }) => {
+  let requests = 0;
+  await page.route('https://cdn.jsdelivr.net/npm/figlet@1.7.0/**', async (route) => {
+    requests++;
+    await route.abort();
+  });
+  await openTool(page, 'ascii-art');
+  const io = ioSection(page);
+  await io.locator('textarea.mono:not(.out)').fill('OFFLINE');
+  await expect(io.locator('textarea.out')).toHaveValue(/_/);
+  expect(requests).toBe(0);
 });

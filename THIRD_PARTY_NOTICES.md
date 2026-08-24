@@ -10,6 +10,21 @@
 이 저장소에는 EFF가 공개한 원본 단어 목록을 변경하지 않고 포함합니다. 라이선스 근거는
 [EFF Copyright Policy](https://www.eff.org/copyright)에서 확인할 수 있습니다.
 
+## FIGlet 글꼴의 ASCII 글리프
+
+- 포함 파일: `assets/data/figlet/*.flf`
+- 원본: `figlet 1.7.0` 배포본의 Standard, Big, Small, Slant, Banner, Block, Doom, Ghost,
+  Shadow, Speed FIGfont
+- 라이선스: `figlet 1.7.0` 배포본의 MIT 라이선스 및 글꼴별 원본 주석의 수정 조건
+- 변경: W-Tools가 지원하는 printable ASCII(U+0020–U+007E) 글리프만 남기고 내부
+  FIGfont 파서용으로 주석과 줄바꿈을 정규화
+
+Standard는 Glenn Chappell과 Ian Chai, Big·Small·Slant·Block·Shadow는 Glenn Chappell,
+Banner는 Ryan Youck, Doom은 Frans P. de Vries, Ghost는 myflix, Speed는 Claude Martins가
+제작했습니다. Banner를 제외한 원본 글꼴 주석은 수정자의 이름을 주석에 남기는 조건으로 수정을
+허용하며, 생성된 모든 파일에는 W-Tools 수정 고지를 포함합니다. 원본 URL과 SHA-384는
+`scripts/generate_figlet_fonts.py`에 고정되어 있습니다.
+
 ## 로컬 고정 ESM/WASM
 
 동적 모듈과 하위 자산은 공급망 무결성을 위해 SHA-384로 고정한 검토본을

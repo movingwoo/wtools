@@ -1,4 +1,8 @@
 // Diff / 정규식 테스터 정밀 테스트.
+import { spawnSync } from 'node:child_process';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { test, expect, toolCases, openTool, ioSection, setOption, fillInputs, grabDownload } from '../helpers.js';
 
 // grid 표를 [[셀, ...], ...]로 읽는다 (헤더 행 포함).
@@ -91,7 +95,110 @@ test('json-diff: 최상위 스칼라와 배열 순서', async ({ page }) => {
   ]);
 });
 
-/* ---------- text-diff (jsdiff CDN) ---------- */
+/* ---------- text-diff (first-party Myers implementation) ---------- */
+
+test('text-diff: Myers 논문 예제와 짧은 무작위 입력이 최소 편집 경로를 만든다', async ({ page }) => {
+  await page.goto('/');
+  const result = await page.evaluate(async () => {
+    const { diffArrays } = await import('/js/lib/diff/myers.js');
+    const lcsLength = (a, b) => {
+      const row = new Uint16Array(b.length + 1);
+      for (const left of a) {
+        let diagonal = 0;
+        for (let j = 1; j <= b.length; j++) {
+          const above = row[j];
+          row[j] = left === b[j - 1] ? diagonal + 1 : Math.max(row[j], row[j - 1]);
+          diagonal = above;
+        }
+      }
+      return row[b.length];
+    };
+    const check = (a, b) => {
+      const changes = diffArrays([...a], [...b]);
+      const restoredA = changes.filter((change) => !change.added).flatMap((change) => change.value).join('');
+      const restoredB = changes.filter((change) => !change.removed).flatMap((change) => change.value).join('');
+      const edits = changes.filter((change) => change.added || change.removed)
+        .reduce((total, change) => total + change.count, 0);
+      return { restoredA, restoredB, edits, minimum: a.length + b.length - 2 * lcsLength(a, b) };
+    };
+
+    const paper = check('ABCABBA', 'CBABAC');
+    let seed = 0x5eed1234;
+    const random = () => {
+      seed = (seed * 1664525 + 1013904223) >>> 0;
+      return seed / 0x100000000;
+    };
+    const failures = [];
+    for (let i = 0; i < 300; i++) {
+      const make = () => Array.from(
+        { length: Math.floor(random() * 12) },
+        () => String.fromCharCode(97 + Math.floor(random() * 5)),
+      ).join('');
+      const a = make();
+      const b = make();
+      const checked = check(a, b);
+      if (checked.restoredA !== a || checked.restoredB !== b || checked.edits !== checked.minimum) {
+        failures.push({ a, b, checked });
+      }
+    }
+    let invalidInput = '';
+    try {
+      diffArrays('문자열', []);
+    } catch (error) {
+      invalidInput = error.message;
+    }
+    return { paper, failures, invalidInput };
+  });
+
+  expect(result.paper).toEqual({ restoredA: 'ABCABBA', restoredB: 'CBABAC', edits: 5, minimum: 5 });
+  expect(result.failures).toEqual([]);
+  expect(result.invalidInput).toContain('두 배열');
+});
+
+test('text-diff: 빈 입력과 큰 공통 구간을 처리한다', async ({ page }) => {
+  await page.goto('/');
+  const result = await page.evaluate(async () => {
+    const { diffChars, diffLines, diffWords } = await import('/js/lib/diff/myers.js');
+    const common = '가'.repeat(256 * 1024);
+    const large = diffChars(`${common}A끝`, `${common}B끝`);
+    return {
+      empty: [diffChars('', ''), diffWords('', ''), diffLines('', '')],
+      removed: large.filter((change) => change.removed).map((change) => change.value),
+      added: large.filter((change) => change.added).map((change) => change.value),
+      restoredLength: large.reduce((total, change) => total + change.value.length, 0),
+    };
+  });
+
+  expect(result.empty).toEqual([
+    [{ value: '', count: 0 }],
+    [{ value: '', count: 0 }],
+    [{ value: '', count: 0 }],
+  ]);
+  expect(result.removed).toEqual(['A']);
+  expect(result.added).toEqual(['B']);
+  expect(result.restoredLength).toBe(256 * 1024 + 3);
+});
+
+test('text-diff: CRLF·단어 공백·마지막 줄바꿈 계약을 보존한다', async ({ page }) => {
+  await page.goto('/');
+  const result = await page.evaluate(async () => {
+    const { createUnifiedPatch, diffLines, diffWords } = await import('/js/lib/diff/myers.js');
+    const crlf = diffLines('one\r\ntwo\r\n', 'one\r\nthree\r\n');
+    const words = diffWords('hello  world', 'hello\tworld');
+    const eof = createUnifiedPatch('A', 'B', 'same\nold', 'same\nnew');
+    return {
+      crlfRemoved: crlf.find((change) => change.removed)?.value,
+      crlfAdded: crlf.find((change) => change.added)?.value,
+      words,
+      eof,
+    };
+  });
+
+  expect(result.crlfRemoved).toBe('two\r\n');
+  expect(result.crlfAdded).toBe('three\r\n');
+  expect(result.words).toEqual([{ value: 'hello\tworld', count: 3 }]);
+  expect(result.eof).toContain('-old\n\\ No newline at end of file\n+new\n\\ No newline at end of file\n');
+});
 
 test('text-diff: 라인 단위', async ({ page }) => {
   await openTool(page, 'text-diff');
@@ -148,6 +255,48 @@ test('text-diff: 통합 diff를 생성하고 다운로드', async ({ page }) => 
   expect(saved.name).toBe('text-diff.patch');
   expect(saved.bytes.toString()).toContain('--- 텍스트 A.txt');
   expect(saved.bytes.toString()).toContain('-old\n+new');
+});
+
+test('text-diff: 통합 diff가 독립 diff 구현과 호환된다', async ({ page }) => {
+  const dir = mkdtempSync(join(tmpdir(), 'wtools-diff-'));
+  const oldPath = join(dir, 'old.txt');
+  const newPath = join(dir, 'new.txt');
+  const oldText = 'alpha\nold\nmiddle\ntail\n';
+  const newText = 'alpha\nnew\nmiddle\ntail\n';
+  let expected;
+  try {
+    writeFileSync(oldPath, oldText);
+    writeFileSync(newPath, newText);
+    const oracle = spawnSync('diff', [
+      '-U', '3', '--label', '텍스트 A.txt', '--label', '텍스트 B.txt', oldPath, newPath,
+    ], { encoding: 'utf8' });
+    expect(oracle.status).toBe(1);
+    expect(oracle.stderr).toBe('');
+    expected = oracle.stdout;
+  } finally {
+    rmSync(dir, { recursive: true });
+  }
+
+  await openTool(page, 'text-diff');
+  const io = ioSection(page);
+  await fillInputs(io, [oldText, newText]);
+  await io.getByText('통합 diff 보기').click();
+  const actual = await io.locator('.unified-diff').textContent();
+  expect(actual.slice(actual.indexOf('--- ')).replace(/\t\n/g, '\n')).toBe(expected);
+});
+
+test('text-diff: 외부 diff 스크립트를 요청하지 않는다', async ({ page }) => {
+  let requests = 0;
+  await page.route('https://cdn.jsdelivr.net/npm/diff@5.2.0/**', async (route) => {
+    requests++;
+    await route.abort();
+  });
+  await openTool(page, 'text-diff');
+  const io = ioSection(page);
+  await fillInputs(io, ['before', 'after']);
+  await expect(io.locator('.diff-line-del')).toHaveText('before');
+  await expect(io.locator('.diff-line-add')).toHaveText('after');
+  expect(requests).toBe(0);
 });
 
 test('text-diff: 공백 차이 무시 옵션', async ({ page }) => {

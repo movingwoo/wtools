@@ -4,7 +4,7 @@ importScripts('./js/sw-integrity.js');
 
 const CACHE_PREFIX = 'wtools-';
 // scripts/update_cache_version.py가 앱 셸 내용의 SHA-256 앞 12자리와 일치시킨다.
-const CACHE_REVISION = '48d71c3040db';
+const CACHE_REVISION = 'ec52d20a40d3';
 const CACHE_NAME = CACHE_PREFIX + 'shell-' + CACHE_REVISION;
 const EXTERNAL_CACHE_PREFIX = CACHE_PREFIX + 'external-';
 const EXTERNAL_CACHE_NAME = EXTERNAL_CACHE_PREFIX + 'v2';
@@ -30,6 +30,16 @@ const APP_SHELL = [
   './assets/favicon-192.png',
   './assets/favicon-512.png',
   './assets/favicon-512-maskable.png',
+  './assets/data/figlet/Banner.flf',
+  './assets/data/figlet/Big.flf',
+  './assets/data/figlet/Block.flf',
+  './assets/data/figlet/Doom.flf',
+  './assets/data/figlet/Ghost.flf',
+  './assets/data/figlet/Shadow.flf',
+  './assets/data/figlet/Slant.flf',
+  './assets/data/figlet/Small.flf',
+  './assets/data/figlet/Speed.flf',
+  './assets/data/figlet/Standard.flf',
   './assets/vendor/crypto-js-4.2.0.min.js',
   './assets/eff-short-wordlist-1.txt',
   './assets/vendor/brotli-compress-1.3.3.mjs',
@@ -46,7 +56,9 @@ const APP_SHELL = [
   './js/dependencies.js',
   './js/lib/common/base64.js',
   './js/lib/crypto/md4.js',
+  './js/lib/diff/myers.js',
   './js/lib/media/image-data.js',
+  './js/lib/text/figlet.js',
   './js/main.js',
   './js/tool-manifest.js',
   './js/sw-integrity.js',

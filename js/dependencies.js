@@ -86,20 +86,6 @@ globalThis.WTOOLS_DEPENDENCIES = {
       "kind": "script",
       "tools": ["js/tools/devfmt-format.js"]
     },
-    "jsdiff": {
-      "url": "https://cdn.jsdelivr.net/npm/diff@5.2.0/dist/diff.min.js",
-      "integrity": "sha384-lJJVaUgxmk/PVfQnAsGN1QuJZrE+n6bg2EMu33yVZOJ2av/3UzTHbmnPCI7ENJYa",
-      "license": "BSD-3-Clause",
-      "kind": "script",
-      "tools": ["js/tools/devfmt-diff.js"]
-    },
-    "figlet": {
-      "url": "https://cdn.jsdelivr.net/npm/figlet@1.7.0/lib/figlet.js",
-      "integrity": "sha384-pX+W+tDvxyLP633VSCBwPlKIlXhOLmq+yYw7Vm2bo/NYS9bp8bzjV50qUlXVC1Qp",
-      "license": "MIT",
-      "kind": "script",
-      "tools": ["js/tools/stringtools.js"]
-    },
     "pako": {
       "url": "https://cdn.jsdelivr.net/npm/pako@2.1.0/dist/pako.min.js",
       "integrity": "sha384-rNlaE5fs9dGIjmxWDALQh/RBAaGRYT5ChrzHo6tRfgrZ36iRFAiquP5g41Jsv+0j",

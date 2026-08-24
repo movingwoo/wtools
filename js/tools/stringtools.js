@@ -1,5 +1,5 @@
 // 문자열 / 텍스트 유틸리티
-import { tool, makeIO, h, kvTable, strToBytes, bytesToHex, loadScript, LIB, copyBtn, copyText } from '../core.js';
+import { tool, makeIO, h, kvTable, strToBytes, bytesToHex, copyBtn, copyText } from '../core.js';
 
 const CAT = '문자열 / 텍스트';
 
@@ -482,6 +482,46 @@ tool({
   },
 });
 
+const FIGLET_FONT_FILES = new Map(
+  ['Standard', 'Big', 'Small', 'Slant', 'Banner', 'Block', 'Doom', 'Ghost', 'Shadow', 'Speed']
+    .map((name) => [name, `../../assets/data/figlet/${name}.flf`]),
+);
+const figletFonts = new Map();
+let figletEnginePromise;
+
+function loadFigletEngine() {
+  if (!figletEnginePromise) {
+    figletEnginePromise = import('../lib/text/figlet.js').catch((error) => {
+      figletEnginePromise = null;
+      throw error;
+    });
+  }
+  return figletEnginePromise;
+}
+
+function loadFigletFont(name) {
+  const relative = FIGLET_FONT_FILES.get(name);
+  if (!relative) return Promise.reject(new Error('지원하지 않는 FIGlet 폰트입니다.'));
+  if (!figletFonts.has(name)) {
+    const loading = (async () => {
+      const [{ parseFigFont, renderFiglet }, response] = await Promise.all([
+        loadFigletEngine(), fetch(new URL(relative, import.meta.url)),
+      ]);
+      if (!response.ok) throw new Error(`내장 폰트를 불러오지 못했습니다. (HTTP ${response.status})`);
+      try {
+        return { font: parseFigFont(await response.text()), renderFiglet };
+      } catch (error) {
+        throw new Error('내장 폰트 데이터가 올바르지 않습니다.', { cause: error });
+      }
+    })().catch((error) => {
+      figletFonts.delete(name);
+      throw error;
+    });
+    figletFonts.set(name, loading);
+  }
+  return figletFonts.get(name);
+}
+
 tool({
   id: 'ascii-art', cat: CAT, name: 'ASCII 텍스트 배너 생성기',
   desc: '영문과 숫자를 큰 ASCII 문자 배너로 변환합니다. (FIGlet)',
@@ -493,11 +533,11 @@ tool({
       outputRows: 14,
       async process(text, o) {
         if (!text.trim()) return '';
-        await loadScript(LIB.figlet);
-        figlet.defaults({ fontPath: 'https://cdn.jsdelivr.net/npm/figlet@1.7.0/fonts' });
-        return new Promise((res, rej) => {
-          figlet.text(text, { font: o.font }, (err, out) => err ? rej(new Error('폰트 로드 실패: ' + err.message)) : res(out));
-        });
+        if (/[^\x20-\x7e\r\n]/.test(text)) {
+          throw new Error('영문, 숫자 및 ASCII 기호만 입력해 주세요.');
+        }
+        const { font, renderFiglet } = await loadFigletFont(o.font);
+        return renderFiglet(text, font);
       },
     });
   },

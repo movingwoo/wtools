@@ -89,7 +89,7 @@
 
 ## 5. 해싱
 
-- MD2 / MD4 / MD5
+- MD2 / MD4 / MD5 (레거시 호환성 확인용, 보안 용도 비권장)
 - SHA0 / SHA1 / SHA2 (224/256/384/512) / SHA3 (FIPS 202) / Keccak-256
 - BLAKE2b / BLAKE2s / BLAKE3 / xxHash (키 지정 가능)
 - HMAC 생성

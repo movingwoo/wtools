@@ -1,5 +1,6 @@
 // 이미지 / 미디어 / QR 도구 정밀 테스트.
 // 이미지는 tests/fixtures.js에서 만들어 업로드하고, 결과는 다운로드 바이트나 캔버스 픽셀로 확인한다.
+import { createHash } from 'node:crypto';
 import { test, expect, toolCase, openTool, ioSection, uploadFile, grabDownload, setOption, fillInputs } from '../helpers.js';
 import { makePng, makeJpegWithExif } from '../fixtures.js';
 
@@ -93,6 +94,42 @@ test.describe('media', () => {
 
 /* ---------- QR 생성 → 리더 왕복 ---------- */
 
+test('QR 엔진: 바이트 모드 용량 경계와 고정 행렬', async ({ page }) => {
+  await page.goto('/');
+  const result = await page.evaluate(async () => {
+    const { encodeQr } = await import('/js/lib/qr/encoder.js');
+    const version = (length, level) => encodeQr('A'.repeat(length), { level }).version;
+    const automatic = encodeQr('HELLO WORLD', { level: 'M' });
+    const fixed = encodeQr('HELLO WORLD', { level: 'M', version: 1, mask: 2 });
+    let overflow = '';
+    try { encodeQr('A'.repeat(2954), { level: 'L' }); }
+    catch (error) { overflow = error.message; }
+    return {
+      versions: {
+        l17: version(17, 'L'), l18: version(18, 'L'),
+        m14: version(14, 'M'), m15: version(15, 'M'),
+        q11: version(11, 'Q'), q12: version(12, 'Q'),
+        h7: version(7, 'H'), h8: version(8, 'H'),
+        multiBlock: version(100, 'Q'), maximum: version(2953, 'L'),
+      },
+      fixed: fixed.modules.map((row) => [...row].join('')).join('\n'),
+      fixedMeta: { size: fixed.size, version: fixed.version, mask: fixed.mask, level: fixed.level },
+      automaticMask: automatic.mask,
+      overflow,
+    };
+  });
+  expect(result.versions).toEqual({
+    l17: 1, l18: 2, m14: 1, m15: 2, q11: 1, q12: 2, h7: 1, h8: 2,
+    multiBlock: 8, maximum: 40,
+  });
+  expect(result.fixedMeta).toEqual({ size: 21, version: 1, mask: 2, level: 'M' });
+  // Cross-check against Project Nayuki's independent byte-mode, M, version 1, mask 2 matrix.
+  expect(createHash('sha256').update(result.fixed).digest('hex'))
+    .toBe('4a00c00a60fcf7c129f3513b5058dcdbe122e5beff1a9b82dd8fc403d9a2f241');
+  expect(result.automaticMask).toBe(4);
+  expect(result.overflow).toContain('UTF-8 2,954바이트');
+});
+
 async function qrCanvasPng(page) {
   const dataUri = await page.locator('#content canvas').evaluate((canvas) => canvas.toDataURL('image/png'));
   return Buffer.from(dataUri.split(',')[1], 'base64');
@@ -113,12 +150,72 @@ for (const payload of ['https://github.com', '한글 텍스트 QR 테스트']) {
   });
 }
 
+for (const level of ['L', 'M', 'Q', 'H']) {
+  test(`qr-generate → qr-read 오류 복원 ${level} 레벨`, async ({ page }) => {
+    const payload = `${level}: UTF-8 😀 QR`;
+    await openTool(page, 'qr-generate');
+    const io = ioSection(page);
+    await setOption(io, '오류 복원 레벨', level);
+    await fillInputs(io, payload);
+    await expect(io.locator('canvas')).toBeVisible();
+    const png = await qrCanvasPng(page);
+
+    await openTool(page, 'qr-read');
+    await uploadFile(page.locator('#content'), 'QR 이미지 선택 (브라우저 밖으로 전송되지 않습니다)', { name: `${level}.png`, mimeType: 'image/png', buffer: png });
+    await expect(page.locator('#content table.kv')).toContainText(payload);
+  });
+}
+
+test('qr-generate: 다중 Reed–Solomon 블록 QR을 독립 디코더가 읽는다', async ({ page }) => {
+  const payload = 'A'.repeat(100);
+  await openTool(page, 'qr-generate');
+  const io = ioSection(page);
+  await setOption(io, '오류 복원 레벨', 'Q');
+  await fillInputs(io, payload);
+  await expect(io.locator('canvas')).toBeVisible();
+  const png = await qrCanvasPng(page);
+
+  await openTool(page, 'qr-read');
+  await uploadFile(page.locator('#content'), 'QR 이미지 선택 (브라우저 밖으로 전송되지 않습니다)', { name: 'multi-block.png', mimeType: 'image/png', buffer: png });
+  await expect(page.locator('#content table.kv')).toContainText(payload);
+});
+
+test('QR 생성 도구와 OTP는 외부 qrcode 스크립트를 요청하지 않는다', async ({ page }) => {
+  let requests = 0;
+  await page.route('https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/**', async (route) => {
+    requests++;
+    await route.abort();
+  });
+  await openTool(page, 'qr-generate');
+  await expect(page.locator('#content canvas')).toBeVisible();
+  await openTool(page, 'otp');
+  await page.getByRole('button', { name: 'URI / QR 생성' }).click();
+  await expect(page.locator('#content canvas')).toBeVisible();
+  expect(requests).toBe(0);
+});
+
+test('qr-generate: 선택한 오류 복원 레벨의 용량 초과를 안내한다', async ({ page }) => {
+  await openTool(page, 'qr-generate');
+  const io = ioSection(page);
+  await setOption(io, '오류 복원 레벨', 'L');
+  await fillInputs(io, 'A'.repeat(2954));
+  await expect(io.locator('.out-html .error')).toContainText('QR 코드 용량을 초과했습니다 (UTF-8 2,954바이트).');
+});
+
 test('qr-generate: PNG 다운로드', async ({ page }) => {
   await openTool(page, 'qr-generate');
   await expect(page.locator('#content canvas')).toBeVisible();
   const png = await grabDownload(page, () => page.getByRole('button', { name: 'PNG 다운로드' }).click());
   expect(png.name).toBe('qrcode.png');
   expect(png.bytes.subarray(0, 8).toString('hex')).toBe('89504e470d0a1a0a');
+});
+
+test('qr-generate: 빈 입력은 결과를 비운다', async ({ page }) => {
+  await openTool(page, 'qr-generate');
+  const io = ioSection(page);
+  await expect(io.locator('canvas')).toBeVisible();
+  await fillInputs(io, '');
+  await expect(io.locator('canvas')).toHaveCount(0);
 });
 
 test('wifi-qr: 생성한 QR을 리더가 WiFi 정보로 인식', async ({ page }) => {

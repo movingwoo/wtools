@@ -119,7 +119,7 @@ const cases = [
   },
   { name: 'mac-format: 자릿수가 맞지 않으면 에러', tool: 'mac-format', inputs: '00:1A:2B', htmlError: 'MAC 주소는 12자리 16진수여야 합니다.' },
 
-  /* ---------- user-agent (ua-parser-js CDN) ---------- */
+  /* ---------- user-agent (first-party rule corpus) ---------- */
   {
     name: 'user-agent: 데스크톱 Chrome', tool: 'user-agent',
     inputs: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
@@ -128,8 +128,35 @@ const cases = [
   {
     name: 'user-agent: iPhone Safari', tool: 'user-agent',
     inputs: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1',
-    kv: { '브라우저': 'Mobile Safari 17.0', '운영체제': 'iOS 17.0', '디바이스': 'Apple iPhone mobile' },
+    kv: { '브라우저': 'Mobile Safari 17.0', '엔진': 'WebKit 605.1.15', '운영체제': 'iOS 17.0', '디바이스': 'Apple iPhone mobile', 'CPU 아키텍처': '알 수 없음' },
   },
+  {
+    name: 'user-agent: Chromium Edge', tool: 'user-agent',
+    inputs: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36 Edg/125.0.0.0',
+    kv: { '브라우저': 'Edge 125.0.0.0', '엔진': 'Blink 125.0.0.0', '운영체제': 'Windows 10', 'CPU 아키텍처': 'amd64' },
+  },
+  {
+    name: 'user-agent: 레거시 EdgeHTML', tool: 'user-agent',
+    inputs: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/64.0.3282.140 Safari/537.36 Edge/18.17763',
+    kv: { '브라우저': 'Edge 18.17763', '엔진': 'EdgeHTML 18.17763', '운영체제': 'Windows 10', 'CPU 아키텍처': 'amd64' },
+  },
+  {
+    name: 'user-agent: Ubuntu Firefox', tool: 'user-agent',
+    inputs: 'Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:126.0) Gecko/20100101 Firefox/126.0',
+    kv: { '브라우저': 'Firefox 126.0', '엔진': 'Gecko 126.0', '운영체제': 'Ubuntu', '디바이스': '데스크톱(추정)', 'CPU 아키텍처': 'amd64' },
+  },
+  {
+    name: 'user-agent: Samsung Android', tool: 'user-agent',
+    inputs: 'Mozilla/5.0 (Linux; Android 14; SM-S918N Build/UP1A.231005.007) AppleWebKit/537.36 (KHTML, like Gecko) SamsungBrowser/25.0 Chrome/121.0.0.0 Mobile Safari/537.36',
+    kv: { '브라우저': 'Samsung Internet 25.0', '엔진': 'Blink 121.0.0.0', '운영체제': 'Android 14', '디바이스': 'Samsung SM-S918N mobile' },
+  },
+  {
+    name: 'user-agent: Android WebView', tool: 'user-agent',
+    inputs: 'Mozilla/5.0 (Linux; Android 13; Pixel 7 Build/TQ3A.230805.001; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/114.0.5735.196 Mobile Safari/537.36',
+    kv: { '브라우저': 'Chrome WebView 114.0.5735.196', '엔진': 'Blink 114.0.5735.196', '운영체제': 'Android 13', '디바이스': 'Google Pixel 7 mobile' },
+  },
+  { name: 'user-agent: 빈 입력', tool: 'user-agent', inputs: '', htmlValue: '' },
+  { name: 'user-agent: 길이 제한', tool: 'user-agent', inputs: 'x'.repeat(8193), htmlError: 'User-Agent는 8,192자 이하여야 합니다.' },
 
   /* ---------- extract ---------- */
   { name: 'extract: 이메일 (중복 제거)', tool: 'extract', inputs: EXTRACT_TEXT, output: 'kim@example.com\nlee@test.co.kr\n\n// 2개' },
@@ -188,6 +215,19 @@ const cases = [
 ];
 
 toolCases('network', cases);
+
+test('user-agent: 외부 ua-parser 스크립트를 요청하지 않는다', async ({ page }) => {
+  let requests = 0;
+  await page.route('https://cdn.jsdelivr.net/npm/ua-parser-js@1.0.38/**', async (route) => {
+    requests++;
+    await route.abort();
+  });
+  await openTool(page, 'user-agent');
+  const io = ioSection(page);
+  await fillInputs(io, 'Mozilla/5.0 (Macintosh; Intel Mac OS X 13_5_2) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Safari/605.1.15');
+  await expect.poll(() => kvValue(io, '브라우저')).toBe('Safari 16.6');
+  expect(requests).toBe(0);
+});
 
 /* ---------- ipv6-ula: 난수라 형식만 검증 ---------- */
 

@@ -6,6 +6,30 @@ import {
 } from '../core.js';
 
 const CAT = '암호화 / 복호화';
+let qrModule = null;
+
+function loadQrModule() {
+  return qrModule ??= import('../lib/qr/encoder.js').catch((cause) => {
+    qrModule = null;
+    throw new Error('QR 코드 생성 모듈을 불러오지 못했습니다.', { cause });
+  });
+}
+
+function qrCanvas(qr, scale = 5, margin = 8) {
+  const dimension = qr.size * scale + margin * 2;
+  const canvas = h('canvas', {
+    width: dimension, height: dimension, role: 'img', 'aria-label': '인증 앱 등록용 QR 코드',
+  });
+  const context = canvas.getContext('2d');
+  requireFeature('canvas', !!context);
+  context.fillStyle = '#fff';
+  context.fillRect(0, 0, dimension, dimension);
+  context.fillStyle = '#000';
+  for (let row = 0; row < qr.size; row++) for (let column = 0; column < qr.size; column++) {
+    if (qr.modules[row][column]) context.fillRect(margin + column * scale, margin + row * scale, scale, scale);
+  }
+  return canvas;
+}
 
 /* ---------- 고전 암호 ----------
    전부 영문 알파벳만 치환하고 한글·숫자·기호는 그대로 통과시킨다. */
@@ -763,10 +787,11 @@ tool({
         const label = encodeURIComponent(`${o.issuer}:${o.account}`);
         const uri = `otpauth://${o.type}/${label}?${params}`;
         if (action === 'uri') {
-          await loadScript(LIB.qrcode);
-          const qr = qrcode(0, 'M'); qr.addData(uri); qr.make();
-          const img = h('div'); img.innerHTML = qr.createImgTag(5, 8);
-          return h('div', null, h('pre', { style: { whiteSpace: 'pre-wrap', wordBreak: 'break-all' } }, uri), img);
+          const { encodeQr } = await loadQrModule();
+          const qr = encodeQr(uri, { level: 'M' });
+          return h('div', null,
+            h('pre', { style: { whiteSpace: 'pre-wrap', wordBreak: 'break-all' } }, uri),
+            qrCanvas(qr));
         }
         const code = hotp(secret, counter, digits, o.algorithm);
         return h('div', null, h('div', { style: { fontSize: '2rem', fontWeight: '700', letterSpacing: '.15em' } }, code),

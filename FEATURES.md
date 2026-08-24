@@ -135,7 +135,7 @@
 - IPv4 대역(range) 전개 및 CIDR ↔ 목록/주소 변환
 - IPv6 ULA(고유 로컬 주소) 생성기
 - MAC 주소 포맷 변경 / 생성기
-- User-Agent 파서
+- User-Agent 파서 (브라우저·엔진·OS·기기·CPU 자체 규칙 코퍼스)
 - URI 파싱
 - DNS over HTTPS 조회 (Cloudflare 외부 전송·CORS 사전 안내, 진행 중인 요청 취소 지원)
 - 이메일/URL/도메인/IP 주소 추출 (텍스트에서)
@@ -156,8 +156,8 @@
 
 ## 10. 이미지 / 미디어 / QR
 
-- QR 코드 생성기
-- WiFi QR 코드 생성기
+- QR 코드 생성기 (UTF-8 바이트 모드, QR 버전 1~40 자동 선택, L/M/Q/H 오류 복원)
+- WiFi QR 코드 생성기 (자체 QR 행렬 생성)
 - QR/바코드 리더 (실시간 카메라 스캔·카메라 전환/일시정지, 이미지/클립보드 QR 해독, 지원 시 EAN·Code 128·Data Matrix 등)
 - Base64 ↔ 이미지 변환
 - 이미지 포맷 변환기 (PNG/JPEG/WebP, 단일 프레임 GIF, BMP, PNG 포함 SVG, EXIF 방향 정규화, 회전·반전·자르기, 픽셀 상한, 순차 디코딩·해제, 취소·부분 실패 재시도, 전체 ZIP 다운로드)

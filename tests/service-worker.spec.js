@@ -28,7 +28,9 @@ test('설치 시 검증된 자산만 캐시하고 이전 버전 캐시를 삭제
     await caches.open('wtools-shell-v0');
     await caches.open('wtools-external-v0');
     const response = await fetch(externalUrl);
-    const cache = await caches.open('wtools-external-v2');
+    const oldCache = await caches.open('wtools-external-v2');
+    await oldCache.put(externalUrl, response.clone());
+    const cache = await caches.open('wtools-external-v3');
     await cache.put(externalUrl, response);
   }, EXTERNAL_URL);
 
@@ -42,7 +44,7 @@ test('설치 시 검증된 자산만 캐시하고 이전 버전 캐시를 삭제
     const entry = globalThis.WTOOLS_DEPENDENCIES.vendored.smolToml;
     const digest = await crypto.subtle.digest('SHA-384', await vendorResponse.clone().arrayBuffer());
     const integrity = 'sha384-' + btoa(String.fromCharCode(...new Uint8Array(digest)));
-    const external = await caches.open('wtools-external-v2');
+    const external = await caches.open('wtools-external-v3');
     return {
       keys,
       vendorIntegrity: integrity,
@@ -53,6 +55,7 @@ test('설치 시 검증된 자산만 캐시하고 이전 버전 캐시를 삭제
   }, { externalUrl: EXTERNAL_URL, vendoredPath: VENDORED_PATH });
   expect(state.keys).not.toContain('wtools-shell-v0');
   expect(state.keys).not.toContain('wtools-external-v0');
+  expect(state.keys).not.toContain('wtools-external-v2');
   expect(state.shellName).toMatch(/^wtools-shell-[0-9a-f]{12}$/);
   expect(state.vendorIntegrity).toBe(state.expectedVendorIntegrity);
   expect(state.externalCached).toBe(true);

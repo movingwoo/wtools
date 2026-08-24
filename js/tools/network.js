@@ -1,7 +1,15 @@
 // 네트워크
-import { tool, makeIO, h, formLabel, kvTable, loadScript, LIB, copyBtn } from '../core.js';
+import { tool, makeIO, h, formLabel, kvTable, copyBtn } from '../core.js';
 
 const CAT = '네트워크';
+let userAgentModule = null;
+
+function loadUserAgentModule() {
+  return userAgentModule ??= import('../lib/network/user-agent.js').catch((cause) => {
+    userAgentModule = null;
+    throw new Error('User-Agent 파서 모듈을 불러오지 못했습니다.', { cause });
+  });
+}
 
 /* ---------- IPv4 유틸 ---------- */
 function ipToInt(ip) {
@@ -324,8 +332,8 @@ tool({
       outputHTML: true, runOnLoad: true,
       async process(text) {
         if (!text.trim()) return '';
-        await loadScript(LIB.uaparser);
-        const r = new UAParser(text.trim()).getResult();
+        const { parseUserAgent } = await loadUserAgentModule();
+        const r = parseUserAgent(text);
         return kvTable([
           ['브라우저', `${r.browser.name || '?'} ${r.browser.version || ''}`],
           ['엔진', `${r.engine.name || '?'} ${r.engine.version || ''}`],

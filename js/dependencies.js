@@ -44,20 +44,6 @@ globalThis.WTOOLS_DEPENDENCIES = {
       "kind": "style",
       "tools": ["js/tools/devfmt-format.js"]
     },
-    "qrcode": {
-      "url": "https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js",
-      "integrity": "sha384-lQXOAyZwHXE55JFyrOMB7nY2Wv+m5ZWNtJcHrd1rceRQXAYNLak8ukN5TjBTcIwz",
-      "license": "MIT",
-      "kind": "script",
-      "tools": ["js/tools/cryptotools.js", "js/tools/media.js"]
-    },
-    "uaparser": {
-      "url": "https://cdn.jsdelivr.net/npm/ua-parser-js@1.0.38/dist/ua-parser.min.js",
-      "integrity": "sha384-yT+3Fq5fjwzDR/suVYN+YMuGERziAMutX4NZ7W9Rz3mzuHipPpY7oe04Fd6wFJZB",
-      "license": "MIT",
-      "kind": "script",
-      "tools": ["js/tools/network.js"]
-    },
     "beautifyJs": {
       "url": "https://cdn.jsdelivr.net/npm/js-beautify@1.15.1/js/lib/beautify.min.js",
       "integrity": "sha384-FVx1WK8VHSskkzcjxDxmZKSJ3KQ8vYOZo+sirXFdjOxUq4Y4+9IrtCG8iiisHHfj",

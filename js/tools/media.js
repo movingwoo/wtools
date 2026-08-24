@@ -12,11 +12,19 @@ const IMAGE_LIMITS = Object.freeze({
 });
 const bytesToAscii = (bytes) => String.fromCharCode(...bytes);
 let imageDataModule = null;
+let qrModule = null;
 
 function loadImageDataModule() {
   return imageDataModule ??= import('../lib/media/image-data.js').catch((cause) => {
     imageDataModule = null;
     throw new Error('이미지 포맷 모듈을 불러오지 못했습니다.', { cause });
+  });
+}
+
+function loadQrModule() {
+  return qrModule ??= import('../lib/qr/encoder.js').catch((cause) => {
+    qrModule = null;
+    throw new Error('QR 코드 생성 모듈을 불러오지 못했습니다.', { cause });
   });
 }
 
@@ -103,13 +111,9 @@ async function safeCreateImageBitmap(source, options) {
 }
 
 async function makeQR(text, ecl, size) {
-  await loadScript(LIB.qrcode);
-  // 기본 인코더는 문자 코드의 하위 1바이트만 써서 한글·이모지가 깨진다. UTF-8로 바꾼다.
-  qrcode.stringToBytes = qrcode.stringToBytesFuncs['UTF-8'];
-  const qr = qrcode(0, ecl);
-  qr.addData(text);
-  qr.make();
-  const count = qr.getModuleCount();
+  const { encodeQr } = await loadQrModule();
+  const qr = encodeQr(text, { level: ecl });
+  const count = qr.size;
   const cell = Math.max(2, Math.floor(size / (count + 8)));
   const margin = cell * 4;
   const dim = count * cell + margin * 2;
@@ -121,7 +125,7 @@ async function makeQR(text, ecl, size) {
   ctx.fillStyle = '#000';
   for (let r = 0; r < count; r++)
     for (let c = 0; c < count; c++)
-      if (qr.isDark(r, c)) ctx.fillRect(margin + c * cell, margin + r * cell, cell, cell);
+      if (qr.modules[r][c]) ctx.fillRect(margin + c * cell, margin + r * cell, cell, cell);
   return canvas;
 }
 

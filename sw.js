@@ -4,10 +4,10 @@ importScripts('./js/sw-integrity.js');
 
 const CACHE_PREFIX = 'wtools-';
 // scripts/update_cache_version.py가 앱 셸 내용의 SHA-256 앞 12자리와 일치시킨다.
-const CACHE_REVISION = 'ab47cf67c42c';
+const CACHE_REVISION = 'a20d5f731287';
 const CACHE_NAME = CACHE_PREFIX + 'shell-' + CACHE_REVISION;
 const EXTERNAL_CACHE_PREFIX = CACHE_PREFIX + 'external-';
-const EXTERNAL_CACHE_NAME = EXTERNAL_CACHE_PREFIX + 'v4';
+const EXTERNAL_CACHE_NAME = EXTERNAL_CACHE_PREFIX + 'v5';
 const dependencies = self.WTOOLS_DEPENDENCIES;
 const externalIntegrity = new Map(Object.values(dependencies.cdn)
   .map(({ url, integrity }) => [url, integrity]));
@@ -31,6 +31,7 @@ const APP_SHELL = [
   './assets/favicon-512.png',
   './assets/favicon-512-maskable.png',
   './assets/data/emoji.json',
+  './assets/data/network-reference.json',
   './assets/data/figlet/Banner.flf',
   './assets/data/figlet/Big.flf',
   './assets/data/figlet/Block.flf',
@@ -47,9 +48,9 @@ const APP_SHELL = [
   './assets/vendor/brotli-decompress-1.3.3.mjs',
   './assets/vendor/fzstd-0.1.1.mjs',
   './assets/vendor/lz4js-0.2.0.mjs',
-  './assets/vendor/openpgp-5.11.1.min.mjs',
+  './assets/vendor/openpgp-5.11.3.min.mjs',
   './assets/vendor/seek-bzip-2.0.0.mjs',
-  './assets/vendor/smol-toml-1.2.2.mjs',
+  './assets/vendor/smol-toml-1.6.1.mjs',
   './assets/vendor/zstd-compress-0.0.27.mjs',
   './assets/vendor/zstd-wasm-0.0.27.wasm',
   './js/core.js',
@@ -86,6 +87,7 @@ const APP_SHELL = [
   './js/workers/file-hash.js',
   './js/workers/gif-encode.js',
   './js/workers/qr-decode.js',
+  './js/workers/text-diff.js',
 ];
 
 self.addEventListener('install', (event) => {

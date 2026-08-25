@@ -35,6 +35,11 @@ jobs:
           done < <(find js -name '*.js' -type f | sort)
           node --check sw.js
 
+      - name: Check minimum-browser compatibility
+        run: |
+          node --test scripts/test_check_browser_compat.mjs
+          node scripts/check_browser_compat.mjs
+
       - name: Validate registrations and static assets
         run: |
           python3 scripts/validate_static.py

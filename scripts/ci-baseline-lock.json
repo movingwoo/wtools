@@ -1,0 +1,37 @@
+{
+  "schema": 1,
+  "reviewed": "2026-08-25",
+  "reviewIntervalDays": 100,
+  "browsers": {
+    "chromeEdge": { "minimum": "110", "closestEngine": "Chromium 112" },
+    "firefox": { "minimum": "115", "closestEngine": "Firefox 111" },
+    "safari": { "minimum": "16.4", "closestEngine": "WebKit 16.4" }
+  },
+  "node": {
+    "major": "22",
+    "source": "https://raw.githubusercontent.com/nodejs/Release/main/schedule.json"
+  },
+  "playwright": {
+    "current": {
+      "version": "1.62.1",
+      "image": "mcr.microsoft.com/playwright:v1.62.1-noble@sha256:dcc5531e97840b9b5e794f2814476b21571c5124a3fca2267d73041f56e7580e"
+    },
+    "minimum": {
+      "version": "1.32.3",
+      "image": "mcr.microsoft.com/playwright:v1.32.3-jammy@sha256:821472c31a97a7ccfc4dd4ab80c52b9239c467280287a60193498180fdc5ce97"
+    }
+  },
+  "githubActions": {
+    "actions/checkout": 7,
+    "actions/setup-node": 7,
+    "actions/cache": 6,
+    "actions/configure-pages": 6,
+    "actions/upload-pages-artifact": 5,
+    "actions/deploy-pages": 5
+  },
+  "releaseGate": {
+    "workflow": "compatibility.yml",
+    "branch": "main",
+    "maxAgeDays": 8
+  }
+}

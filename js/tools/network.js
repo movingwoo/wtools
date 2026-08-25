@@ -3,12 +3,30 @@ import { tool, makeIO, h, formLabel, kvTable, copyBtn } from '../core.js';
 
 const CAT = '네트워크';
 let userAgentModule = null;
+let referenceDataPromise = null;
 
 function loadUserAgentModule() {
   return userAgentModule ??= import('../lib/network/user-agent.js').catch((cause) => {
     userAgentModule = null;
     throw new Error('User-Agent 파서 모듈을 불러오지 못했습니다.', { cause });
   });
+}
+
+function loadReferenceData() {
+  return referenceDataPromise ??= fetch(new URL('../../assets/data/network-reference.json', import.meta.url))
+    .then((response) => {
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      return response.json();
+    })
+    .then((data) => {
+      if (data?.schema !== 1 || !Array.isArray(data.http) || !Array.isArray(data.mime))
+        throw new Error('데이터 형식이 올바르지 않습니다.');
+      return data;
+    })
+    .catch((cause) => {
+      referenceDataPromise = null;
+      throw new Error('IANA 참조 데이터를 불러오지 못했습니다.', { cause });
+    });
 }
 
 /* ---------- IPv4 유틸 ---------- */
@@ -327,6 +345,15 @@ tool({
   desc: 'User-Agent 문자열에서 브라우저, OS, 디바이스 정보를 추출합니다.',
   keywords: 'user agent parse browser os device',
   render(root) {
+    const support = h('div', { class: 'note', role: 'status' }, 'User-Agent 지원 범위를 불러오는 중입니다.');
+    root.append(support);
+    loadUserAgentModule().then(({ USER_AGENT_SUPPORT }) => {
+      support.textContent = `${USER_AGENT_SUPPORT.scope} · 마지막 검토 ${USER_AGENT_SUPPORT.reviewed}. ${USER_AGENT_SUPPORT.limitations}`;
+    }).catch((error) => {
+      support.textContent = error.message;
+      support.classList.add('error');
+      support.setAttribute('role', 'alert');
+    });
     makeIO(root, {
       inputs: [{ id: 'input', label: 'User-Agent', rows: 3, value: navigator.userAgent }],
       outputHTML: true, runOnLoad: true,
@@ -602,61 +629,73 @@ tool({
 });
 
 /* ---------- 참조표 ---------- */
-const HTTP_CODES = {
-  '1xx 정보': [[100, 'Continue'], [101, 'Switching Protocols'], [103, 'Early Hints']],
-  '2xx 성공': [[200, 'OK'], [201, 'Created'], [202, 'Accepted'], [204, 'No Content'], [206, 'Partial Content']],
-  '3xx 리다이렉트': [[301, 'Moved Permanently'], [302, 'Found'], [303, 'See Other'], [304, 'Not Modified'], [307, 'Temporary Redirect'], [308, 'Permanent Redirect']],
-  '4xx 클라이언트 오류': [[400, 'Bad Request'], [401, 'Unauthorized'], [403, 'Forbidden'], [404, 'Not Found'], [405, 'Method Not Allowed'], [409, 'Conflict'], [410, 'Gone'], [418, "I'm a teapot"], [422, 'Unprocessable Entity'], [429, 'Too Many Requests']],
-  '5xx 서버 오류': [[500, 'Internal Server Error'], [501, 'Not Implemented'], [502, 'Bad Gateway'], [503, 'Service Unavailable'], [504, 'Gateway Timeout']],
-};
 tool({
   id: 'http-status', cat: CAT, name: 'HTTP 상태 코드 참조',
-  desc: 'HTTP 상태 코드 목록과 의미를 검색합니다.',
+  desc: '자주 쓰는 HTTP 상태 코드와 IANA 명칭을 검색합니다.',
   keywords: 'http status code reference 404 500',
   render(root) {
     const box = h('div');
+    const note = h('div', { class: 'note', role: 'status' }, 'IANA 참조 데이터를 불러오는 중입니다.');
     const s = h('input', { type: 'text', 'aria-label': 'HTTP 상태 코드 검색', placeholder: '검색 (예: 404, redirect, forbidden)', style: { width: '100%', marginBottom: '12px' } });
-    function draw() {
+    function draw(data) {
       const q = s.value.trim().toLowerCase();
       box.innerHTML = '';
-      for (const [cat, codes] of Object.entries(HTTP_CODES)) {
-        const rows = codes.filter(([c, n]) => !q || String(c).includes(q) || n.toLowerCase().includes(q) || cat.toLowerCase().includes(q));
+      const categories = data.http.reduce((all, item) => ((all[item.category] ||= []).push(item), all), {});
+      for (const [cat, codes] of Object.entries(categories)) {
+        const rows = codes.filter((item) => {
+          const searchable = [item.code, item.name, ...(item.aliases || []), cat].join(' ').toLowerCase();
+          return !q || searchable.includes(q);
+        });
         if (!rows.length) continue;
-        box.append(h('h4', null, cat), kvTable(rows.map(([c, n]) => [c, n])));
+        box.append(h('h4', null, cat), kvTable(rows.map((item) => [
+          item.code,
+          item.aliases?.length ? `${item.name} · 이전/일반 명칭: ${item.aliases[0]}` : item.name,
+        ])));
       }
     }
-    s.addEventListener('input', draw);
-    root.append(s, box);
-    draw();
+    root.append(note, s, box);
+    loadReferenceData().then((data) => {
+      note.textContent = `IANA 등록부 기준 ${data.reviewed} 검토 · 전체 목록이 아닌 자주 쓰는 항목입니다.`;
+      s.addEventListener('input', () => draw(data));
+      draw(data);
+    }).catch((error) => {
+      note.textContent = error.message;
+      note.classList.add('error');
+      note.setAttribute('role', 'alert');
+    });
   },
 });
 
-const MIME_TYPES = {
-  'text/plain': 'txt', 'text/html': 'html', 'text/css': 'css', 'text/csv': 'csv', 'text/markdown': 'md',
-  'application/json': 'json', 'application/xml': 'xml', 'application/javascript': 'js', 'application/pdf': 'pdf',
-  'application/zip': 'zip', 'application/gzip': 'gz', 'application/x-tar': 'tar', 'application/octet-stream': 'bin',
-  'application/msword': 'doc', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'docx',
-  'application/vnd.ms-excel': 'xls', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'xlsx',
-  'image/png': 'png', 'image/jpeg': 'jpg', 'image/gif': 'gif', 'image/webp': 'webp', 'image/svg+xml': 'svg', 'image/x-icon': 'ico',
-  'audio/mpeg': 'mp3', 'audio/wav': 'wav', 'audio/ogg': 'ogg', 'video/mp4': 'mp4', 'video/webm': 'webm',
-  'font/woff': 'woff', 'font/woff2': 'woff2', 'font/ttf': 'ttf',
-};
 tool({
   id: 'mime-types', cat: CAT, name: 'MIME 타입 참조',
-  desc: 'MIME 타입과 파일 확장자를 상호 검색합니다.',
+  desc: '자주 쓰는 MIME 타입과 파일 확장자를 상호 검색합니다.',
   keywords: 'mime type content-type extension',
   render(root) {
     const box = h('div');
+    const note = h('div', { class: 'note', role: 'status' }, 'IANA 참조 데이터를 불러오는 중입니다.');
     const s = h('input', { type: 'text', 'aria-label': 'MIME 타입 검색', placeholder: '검색 (예: json, png, video)', style: { width: '100%', marginBottom: '12px' } });
-    function draw() {
+    function draw(data) {
       const q = s.value.trim().toLowerCase();
-      const rows = Object.entries(MIME_TYPES).filter(([m, e]) => !q || m.includes(q) || e.includes(q));
+      const rows = data.mime.filter((item) => {
+        const searchable = [item.type, ...item.extensions, ...(item.aliases || [])].join(' ').toLowerCase();
+        return !q || searchable.includes(q);
+      });
       box.innerHTML = '';
-      box.append(kvTable(rows.map(([m, e]) => ['.' + e, m])));
+      box.append(kvTable(rows.map((item) => [
+        item.extensions.map((extension) => `.${extension}`).join(', '),
+        item.aliases?.length ? `${item.type} · 별칭: ${item.aliases.join(', ')}` : item.type,
+      ])));
     }
-    s.addEventListener('input', draw);
-    root.append(s, box);
-    draw();
+    root.append(note, s, box);
+    loadReferenceData().then((data) => {
+      note.textContent = `IANA 등록부 기준 ${data.reviewed} 검토 · 전체 목록이 아닌 자주 쓰는 항목입니다.`;
+      s.addEventListener('input', () => draw(data));
+      draw(data);
+    }).catch((error) => {
+      note.textContent = error.message;
+      note.classList.add('error');
+      note.setAttribute('role', 'alert');
+    });
   },
 });
 

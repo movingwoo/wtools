@@ -110,6 +110,9 @@ Linux CI에서 실행할 수 없어 같은 버전의 Playwright WebKit을 대리
 도구가 지연 로드하는 classic script/CSS는 테스트 캐시에서 공급되므로 일시적인 CDN 장애가 PR 검사를 중단시키지 않습니다.  
 동적 ESM/WASM은 SHA-384로 고정한 검토본을 저장소에서 제공하며, 실제 CDN 원본과 운영 보안 헤더는 하루에 한 번 nightly 워크플로에서 확인합니다.
 테스트 의존성까지 포함한 등록부와 월간 점검 절차는 [DEPENDENCY_UPDATE.md](DEPENDENCY_UPDATE.md)를 참고하세요.
+월간 작업은 런타임·로컬 고정·테스트 패키지를 npm·OSV·GitHub Advisory와 함께 감사하고,
+분기 검토 기한이 지난 User-Agent·IANA 참조표·브라우저/CI 기준선을 실패로 알립니다.
+릴리즈 산출물은 최근 8일 이내의 최소 브라우저 호환성 워크플로 성공 이력이 있어야 게시됩니다.
 
 ## 구조
 

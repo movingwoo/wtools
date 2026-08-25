@@ -8,7 +8,8 @@
 ### 변경됨
 
 - 텍스트 Diff의 라인·단어·문자 비교와 통합 diff 생성을 자체 Myers 계열 구현으로 교체해
-  `diff 5.2.0` 런타임 CDN 의존성을 제거
+  `diff 5.2.0` 런타임 CDN 의존성을 제거하고, 수동 실행·전용 Worker·취소를 적용해
+  큰 비교 중에도 화면 응답성을 유지
 - ASCII 텍스트 배너의 FIGfont 파싱·레이아웃·스무싱을 자체 구현하고 10개 글꼴의
   printable ASCII 데이터를 로컬에 고정해 `figlet 1.7.0`과 글꼴 CDN 요청을 제거
 - 이모지 피커의 Unicode Emoji 17.0 기본 이모지·그룹과 CLDR 48.2 한국어·영어 검색 데이터를
@@ -16,12 +17,30 @@
   런타임 CDN 요청을 제거
 - User-Agent의 브라우저·엔진·운영체제·기기·CPU 판독 규칙을 자체 코퍼스로 교체해
   `ua-parser-js 1.0.38` 런타임 CDN 의존성을 제거
+- User-Agent 규칙에 Whale·Electron과 Facebook·Messenger·Instagram·KakaoTalk·LINE 인앱
+  토큰, 데스크톱 모드 iPadOS와 축소 UA 한계를 반영하고 지원 범위·마지막 검토일을 UI에 표시
+- HTTP 상태·MIME 참조표를 IANA 등록부 기준의 로컬 데이터로 분리하고 전체 목록이 아닌
+  자주 쓰는 항목임을 명시; HTTP 418은 `(Unused)`, 422는 `Unprocessable Content`로 갱신하고
+  과거·일반 MIME 명칭은 검색 가능한 별칭으로 유지
 - QR 생성기의 UTF-8 바이트 모드, 버전 1~40 선택, Reed–Solomon 오류 정정과 마스킹을
   자체 구현해 `qrcode-generator 1.4.4` 런타임 CDN 의존성을 제거
 - QR 리더의 finder pattern 탐지, 원근 보정, 모듈 샘플링, 데이터 모드와 Reed–Solomon
   오류 복원을 Worker 기반 자체 구현으로 교체해 `jsQR 1.4.0` 런타임 CDN 의존성을 제거
 - GIF 출력의 median-cut 팔레트 양자화, 팔레트 매핑, LZW 압축과 GIF89a 다중 프레임
   작성을 Worker 기반 자체 구현으로 교체해 `gifenc 1.0.3` 로컬 제3자 자산을 제거
+
+### 보안
+
+- `js-yaml`을 4.3.1, `jsrsasign`을 11.1.5, `smol-toml`을 1.6.1,
+  `OpenPGP.js`를 5.11.3으로 갱신하고 CDN SRI·로컬 SHA-384·서비스 워커 캐시와
+  제3자 고지를 동기화
+
+### 수정됨
+
+- WebP를 지원하지 않는 Safari/WebKit이 PNG 결과를 반환해도 `.webp` 파일로 저장하지
+  않도록 실제 MIME과 RIFF/WEBP 매직 바이트를 검증하고 PNG 선택을 한국어로 안내
+- 최소 브라우저 검사기가 문자열·주석의 `using a ...` 설명을 `using` 선언으로
+  오인하던 문제를 수정
 
 ### 품질 및 운영
 
@@ -45,9 +64,25 @@
   검토용 PR을 자동 생성
 - 데스크톱·모바일·인앱 브라우저 User-Agent 코퍼스와 길이 제한, QR 고정 행렬·용량 경계·
   오류 복원 레벨·다중 블록·한글/이모지 및 독립 디코더 왕복 회귀 테스트를 추가
+- 실제 형식의 데스크톱·모바일·인앱 User-Agent 26개 코퍼스와 검토일을 별도 관리하고,
+  IANA HTTP·MIME 데이터 및 UA·브라우저/CI 기준선이 100일 이상 검토되지 않으면 월간 작업을 실패 처리
+- 런타임·로컬 고정·테스트 의존성 26개를 npm 최신판·OSV·GitHub Advisory와 대조하는
+  월간 감사를 추가하고, 등록부 `tools`를 실제 `LIB`·전역·`vendorUrl` 사용처와 역방향 검증
+- 최소 브라우저·Node.js·현재/최소 Playwright 이미지 digest와 GitHub Actions 메이저를
+  분기별 lock으로 관리하고, 최근 8일 이내 호환성 워크플로 성공을 릴리즈 산출물 게시 조건으로 추가
+- 2026-08-25 원격 감사에서 현재 핀의 알려진 취약점이 없음을 확인하고 14개 최신판 후보,
+  npm이 유지보수 중단으로 표시한 `crypto-js`·`jsrsasign`을 후속 검토 목록으로 기록
 - QR 원근 변환·반전·손상 복원과 GIF 팔레트·투명도·다중 프레임·브라우저 디코더
   상호운용 회귀 테스트를 추가
-- 외부 라이브러리 캐시 세대를 갱신해 제거된 UA·QR 생성기·QR 리더 응답을 서비스 워커 활성화 시 정리
+- YAML merge chain·`!!omap`, TOML 연속 주석, 변조된 DSA 인증서·서명과 0 경계값
+  위조를 검증하는 보안 회귀 테스트를 추가
+- WebP 실제 형식과 PNG 폴백, 수천 라인 텍스트 Diff의 메인 스레드 응답성·취소를
+  Chromium/WebKit에서 검증
+- 최소 브라우저 검사기의 문자열·주석 회귀 테스트와 실제 검사를 일반 PR CI에 추가
+- macOS WebKit의 기본 키보드 탐색 설정에서도 링크 순서를 같은 의미로 검증하도록
+  접근성 smoke 테스트의 Option+Tab 동작을 반영
+- 외부 라이브러리 캐시 세대를 갱신해 제거된 UA·QR 생성기·QR 리더와 보안 패치 전
+  의존성 응답을 서비스 워커 활성화 시 정리
 
 ## [1.3.1] - 2026-08-24
 

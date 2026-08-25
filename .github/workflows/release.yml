@@ -6,6 +6,7 @@ on:
       - published
 
 permissions:
+  actions: read
   contents: write
 
 concurrency:
@@ -24,6 +25,11 @@ jobs:
         uses: actions/checkout@v7
         with:
           ref: ${{ github.event.release.tag_name }}
+
+      - name: Require a recent minimum-browser compatibility success
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/check_workflow_freshness.py
 
       - name: Set up Node.js
         uses: actions/setup-node@v7

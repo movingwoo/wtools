@@ -18,6 +18,11 @@ test.afterEach(async ({ pageErrors }) => {
   expect(pageErrors).toEqual([]);
 });
 
+function pressSequentialTab(page, browserName) {
+  // macOS WebKit은 시스템 기본값에서 링크를 Option+Tab 순서에 포함한다.
+  return page.keyboard.press(browserName === 'webkit' && process.platform === 'darwin' ? 'Alt+Tab' : 'Tab');
+}
+
 test('홈 화면이 렌더링된다', async ({ page, pageErrors }) => {
   await page.goto('/');
   await expect(page.locator('.home h1')).toHaveText('W-Tools');
@@ -26,7 +31,7 @@ test('홈 화면이 렌더링된다', async ({ page, pageErrors }) => {
   expect(await page.locator('#nav a[data-id]').count()).toBeGreaterThan(30);
 });
 
-test('사이드바에서 GitHub 저장소 링크를 제공한다', async ({ page }) => {
+test('사이드바에서 GitHub 저장소 링크를 제공한다', async ({ page, browserName }) => {
   await page.goto('/');
 
   const repositoryLink = page.getByRole('link', { name: 'GitHub 저장소 (새 창)' });
@@ -36,9 +41,9 @@ test('사이드바에서 GitHub 저장소 링크를 제공한다', async ({ page
   await expect(repositoryLink).toHaveAttribute('rel', 'noopener');
 
   await page.locator('.brand').focus();
-  await page.keyboard.press('Tab');
+  await pressSequentialTab(page, browserName);
   await expect(repositoryLink).toBeFocused();
-  await page.keyboard.press('Tab');
+  await pressSequentialTab(page, browserName);
   await expect(page.locator('#theme-toggle')).toBeFocused();
 });
 
@@ -75,7 +80,7 @@ test('CSP가 \'unsafe-eval\' 없이 적용된다', async ({ page }) => {
   expect(policy).not.toContain("'unsafe-eval'");
 });
 
-test('모바일의 닫힌 사이드바를 건너뛰고 본문으로 이동한다', async ({ page }) => {
+test('모바일의 닫힌 사이드바를 건너뛰고 본문으로 이동한다', async ({ page, browserName }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto('/#/tool/base64');
 
@@ -88,7 +93,7 @@ test('모바일의 닫힌 사이드바를 건너뛰고 본문으로 이동한다
   await firstToolLink.evaluate((link) => link.focus());
   await expect(firstToolLink).not.toBeFocused();
 
-  await page.keyboard.press('Tab');
+  await pressSequentialTab(page, browserName);
   await expect(skipLink).toBeFocused();
   await expect(skipLink).toBeVisible();
   await page.keyboard.press('Enter');

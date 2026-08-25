@@ -238,8 +238,7 @@ function lineRecord(token) {
   return { text: delimiter ? token.slice(0, -delimiter.length) : token, delimiter };
 }
 
-function patchOperations(oldText, newText, ignoreWhitespace) {
-  const changes = diffLines(oldText, newText, { ignoreWhitespace });
+function patchOperations(changes) {
   const operations = [];
   for (const change of changes) {
     const tokens = lineTokens(change.value, false);
@@ -299,12 +298,13 @@ function lineCount(operations, end, side) {
   return count;
 }
 
-export function createUnifiedPatch(
-  oldFileName, newFileName, oldText, newText,
-  { oldHeader = '', newHeader = '', context = 3, ignoreWhitespace = false } = {},
+export function createUnifiedPatchFromChanges(
+  oldFileName, newFileName, changes,
+  { oldHeader = '', newHeader = '', context = 3 } = {},
 ) {
+  if (!Array.isArray(changes)) throw new TypeError('통합 diff에는 라인 비교 결과가 필요합니다.');
   const safeContext = Number.isInteger(context) && context >= 0 ? context : 3;
-  const operations = patchOperations(oldText, newText, ignoreWhitespace);
+  const operations = patchOperations(changes);
   let patch = '===================================================================\n'
     + `--- ${oldFileName}\t${oldHeader}\n+++ ${newFileName}\t${newHeader}\n`;
 
@@ -323,4 +323,12 @@ export function createUnifiedPatch(
     }
   }
   return patch;
+}
+
+export function createUnifiedPatch(
+  oldFileName, newFileName, oldText, newText,
+  options = {},
+) {
+  const changes = diffLines(oldText, newText, { ignoreWhitespace: options.ignoreWhitespace });
+  return createUnifiedPatchFromChanges(oldFileName, newFileName, changes, options);
 }

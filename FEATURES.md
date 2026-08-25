@@ -60,7 +60,7 @@
 - XML / CSS / JavaScript / HTML / SQL / YAML 포맷/압축
 - 구문 강조(Syntax Highlighter)
 - JSON Diff (구조 비교)
-- 텍스트 Diff (자체 Myers 구현 기반 라인·단어·문자 비교, 공백 차이 무시, 통합 diff 미리보기·다운로드)
+- 텍스트 Diff (자체 Myers 구현 기반 라인·단어·문자 비교, 공백 차이 무시, 수동 실행·Worker 계산·취소, 통합 diff 미리보기·다운로드)
 - 정규식(Regex) 테스터 + 검색·패턴 삽입형 JavaScript 치트시트
 - Crontab 표현식 생성/설명기 (월·요일 이름, 범위·목록·간격, 일·요일 OR 의미, IANA 시간대·DST를 반영한 다음 실행 시각 5회)
 - Markdown → HTML 변환기
@@ -135,12 +135,12 @@
 - IPv4 대역(range) 전개 및 CIDR ↔ 목록/주소 변환
 - IPv6 ULA(고유 로컬 주소) 생성기
 - MAC 주소 포맷 변경 / 생성기
-- User-Agent 파서 (브라우저·엔진·OS·기기·CPU 자체 규칙 코퍼스)
+- User-Agent 파서 (데스크톱·모바일·대표 인앱 브라우저의 브라우저·엔진·OS·기기·CPU 자체 규칙 코퍼스, 분기별 검토일·한계 안내)
 - URI 파싱
 - DNS over HTTPS 조회 (Cloudflare 외부 전송·CORS 사전 안내, 진행 중인 요청 취소 지원)
 - 이메일/URL/도메인/IP 주소 추출 (텍스트에서)
-- HTTP 상태 코드 참조표
-- MIME 타입 참조표
+- IANA 등록부 기준으로 분기별 검토하는 자주 쓰는 HTTP 상태 코드 참조표
+- IANA 등록 여부와 일반 별칭을 분기별 검토하는 자주 쓰는 MIME 타입 참조표
 - CSP(Content-Security-Policy) 헤더 생성기 및 위험 지시어 검사
 - 키코드(Keycode) 정보 뷰어
 - 기기 정보(User Agent/화면 등) 뷰어
@@ -160,7 +160,7 @@
 - WiFi QR 코드 생성기 (자체 QR 행렬 생성)
 - QR/바코드 리더 (자체 QR 탐지·원근 보정·Reed–Solomon 복호, 실시간 카메라 스캔·카메라 전환/일시정지, 이미지/클립보드 해독, 지원 시 EAN·Code 128·Data Matrix 등)
 - Base64 ↔ 이미지 변환
-- 이미지 포맷 변환기 (PNG/JPEG/WebP, 자체 팔레트 양자화·LZW 단일 프레임 GIF, BMP, PNG 포함 SVG, EXIF 방향 정규화, 회전·반전·자르기, 픽셀 상한, 순차 디코딩·해제, 취소·부분 실패 재시도, 전체 ZIP 다운로드)
+- 이미지 포맷 변환기 (PNG/JPEG/WebP, WebP 실제 형식 검증·미지원 안내, 자체 팔레트 양자화·LZW 단일 프레임 GIF, BMP, PNG 포함 SVG, EXIF 방향 정규화, 회전·반전·자르기, 픽셀 상한, 순차 디코딩·해제, 취소·부분 실패 재시도, 전체 ZIP 다운로드)
 - 배경 투명화 (단색 배경 제거 → 투명 PNG)
 - EXIF 뷰어 / 메타데이터 제거 (JPEG/PNG, 무손실, 여러 장 일괄 처리 + 제거본 전체 ZIP 다운로드)
 - 파비콘 생성기 (favicon.ico + 다중 크기 PNG)

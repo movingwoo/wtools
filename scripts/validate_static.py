@@ -35,12 +35,34 @@ DEPENDENCY_REGISTRY_PATTERN = re.compile(
 )
 SRI_PATTERN = re.compile(r'sha384-[A-Za-z0-9+/]{64}')
 VERSIONED_URL_PATTERN = re.compile(r'(?:@|/)\d+\.\d+\.\d+(?:[./+-]|$)')
+SEMVER_PATTERN = re.compile(r'\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?')
 EXTERNAL_EXECUTABLE_CALL = re.compile(
   r'(?:loadScript|loadCss|loadModule|import|importScripts|new\s+Worker)'
   r'\s*\(\s*["\'](https?://[^"\']+)',
 )
 SCRIPT_TAG_PATTERN = re.compile(r'<script\b([^>]*)>', re.IGNORECASE)
 HTML_ATTR_PATTERN = re.compile(r'([\w-]+)=["\']([^"\']*)["\']')
+DEPENDENCY_GLOBALS = {
+  'cryptoJs': ('CryptoJS',),
+  'jsyaml': ('jsyaml',),
+  'jsrsasign': ('ASN1HEX', 'KEYUTIL', 'KJUR', 'X509', 'X509CRL', 'hextopem', 'pemtohex'),
+  'marked': ('marked',),
+  'hljs': ('hljs',),
+  'beautifyJs': ('js_beautify',),
+  'beautifyCss': ('css_beautify',),
+  'beautifyHtml': ('html_beautify',),
+  'sqlFormatter': ('sqlFormatter',),
+  'pako': ('pako',),
+  'fflate': ('fflate',),
+  'lzma': ('LZMA',),
+  'jsonpath': ('JSONPath',),
+  'jmespath': ('jmespath',),
+  'zSchema': ('ZSchema',),
+  'bcrypt': ('bcrypt',),
+  'hashWasm': ('hashwasm',),
+  'tweetnacl': ('nacl',),
+  'cryptoJsWorker': ('CryptoJS',),
+}
 
 
 class Validation:
@@ -247,6 +269,66 @@ def load_dependencies(validation: Validation) -> dict:
   return dependencies
 
 
+def dependency_actual_uses(cdn: dict, vendored: dict) -> dict[str, set[str]]:
+  uses = {asset_id: set() for asset_id in (*cdn, *vendored)}
+  providers: dict[str, list[str]] = {}
+  for asset_id, names in DEPENDENCY_GLOBALS.items():
+    for name in names:
+      providers.setdefault(name, []).append(asset_id)
+
+  for path in sorted((ROOT / 'js').rglob('*.js')):
+    if path.name == 'dependencies.js':
+      continue
+    relative = path.relative_to(ROOT).as_posix()
+    source = path.read_text(encoding='utf-8')
+    for asset_id in re.findall(r"vendorUrl\(\s*'([^']+)'\s*\)", source):
+      if asset_id in uses:
+        uses[asset_id].add(relative)
+    for asset_id in re.findall(r'\bLIB\.([A-Za-z0-9]+)', source):
+      if asset_id in uses:
+        uses[asset_id].add(relative)
+    for name, asset_ids in providers.items():
+      expression = rf'(?<![\w$]){re.escape(name)}\s*(?:\.|\[|\()'
+      if not re.search(expression, source) and f'globalThis.{name}' not in source:
+        continue
+      if len(asset_ids) == 1:
+        uses[asset_ids[0]].add(relative)
+      elif relative.startswith('js/workers/'):
+        vendored_provider = next((item for item in asset_ids if item in vendored), None)
+        if vendored_provider:
+          uses[vendored_provider].add(relative)
+      else:
+        cdn_provider = next((item for item in asset_ids if item in cdn), None)
+        if cdn_provider:
+          uses[cdn_provider].add(relative)
+
+  vendored_by_path = {
+    (ROOT / entry['path']).resolve(): asset_id
+    for asset_id, entry in vendored.items()
+    if isinstance(entry, dict) and isinstance(entry.get('path'), str)
+  }
+  for asset_id, entry in vendored.items():
+    path = (ROOT / entry.get('path', '')).resolve()
+    if not path.is_file() or path.suffix != '.mjs':
+      continue
+    source = path.read_text(encoding='utf-8')
+    for ref in re.findall(r'''(?:\bfrom|new\s+URL\s*\()\s*["'](\./[^"']+)["']''', source):
+      child_id = vendored_by_path.get((path.parent / ref).resolve())
+      if child_id:
+        uses[child_id].update(uses[asset_id])
+  return uses
+
+
+def dependency_url_matches(url: str, package: str, version: str) -> bool:
+  decoded = urllib.parse.unquote(url)
+  return any(marker in decoded for marker in (
+    f'/npm/{package}@{version}',
+    f'/{package}@{version}/',
+    f'/ajax/libs/{package}/{version}/',
+    f'registry.npmjs.org/{package}/-/',
+  ))
+
+
 def validate_dependencies(validation: Validation) -> set[Path]:
   dependencies = load_dependencies(validation)
   cdn = dependencies.get('cdn', {})
@@ -270,9 +352,13 @@ def validate_dependencies(validation: Validation) -> set[Path]:
   for asset_id, (package_name, lock_path) in expected_tests.items():
     entry = test_dependencies.get(asset_id, {})
     source = f'js/dependencies.js tests.{asset_id}'
-    if set(entry) != {'version', 'source', 'integrity', 'license', 'use'}:
-      validation.error(f'{source}: fields must be version, source, integrity, license, use')
+    if set(entry) != {'package', 'version', 'source', 'integrity', 'license', 'use'}:
+      validation.error(f'{source}: fields must be package, version, source, integrity, license, use')
       continue
+    if entry['package'] != package_name:
+      validation.error(f'{source}: package must be {package_name}')
+    if not dependency_url_matches(entry['source'], entry['package'], entry['version']):
+      validation.error(f'{source}: source URL does not match package and version')
     locked = lock.get('packages', {}).get(lock_path, {})
     if package.get('devDependencies', {}).get(package_name) != entry['version']:
       validation.error(f'{source}: version differs from tests/package.json')
@@ -283,8 +369,9 @@ def validate_dependencies(validation: Validation) -> set[Path]:
 
   for asset_id, entry in cdn.items():
     source = f'js/dependencies.js cdn.{asset_id}'
-    if set(entry) != {'url', 'integrity', 'license', 'kind', 'tools'}:
-      validation.error(f'{source}: fields must be url, integrity, license, kind, tools')
+    required = {'package', 'version', 'url', 'integrity', 'license', 'kind', 'tools'}
+    if set(entry) != required:
+      validation.error(f'{source}: fields must be {", ".join(sorted(required))}')
       continue
     url = entry['url']
     if url in urls:
@@ -292,6 +379,12 @@ def validate_dependencies(validation: Validation) -> set[Path]:
     urls.add(url)
     if not VERSIONED_URL_PATTERN.search(url):
       validation.error(f'{source}: URL does not pin a semantic version: {url}')
+    if not SEMVER_PATTERN.fullmatch(entry['version']) or entry['version'] not in url:
+      validation.error(f'{source}: version must be semantic and match the URL')
+    if not re.fullmatch(r'(?:@[a-z0-9._-]+/)?[a-z0-9._-]+', entry['package']):
+      validation.error(f'{source}: invalid npm package name')
+    if not dependency_url_matches(url, entry['package'], entry['version']):
+      validation.error(f'{source}: URL does not match package and version')
     if not SRI_PATTERN.fullmatch(entry['integrity']):
       validation.error(f'{source}: invalid SHA-384 integrity')
     if entry['kind'] not in {'script', 'style'}:
@@ -303,7 +396,7 @@ def validate_dependencies(validation: Validation) -> set[Path]:
 
   for asset_id, entry in vendored.items():
     source = f'js/dependencies.js vendored.{asset_id}'
-    required = {'path', 'integrity', 'source', 'sourceIntegrity', 'license', 'tools'}
+    required = {'package', 'version', 'path', 'integrity', 'source', 'sourceIntegrity', 'license', 'tools'}
     if set(entry) != required:
       validation.error(f'{source}: fields must be {", ".join(sorted(required))}')
       continue
@@ -314,6 +407,12 @@ def validate_dependencies(validation: Validation) -> set[Path]:
     urls.add(entry['source'])
     if not VERSIONED_URL_PATTERN.search(entry['source']):
       validation.error(f'{source}: source URL does not pin a semantic version')
+    if not SEMVER_PATTERN.fullmatch(entry['version']) or entry['version'] not in entry['source']:
+      validation.error(f'{source}: version must be semantic and match the source URL')
+    if not re.fullmatch(r'(?:@[a-z0-9._-]+/)?[a-z0-9._-]+', entry['package']):
+      validation.error(f'{source}: invalid npm package name')
+    if not dependency_url_matches(entry['source'], entry['package'], entry['version']):
+      validation.error(f'{source}: source URL does not match package and version')
     if not SRI_PATTERN.fullmatch(entry['integrity']) or not SRI_PATTERN.fullmatch(entry['sourceIntegrity']):
       validation.error(f'{source}: invalid SHA-384 integrity')
     if not entry['license'] or not entry['tools']:
@@ -378,6 +477,19 @@ def validate_dependencies(validation: Validation) -> set[Path]:
     for asset_id in re.findall(r'\bLIB\.([A-Za-z0-9]+)', source):
       if asset_id not in cdn:
         validation.error(f'{path.relative_to(ROOT)}: unknown CDN dependency: {asset_id}')
+
+  actual_uses = dependency_actual_uses(cdn, vendored)
+  for section, entries in (('cdn', cdn), ('vendored', vendored)):
+    for asset_id, entry in entries.items():
+      registered = set(entry.get('tools', []))
+      actual = actual_uses.get(asset_id, set())
+      if registered != actual:
+        missing = sorted(actual - registered)
+        extra = sorted(registered - actual)
+        validation.error(
+          f'js/dependencies.js {section}.{asset_id}: tools differ from actual '
+          f'LIB/global/vendorUrl use (missing={missing}, extra={extra})'
+        )
 
   core = (ROOT / 'js' / 'core.js').read_text(encoding='utf-8')
   worker = (ROOT / 'sw.js').read_text(encoding='utf-8')

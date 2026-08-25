@@ -146,6 +146,10 @@ export function makeTestPki({ workflow = false } = {}) {
     run('pkcs8', '-topk8', '-nocrypt', '-in', 'ec.pem', '-out', 'ec-pkcs8.pem');
     run('pkcs8', '-topk8', '-in', 'rsa.pem', '-out', 'rsa-enc.pem', '-v2', 'aes-256-cbc', '-passout', 'pass:' + PKI.passphrase);
     if (workflow) {
+      run('dsaparam', '-out', 'dsa-param.pem', '2048');
+      run('genpkey', '-paramfile', 'dsa-param.pem', '-out', 'dsa-key.pem');
+      run('req', '-x509', '-new', '-key', 'dsa-key.pem', '-out', 'dsa-cert.pem',
+        '-days', String(PKI.days), '-sha256', '-subj', '/C=KR/O=WTools Test/CN=WTools DSA Test');
       run('req', '-new', '-key', 'rsa.pem', '-out', 'request.csr', '-sha256', '-subj', PKI.subject,
         '-addext', `subjectAltName=DNS:${PKI.san[0]},DNS:${PKI.san[1]},IP:${PKI.san[2]}`,
         '-addext', 'basicConstraints=critical,CA:FALSE',
@@ -226,6 +230,7 @@ crlDistributionPoints = URI:https://status.wtools.test/intermediate.crl
     if (workflow) Object.assign(result, {
       csr: read('request.csr'), leafCert: read('leaf.pem'),
       intermediateCert: read('intermediate.pem'), rootCert: read('root.pem'),
+      dsaCert: read('dsa-cert.pem'),
       intermediateDer: readFileSync(join(dir, 'intermediate.der')),
       cleanCrl: read('clean-crl.pem'), revokedCrl: read('revoked-crl.pem'),
       ocspGood: readFileSync(join(dir, 'ocsp-good.der')),

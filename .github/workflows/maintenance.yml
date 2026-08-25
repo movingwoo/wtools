@@ -32,21 +32,41 @@ jobs:
         working-directory: tests
         run: npm audit --audit-level=high
 
-      - name: List available updates
-        working-directory: tests
+      - name: Audit runtime and test dependency versions and advisories
+        if: ${{ always() }}
+        env:
+          GH_TOKEN: ${{ github.token }}
         shell: bash
-        run: |
-          echo '## 테스트 의존성 새 버전' >> "$GITHUB_STEP_SUMMARY"
-          npm outdated --long >> "$GITHUB_STEP_SUMMARY" 2>&1 || true
+        run: python3 scripts/audit_dependencies.py --fail-on-vulnerability | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Check quarterly User-Agent corpus
+        if: ${{ always() }}
+        shell: bash
+        run: python3 scripts/check_user_agent_data.py --check-age | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Compare HTTP and MIME references with IANA
+        if: ${{ always() }}
+        shell: bash
+        run: python3 scripts/check_reference_data.py --check-latest | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Audit browser and CI baselines
+        if: ${{ always() }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: python3 scripts/audit_ci_baseline.py --check-latest | tee -a "$GITHUB_STEP_SUMMARY"
 
       - name: Verify dependency pins and browser baseline
+        if: ${{ always() }}
         run: |
           python3 scripts/vendor_dependencies.py --check
           python3 scripts/generate_emoji_data.py --check
           python3 scripts/validate_static.py
+          python3 -m unittest discover -s scripts -p 'test_*.py'
           node scripts/check_browser_compat.mjs
 
       - name: Run representative public vectors
+        if: ${{ always() }}
         working-directory: tests
         run: npx playwright test --project=chromium -g 'JSON Schema|punycode|zip:|tar:'
 
@@ -55,7 +75,7 @@ jobs:
         shell: bash
         run: |
           echo '## 월간 품질·보안 점검' >> "$GITHUB_STEP_SUMMARY"
-          echo '- npm 보안 감사, 고정 자산 원본 해시, 브라우저 기준선, JSON Schema·IDN·ZIP/Tar 대표 벡터를 확인했습니다.' >> "$GITHUB_STEP_SUMMARY"
+          echo '- npm·OSV·GitHub Advisory, 고정 자산 원본 해시, UA·IANA·브라우저 기준선, JSON Schema·IDN·ZIP/Tar 대표 벡터를 확인했습니다.' >> "$GITHUB_STEP_SUMMARY"
           echo '- 실제 CDN과 운영 헤더·PWA 검사는 nightly 워크플로 결과를 함께 확인하세요.' >> "$GITHUB_STEP_SUMMARY"
 
   emoji-update:

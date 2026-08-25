@@ -379,6 +379,19 @@ function imageCropRect(width, height, settings) {
   return { x, y, width: Math.max(1, right - x), height: Math.max(1, bottom - y) };
 }
 
+async function canvasBlob(canvas, type, quality) {
+  const blob = await new Promise((resolve) => canvas.toBlob(resolve, type, quality));
+  if (!blob) throw new Error('이 브라우저는 해당 포맷 인코딩을 지원하지 않습니다.');
+  if (type !== 'image/webp') return blob;
+  const header = new Uint8Array(await blob.slice(0, 12).arrayBuffer());
+  const ascii = (start, end) => String.fromCharCode(...header.subarray(start, end));
+  if (blob.type.toLowerCase() !== 'image/webp'
+    || header.length < 12 || ascii(0, 4) !== 'RIFF' || ascii(8, 12) !== 'WEBP') {
+    throw new Error('이 브라우저는 WebP 인코딩을 지원하지 않아 PNG로 대체할 수 있습니다. 출력 포맷을 PNG로 선택하세요.');
+  }
+  return blob;
+}
+
 tool({
   id: 'image-convert', cat: CAT, name: '이미지 포맷 변환기',
   desc: '이미지를 회전·반전·자르기·크기 조절한 뒤 다시 인코딩하고 여러 결과를 ZIP으로 내려받습니다.',
@@ -480,8 +493,7 @@ tool({
       if (type === 'image/bmp') blob = encodeBMP(ctx.getImageData(0, 0, w, hgt));
       else if (type === 'image/gif') blob = await encodeGIF(ctx.getImageData(0, 0, w, hgt), signal);
       else if (type === 'image/svg+xml') blob = encodeSVG(canvas);
-      else blob = await new Promise((res) => canvas.toBlob(res, type, q));
-      if (!blob) throw new Error('이 브라우저는 해당 포맷 인코딩을 지원하지 않습니다.');
+      else blob = await canvasBlob(canvas, type, q);
       return { blob, w, hgt };
       } finally {
         bitmap.close?.();
@@ -692,7 +704,7 @@ tool({
         h('h4', { style: { marginBottom: '8px' } }, '공통 편집 설정'), commonEdit.node,
         h('div', { class: 'note image-convert-note' },
           h('p', { style: { margin: '0 0 6px' } }, 'EXIF 방향 정보는 파일을 읽을 때 픽셀에 한 번 적용되며 미리보기와 다운로드 결과가 같은 방향을 사용합니다. 자르기는 EXIF 방향 적용 후, 사용자 회전·반전 전에 수행됩니다. 여러 파일에서는 공통 편집 설정을 기본으로 사용하고, 파일별 설정을 켠 파일은 회전·반전·자르기 설정 전체를 개별 값으로 대체합니다. 출력 포맷·품질·크기는 항상 공통입니다.'),
-          h('p', { style: { margin: 0 } }, '원본 포맷 유지를 선택해도 결과는 캔버스로 다시 인코딩되어 EXIF·GPS 등 메타데이터가 제거됩니다. 화질을 유지한 채 메타데이터만 삭제하려면 EXIF 뷰어 / 메타데이터 제거 도구를 사용하세요. GIF 출력은 단일 프레임이며 애니메이션 입력도 정지 이미지 한 장으로 바뀝니다. SVG 출력은 벡터화가 아니라 PNG 이미지를 포함한 SVG 파일입니다.')),
+          h('p', { style: { margin: 0 } }, '원본 포맷 유지를 선택해도 결과는 캔버스로 다시 인코딩되어 EXIF·GPS 등 메타데이터가 제거됩니다. 화질을 유지한 채 메타데이터만 삭제하려면 EXIF 뷰어 / 메타데이터 제거 도구를 사용하세요. WebP 인코딩을 지원하지 않는 브라우저에서는 PNG 대체 파일을 잘못된 .webp 이름으로 저장하지 않고 PNG 선택을 안내합니다. GIF 출력은 단일 프레임이며 애니메이션 입력도 정지 이미지 한 장으로 바뀝니다. SVG 출력은 벡터화가 아니라 PNG 이미지를 포함한 SVG 파일입니다.')),
         fileEdits,
         h('div', { class: 'btn-row' }, cancelButton), convertStatus, out));
     return () => {

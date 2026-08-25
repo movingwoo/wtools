@@ -3,7 +3,12 @@ import { spawnSync } from 'node:child_process';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { test, expect, toolCases, openTool, ioSection, setOption, fillInputs, grabDownload } from '../helpers.js';
+import { test, expect, toolCases, openTool, ioSection, setOption, fillInputs, grabDownload, clickAction } from '../helpers.js';
+
+async function compareText(io) {
+  await clickAction(io, '비교');
+  await expect(io.locator('.io-status')).toContainText('처리가 완료되었습니다.');
+}
 
 // grid 표를 [[셀, ...], ...]로 읽는다 (헤더 행 포함).
 function gridRows(scope) {
@@ -204,6 +209,7 @@ test('text-diff: 라인 단위', async ({ page }) => {
   await openTool(page, 'text-diff');
   const io = ioSection(page);
   await fillInputs(io, ['사과\n바나나\n체리\n', '사과\n블루베리\n체리\n두리안\n']);
+  await compareText(io);
   await expect(io.locator('.diff-line-del')).toHaveText(['바나나']);
   await expect(io.locator('.diff-line-add')).toHaveText(['블루베리', '두리안']);
   await expect(io.locator('.out-html')).toContainText('사과');
@@ -213,6 +219,7 @@ test('text-diff: 끝 줄바꿈이 없으면 마지막 줄도 다른 줄로 본�
   await openTool(page, 'text-diff');
   const io = ioSection(page);
   await fillInputs(io, ['사과\n체리', '사과\n체리\n두리안']);
+  await compareText(io);
   await expect(io.locator('.diff-line-del')).toHaveText(['체리']);
   await expect(io.locator('.diff-line-add')).toHaveText(['체리 두리안']);
 });
@@ -222,11 +229,13 @@ test('text-diff: 단어·문자 단위', async ({ page }) => {
   const io = ioSection(page);
   await fillInputs(io, ['hello world', 'hello there']);
   await setOption(io, '단위', 'words');
+  await compareText(io);
   await expect(io.locator('.diff-del')).toHaveText(['world']);
   await expect(io.locator('.diff-add')).toHaveText(['there']);
 
   await setOption(io, '단위', 'chars');
   await fillInputs(io, ['abc', 'abd']);
+  await compareText(io);
   await expect(io.locator('.diff-del')).toHaveText(['c']);
   await expect(io.locator('.diff-add')).toHaveText(['d']);
 });
@@ -235,6 +244,7 @@ test('text-diff: 같은 텍스트에는 표시가 없다', async ({ page }) => {
   await openTool(page, 'text-diff');
   const io = ioSection(page);
   await fillInputs(io, ['같은 내용\n두 번째 줄', '같은 내용\n두 번째 줄']);
+  await compareText(io);
   await expect(io.locator('.out-html')).toContainText('두 번째 줄');
   await expect(io.locator('.diff-line-add, .diff-line-del, .diff-add, .diff-del')).toHaveCount(0);
 });
@@ -243,6 +253,7 @@ test('text-diff: 통합 diff를 생성하고 다운로드', async ({ page }) => 
   await openTool(page, 'text-diff');
   const io = ioSection(page);
   await fillInputs(io, ['alpha\nold\nomega\n', 'alpha\nnew\nomega\n']);
+  await compareText(io);
   await io.getByText('통합 diff 보기').click();
   const patch = io.locator('.unified-diff');
   await expect(patch).toContainText('--- 텍스트 A.txt');
@@ -280,6 +291,7 @@ test('text-diff: 통합 diff가 독립 diff 구현과 호환된다', async ({ pa
   await openTool(page, 'text-diff');
   const io = ioSection(page);
   await fillInputs(io, [oldText, newText]);
+  await compareText(io);
   await io.getByText('통합 diff 보기').click();
   const actual = await io.locator('.unified-diff').textContent();
   expect(actual.slice(actual.indexOf('--- ')).replace(/\t\n/g, '\n')).toBe(expected);
@@ -294,6 +306,7 @@ test('text-diff: 외부 diff 스크립트를 요청하지 않는다', async ({ p
   await openTool(page, 'text-diff');
   const io = ioSection(page);
   await fillInputs(io, ['before', 'after']);
+  await compareText(io);
   await expect(io.locator('.diff-line-del')).toHaveText('before');
   await expect(io.locator('.diff-line-add')).toHaveText('after');
   expect(requests).toBe(0);
@@ -304,13 +317,39 @@ test('text-diff: 공백 차이 무시 옵션', async ({ page }) => {
   const io = ioSection(page);
   await setOption(io, '공백 차이 무시', true);
   await fillInputs(io, ['  alpha  \n\tbeta\n', 'alpha\nbeta  \n']);
+  await compareText(io);
   await expect(io).toContainText('공백 차이를 제외하면 두 텍스트는 같습니다.');
   await expect(io.locator('.diff-line-add, .diff-line-del')).toHaveCount(0);
   await expect(io.locator('.unified-diff')).not.toContainText('@@');
 
   await fillInputs(io, [' alpha ', ' beta ']);
+  await compareText(io);
   await expect(io.locator('.diff-line-del')).toHaveText(['alpha']);
   await expect(io.locator('.diff-line-add')).toHaveText(['beta']);
+});
+
+test('text-diff: 수천 라인 최악 입력에서도 UI가 응답하고 Worker를 취소한다', async ({ page }) => {
+  await openTool(page, 'text-diff');
+  const io = ioSection(page);
+  const oldText = Array.from({ length: 4_000 }, (_, index) => `원본-${index}`).join('\n');
+  const newText = Array.from({ length: 4_000 }, (_, index) => `변경-${index}`).join('\n');
+  // 큰 textarea의 접근성 트리를 직렬화하는 Playwright 조작 비용은 계산 응답성 측정에서 제외한다.
+  await io.locator('textarea.mono:not(.out)').evaluateAll((areas, values) => {
+    areas.forEach((area, index) => {
+      area.value = values[index];
+      area.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+  }, [oldText, newText]);
+  await io.locator('.btn-row button').first().evaluate((button) => button.click());
+  const cancel = io.locator('.btn-row button').nth(1);
+  await expect(cancel).toBeVisible();
+  const timerDelay = await page.evaluate(() => new Promise((resolve) => {
+    const started = performance.now();
+    setTimeout(() => resolve(performance.now() - started), 0);
+  }));
+  expect(timerDelay).toBeLessThan(500);
+  await cancel.evaluate((button) => button.click());
+  await expect(io.locator('.io-status')).toContainText('작업이 취소되었습니다.');
 });
 
 /* ---------- regex-tester: 매치 표와 치트시트 ---------- */

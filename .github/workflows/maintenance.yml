@@ -75,7 +75,8 @@ jobs:
       - name: Run representative public vectors
         if: ${{ always() }}
         working-directory: tests
-        run: npx playwright test --project=chromium -g 'JSON Schema|punycode|zip:|tar:|markdown-html: 공개|markdown-html: 닫는 괄호'
+        run: |
+          npx playwright test --project=chromium -g 'JSON Schema|punycode|zip:|tar:|markdown-html: 공개|markdown-html: 닫는 괄호'
 
       - name: Write review summary
         if: ${{ always() }}

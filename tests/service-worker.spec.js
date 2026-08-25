@@ -7,6 +7,7 @@ const test = base.extend({ ...cdnCache });
 test.use({ allowServiceWorker: true });
 
 const EXTERNAL_URL = 'https://cdn.jsdelivr.net/npm/js-yaml@4.3.1/dist/js-yaml.min.js';
+const REMOVED_MARKED_URL = 'https://cdn.jsdelivr.net/npm/marked@12.0.2/marked.min.js';
 const VENDORED_PATH = '/assets/vendor/smol-toml-1.6.1.mjs';
 const emojiLock = JSON.parse(readFileSync(new URL('../scripts/emoji-data-lock.json', import.meta.url), 'utf8'));
 const emojiCount = Object.values(emojiLock.groupCounts).reduce((sum, count) => sum + count, 0);
@@ -31,15 +32,17 @@ test('설치 시 검증된 자산만 캐시하고 이전 버전 캐시를 삭제
     const oldCache = await caches.open('wtools-external-v2');
     await oldCache.put(externalUrl, response.clone());
     await caches.open('wtools-external-v3');
-    const previousCache = await caches.open('wtools-external-v4');
+    const olderCache = await caches.open('wtools-external-v4');
+    await olderCache.put(externalUrl, response.clone());
+    const previousCache = await caches.open('wtools-external-v5');
     await previousCache.put(externalUrl, response.clone());
-    const cache = await caches.open('wtools-external-v5');
-    await cache.put(externalUrl, response);
+    await previousCache.put('https://cdn.jsdelivr.net/npm/marked@12.0.2/marked.min.js',
+      new Response('stale marked response', { status: 200 }));
   }, EXTERNAL_URL);
 
   await page.goto('/');
   await waitForControl(page);
-  const state = await page.evaluate(async ({ externalUrl, vendoredPath }) => {
+  const state = await page.evaluate(async ({ externalUrl, removedMarkedUrl, vendoredPath }) => {
     const keys = await caches.keys();
     const shellName = keys.find((key) => key.startsWith('wtools-shell-'));
     const shell = await caches.open(shellName);
@@ -47,23 +50,26 @@ test('설치 시 검증된 자산만 캐시하고 이전 버전 캐시를 삭제
     const entry = globalThis.WTOOLS_DEPENDENCIES.vendored.smolToml;
     const digest = await crypto.subtle.digest('SHA-384', await vendorResponse.clone().arrayBuffer());
     const integrity = 'sha384-' + btoa(String.fromCharCode(...new Uint8Array(digest)));
-    const external = await caches.open('wtools-external-v5');
+    const external = await caches.open('wtools-external-v6');
     return {
       keys,
       vendorIntegrity: integrity,
       expectedVendorIntegrity: entry.integrity,
       externalCached: !!await external.match(externalUrl),
+      removedMarkedCached: !!await external.match(removedMarkedUrl),
       shellName,
     };
-  }, { externalUrl: EXTERNAL_URL, vendoredPath: VENDORED_PATH });
+  }, { externalUrl: EXTERNAL_URL, removedMarkedUrl: REMOVED_MARKED_URL, vendoredPath: VENDORED_PATH });
   expect(state.keys).not.toContain('wtools-shell-v0');
   expect(state.keys).not.toContain('wtools-external-v0');
   expect(state.keys).not.toContain('wtools-external-v2');
   expect(state.keys).not.toContain('wtools-external-v3');
   expect(state.keys).not.toContain('wtools-external-v4');
+  expect(state.keys).not.toContain('wtools-external-v5');
   expect(state.shellName).toMatch(/^wtools-shell-[0-9a-f]{12}$/);
   expect(state.vendorIntegrity).toBe(state.expectedVendorIntegrity);
   expect(state.externalCached).toBe(true);
+  expect(state.removedMarkedCached).toBe(false);
 
   await context.setOffline(true);
   const externalStatus = await page.evaluate((url) => fetch(url).then((response) => response.status), EXTERNAL_URL);
@@ -77,6 +83,23 @@ test('설치 시 검증된 자산만 캐시하고 이전 버전 캐시를 삭제
   await io.getByLabel('출력 포맷').selectOption('json');
   await io.locator('textarea.mono:not(.out)').fill('name = "offline"');
   await expect(io.locator('textarea.out')).toHaveValue('{\n  "name": "offline"\n}');
+
+  await page.evaluate(() => { location.hash = '#/tool/markdown-html'; });
+  const markdown = page.locator('#content .io');
+  await markdown.locator('textarea.mono:not(.out)').fill('**오프라인**');
+  await markdown.getByRole('button', { name: 'HTML 코드', exact: true }).click();
+  await expect(markdown.locator('.out-html')).toContainText('<strong>오프라인</strong>');
+  const workerHtml = await page.evaluate(() => new Promise((resolve, reject) => {
+    const worker = new Worker('/js/workers/markdown-render.js', { type: 'module' });
+    worker.addEventListener('message', ({ data }) => {
+      worker.terminate();
+      if (data.error) reject(new Error(data.error));
+      else resolve(data.html);
+    }, { once: true });
+    worker.addEventListener('error', reject, { once: true });
+    worker.postMessage({ text: '# Worker 오프라인' });
+  }));
+  expect(workerHtml).toBe('<h1>Worker 오프라인</h1>\n');
 });
 
 test('오프라인에서 직접 도구 URL 새로고침과 navigation fallback을 복구한다', async ({ page, context }) => {

@@ -29,15 +29,6 @@ globalThis.WTOOLS_DEPENDENCIES = {
       "kind": "script",
       "tools": ["js/tools/cryptotools.js", "js/tools/encoding.js", "js/tools/pki.js"]
     },
-    "marked": {
-      "package": "marked",
-      "version": "12.0.2",
-      "url": "https://cdn.jsdelivr.net/npm/marked@12.0.2/marked.min.js",
-      "integrity": "sha384-/TQbtLCAerC3jgaim+N78RZSDYV7ryeoBCVqTuzRrFec2akfBkHS7ACQ3PQhvMVi",
-      "license": "MIT",
-      "kind": "script",
-      "tools": ["js/tools/devfmt-format.js"]
-    },
     "hljs": {
       "package": "highlight.js",
       "version": "11.9.0",

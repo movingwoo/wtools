@@ -4,10 +4,10 @@ importScripts('./js/sw-integrity.js');
 
 const CACHE_PREFIX = 'wtools-';
 // scripts/update_cache_version.py가 앱 셸 내용의 SHA-256 앞 12자리와 일치시킨다.
-const CACHE_REVISION = 'a20d5f731287';
+const CACHE_REVISION = 'f60e2b651bca';
 const CACHE_NAME = CACHE_PREFIX + 'shell-' + CACHE_REVISION;
 const EXTERNAL_CACHE_PREFIX = CACHE_PREFIX + 'external-';
-const EXTERNAL_CACHE_NAME = EXTERNAL_CACHE_PREFIX + 'v5';
+const EXTERNAL_CACHE_NAME = EXTERNAL_CACHE_PREFIX + 'v6';
 const dependencies = self.WTOOLS_DEPENDENCIES;
 const externalIntegrity = new Map(Object.values(dependencies.cdn)
   .map(({ url, integrity }) => [url, integrity]));
@@ -60,6 +60,7 @@ const APP_SHELL = [
   './js/lib/diff/myers.js',
   './js/lib/media/image-data.js',
   './js/lib/media/gif.js',
+  './js/lib/markdown/parser.js',
   './js/lib/network/user-agent.js',
   './js/lib/qr/encoder.js',
   './js/lib/qr/decoder.js',
@@ -86,6 +87,7 @@ const APP_SHELL = [
   './js/workers/archive-codec.js',
   './js/workers/file-hash.js',
   './js/workers/gif-encode.js',
+  './js/workers/markdown-render.js',
   './js/workers/qr-decode.js',
   './js/workers/text-diff.js',
 ];
@@ -107,16 +109,27 @@ self.addEventListener('install', (event) => {
 });
 
 self.addEventListener('activate', (event) => {
-  event.waitUntil(
-    caches.keys()
-      .then((keys) => Promise.all(
-        keys.filter((key) =>
-          (key.startsWith(CACHE_PREFIX) && !key.startsWith(EXTERNAL_CACHE_PREFIX) && key !== CACHE_NAME)
-          || (key.startsWith(EXTERNAL_CACHE_PREFIX) && key !== EXTERNAL_CACHE_NAME))
-          .map((key) => caches.delete(key)),
-      ))
-      .then(() => self.clients.claim()),
-  );
+  event.waitUntil((async () => {
+    const keys = await caches.keys();
+    const oldExternalNames = keys.filter((key) =>
+      key.startsWith(EXTERNAL_CACHE_PREFIX) && key !== EXTERNAL_CACHE_NAME);
+    const external = await caches.open(EXTERNAL_CACHE_NAME);
+    for (const [url, integrity] of externalIntegrity) {
+      const request = new Request(url);
+      if (await verifiedCached(external, request, integrity)) continue;
+      for (const name of oldExternalNames) {
+        const cached = await verifiedCached(await caches.open(name), request, integrity);
+        if (!cached) continue;
+        await external.put(request, cached.clone());
+        break;
+      }
+    }
+    await Promise.all(keys.filter((key) =>
+      (key.startsWith(CACHE_PREFIX) && !key.startsWith(EXTERNAL_CACHE_PREFIX) && key !== CACHE_NAME)
+      || oldExternalNames.includes(key))
+      .map((key) => caches.delete(key)));
+    await self.clients.claim();
+  })());
 });
 
 self.addEventListener('message', (event) => {

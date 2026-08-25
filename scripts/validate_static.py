@@ -46,7 +46,6 @@ DEPENDENCY_GLOBALS = {
   'cryptoJs': ('CryptoJS',),
   'jsyaml': ('jsyaml',),
   'jsrsasign': ('ASN1HEX', 'KEYUTIL', 'KJUR', 'X509', 'X509CRL', 'hextopem', 'pemtohex'),
-  'marked': ('marked',),
   'hljs': ('hljs',),
   'beautifyJs': ('js_beautify',),
   'beautifyCss': ('css_beautify',),

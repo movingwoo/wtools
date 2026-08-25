@@ -63,7 +63,7 @@
 - 텍스트 Diff (자체 Myers 구현 기반 라인·단어·문자 비교, 공백 차이 무시, 수동 실행·Worker 계산·취소, 통합 diff 미리보기·다운로드)
 - 정규식(Regex) 테스터 + 검색·패턴 삽입형 JavaScript 치트시트
 - Crontab 표현식 생성/설명기 (월·요일 이름, 범위·목록·간격, 일·요일 OR 의미, IANA 시간대·DST를 반영한 다음 실행 시각 5회)
-- Markdown → HTML 변환기
+- Markdown → HTML 변환기 (자체 CommonMark/GFM 주요 문법 파서, 블록·인라인 문법, 표·작업 목록, raw HTML, 링크, 코드 펜스, 중첩 목록, 입력 4,194,304자·구조 10만 개·중첩 64단계 제한, 큰 입력 Worker·취소, sanitizer가 아닌 결과와 샌드박스 미리보기 안내)
 - Markdown 목차 생성기 (헤딩 분석, GitHub 스타일 앵커, 번호 매기기)
 - HTML 태그 렌더링 / 제거(Strip)
 - Docker run ↔ docker-compose 변환기

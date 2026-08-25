@@ -157,25 +157,88 @@ tool({
   },
 });
 
+let markdownParserPromise;
+const MARKDOWN_WORKER_THRESHOLD = 200_000;
+const MARKDOWN_MAX_INPUT_LENGTH = 4 * 1024 * 1024;
+function loadMarkdownParser() {
+  return (markdownParserPromise ??= import('../lib/markdown/parser.js').catch(() => {
+    markdownParserPromise = null;
+    throw new Error('Markdown 변환기를 불러오지 못했습니다. 잠시 후 다시 시도하세요.');
+  }));
+}
+
+function renderMarkdownInWorker(text, signal) {
+  return new Promise((resolve, reject) => {
+    const worker = new Worker(new URL('../workers/markdown-render.js', import.meta.url), { type: 'module' });
+    let settled = false;
+    const finish = (callback, value) => {
+      if (settled) return;
+      settled = true;
+      signal?.removeEventListener('abort', abort);
+      worker.terminate();
+      callback(value);
+    };
+    const abort = () => finish(reject, new DOMException('작업이 취소되었습니다.', 'AbortError'));
+    worker.addEventListener('message', ({ data }) => {
+      if (data.error) {
+        const error = new Error(data.error);
+        error.code = data.code;
+        finish(reject, error);
+      } else finish(resolve, data.html);
+    }, { once: true });
+    worker.addEventListener('error', () => {
+      finish(reject, new Error('Markdown 변환 Worker를 실행하지 못했습니다.'));
+    }, { once: true });
+    signal?.addEventListener('abort', abort, { once: true });
+    if (signal?.aborted) abort();
+    else worker.postMessage({ text });
+  });
+}
+
 tool({
   id: 'markdown-html', cat: CAT, name: 'Markdown → HTML 변환기',
-  desc: 'Markdown을 HTML 코드로 변환하고 렌더링 미리보기를 제공합니다.',
+  desc: 'CommonMark·GFM의 주요 Markdown 문법을 자체 파서로 HTML 코드로 변환하고 렌더링 미리보기를 제공합니다.',
   keywords: 'markdown md html preview',
   render(root) {
     makeIO(root, {
       inputs: [{ id: 'input', label: 'Markdown', rows: 10, value: '# 제목\n\n- 목록 1\n- 목록 2\n\n**굵게** *기울임* `코드`\n\n[링크](https://example.com)' }],
       actions: [{ id: 'html', label: 'HTML 코드' }, { id: 'preview', label: '미리보기' }],
-      outputHTML: true, outputRows: 12,
-      async process(text, o, action) {
-        await loadScript(LIB.marked);
-        const html = marked.parse(text);
+      outputHTML: true, outputRows: 12, cancelable: true,
+      async process(text, o, action, signal) {
+        if (text.length > MARKDOWN_MAX_INPUT_LENGTH) {
+          throw new Error('Markdown 입력은 최대 4,194,304자까지 처리할 수 있습니다. 입력을 나눠서 변환하세요.');
+        }
+        let html;
+        try {
+          if (text.length >= MARKDOWN_WORKER_THRESHOLD) html = await renderMarkdownInWorker(text, signal);
+          else {
+            const { parseMarkdown } = await loadMarkdownParser();
+            html = parseMarkdown(text);
+          }
+        } catch (error) {
+          if (error?.name === 'AbortError' || error?.message?.startsWith('Markdown 변환기를 불러오지')) throw error;
+          if (error?.code === 'MAX_INPUT') {
+            throw new Error('Markdown 입력은 최대 4,194,304자까지 처리할 수 있습니다. 입력을 나눠서 변환하세요.');
+          }
+          if (error?.code === 'MAX_NESTING') {
+            throw new Error('Markdown 중첩이 너무 깊습니다. 목록과 인용문 중첩을 64단계 이하로 줄이세요.');
+          }
+          if (error?.code === 'MAX_STRUCTURES') {
+            throw new Error('Markdown 구조가 너무 복잡합니다. 블록·목록·표 항목을 10만 개 이하로 줄이세요.');
+          }
+          if (error?.code === 'MAX_OUTPUT') {
+            throw new Error('변환 결과가 33,554,432자 제한을 넘습니다. 입력을 나눠서 변환하세요.');
+          }
+          throw new Error('Markdown을 변환하지 못했습니다. 입력을 확인하세요.');
+        }
         if (action === 'preview') {
-          const iframe = h('iframe', { sandbox: '', style: { width: '100%', height: '400px', border: '1px solid var(--border)', borderRadius: '8px', background: '#fff' } });
+          const iframe = h('iframe', { sandbox: '', referrerpolicy: 'no-referrer', style: { width: '100%', height: '400px', border: '1px solid var(--border)', borderRadius: '8px', background: '#fff' } });
           iframe.srcdoc = '<meta charset="utf-8"><style>body{font-family:sans-serif;padding:16px}</style>' + html;
           return iframe;
         }
         return h('pre', { style: { margin: 0, whiteSpace: 'pre-wrap' } }, html);
       },
+      note: '표·작업 목록을 포함한 GFM 문법과 raw HTML을 지원합니다. 입력은 최대 4,194,304자이며, 큰 입력은 취소 가능한 Worker에서 처리합니다. 미리보기는 스크립트 권한이 없는 샌드박스에서 렌더링되지만, 변환 결과는 HTML sanitizer가 아닙니다. 신뢰할 수 없는 Markdown의 결과를 웹 페이지에 직접 삽입하지 마세요.',
     });
   },
 });

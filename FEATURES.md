@@ -135,12 +135,12 @@
 - IPv4 대역(range) 전개 및 CIDR ↔ 목록/주소 변환
 - IPv6 ULA(고유 로컬 주소) 생성기
 - MAC 주소 포맷 변경 / 생성기
-- User-Agent 파서 (브라우저·엔진·OS·기기·CPU 자체 규칙 코퍼스)
+- User-Agent 파서 (데스크톱·모바일·대표 인앱 브라우저의 브라우저·엔진·OS·기기·CPU 자체 규칙 코퍼스, 분기별 검토일·한계 안내)
 - URI 파싱
 - DNS over HTTPS 조회 (Cloudflare 외부 전송·CORS 사전 안내, 진행 중인 요청 취소 지원)
 - 이메일/URL/도메인/IP 주소 추출 (텍스트에서)
-- HTTP 상태 코드 참조표
-- MIME 타입 참조표
+- IANA 등록부 기준으로 분기별 검토하는 자주 쓰는 HTTP 상태 코드 참조표
+- IANA 등록 여부와 일반 별칭을 분기별 검토하는 자주 쓰는 MIME 타입 참조표
 - CSP(Content-Security-Policy) 헤더 생성기 및 위험 지시어 검사
 - 키코드(Keycode) 정보 뷰어
 - 기기 정보(User Agent/화면 등) 뷰어

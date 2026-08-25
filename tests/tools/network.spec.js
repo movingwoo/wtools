@@ -1,7 +1,18 @@
 // 네트워크 도구 정밀 테스트.
 // 대부분 순수 계산이라 정확값을 검증하고, 난수(ULA·랜덤 MAC)와 브라우저 환경 의존
 // 도구(keycode·device-info)는 형식만 확인한다. DNS 조회는 DoH 응답을 가로채 고정한다.
+import { readFileSync } from 'node:fs';
 import { test, expect, toolCases, openTool, ioSection, setOption, fillInputs, clickAction, kvValue } from '../helpers.js';
+
+const userAgentCorpus = JSON.parse(readFileSync(
+  new URL('../fixtures/user-agents.json', import.meta.url), 'utf8',
+));
+const userAgentCases = userAgentCorpus.cases.map((item) => ({
+  name: `user-agent: ${item.name}`,
+  tool: 'user-agent',
+  inputs: item.ua,
+  kv: item.expected,
+}));
 
 const EXTRACT_TEXT = [
   '문의: kim@example.com, lee@test.co.kr, kim@example.com',
@@ -120,40 +131,11 @@ const cases = [
   { name: 'mac-format: 자릿수가 맞지 않으면 에러', tool: 'mac-format', inputs: '00:1A:2B', htmlError: 'MAC 주소는 12자리 16진수여야 합니다.' },
 
   /* ---------- user-agent (first-party rule corpus) ---------- */
-  {
-    name: 'user-agent: 데스크톱 Chrome', tool: 'user-agent',
-    inputs: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-    kv: { '브라우저': 'Chrome 120.0.0.0', '엔진': 'Blink 120.0.0.0', '운영체제': 'Windows 10', '디바이스': '데스크톱(추정)', 'CPU 아키텍처': 'amd64' },
-  },
-  {
-    name: 'user-agent: iPhone Safari', tool: 'user-agent',
-    inputs: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1',
-    kv: { '브라우저': 'Mobile Safari 17.0', '엔진': 'WebKit 605.1.15', '운영체제': 'iOS 17.0', '디바이스': 'Apple iPhone mobile', 'CPU 아키텍처': '알 수 없음' },
-  },
-  {
-    name: 'user-agent: Chromium Edge', tool: 'user-agent',
-    inputs: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36 Edg/125.0.0.0',
-    kv: { '브라우저': 'Edge 125.0.0.0', '엔진': 'Blink 125.0.0.0', '운영체제': 'Windows 10', 'CPU 아키텍처': 'amd64' },
-  },
+  ...userAgentCases,
   {
     name: 'user-agent: 레거시 EdgeHTML', tool: 'user-agent',
     inputs: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/64.0.3282.140 Safari/537.36 Edge/18.17763',
     kv: { '브라우저': 'Edge 18.17763', '엔진': 'EdgeHTML 18.17763', '운영체제': 'Windows 10', 'CPU 아키텍처': 'amd64' },
-  },
-  {
-    name: 'user-agent: Ubuntu Firefox', tool: 'user-agent',
-    inputs: 'Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:126.0) Gecko/20100101 Firefox/126.0',
-    kv: { '브라우저': 'Firefox 126.0', '엔진': 'Gecko 126.0', '운영체제': 'Ubuntu', '디바이스': '데스크톱(추정)', 'CPU 아키텍처': 'amd64' },
-  },
-  {
-    name: 'user-agent: Samsung Android', tool: 'user-agent',
-    inputs: 'Mozilla/5.0 (Linux; Android 14; SM-S918N Build/UP1A.231005.007) AppleWebKit/537.36 (KHTML, like Gecko) SamsungBrowser/25.0 Chrome/121.0.0.0 Mobile Safari/537.36',
-    kv: { '브라우저': 'Samsung Internet 25.0', '엔진': 'Blink 121.0.0.0', '운영체제': 'Android 14', '디바이스': 'Samsung SM-S918N mobile' },
-  },
-  {
-    name: 'user-agent: Android WebView', tool: 'user-agent',
-    inputs: 'Mozilla/5.0 (Linux; Android 13; Pixel 7 Build/TQ3A.230805.001; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/114.0.5735.196 Mobile Safari/537.36',
-    kv: { '브라우저': 'Chrome WebView 114.0.5735.196', '엔진': 'Blink 114.0.5735.196', '운영체제': 'Android 13', '디바이스': 'Google Pixel 7 mobile' },
   },
   { name: 'user-agent: 빈 입력', tool: 'user-agent', inputs: '', htmlValue: '' },
   { name: 'user-agent: 길이 제한', tool: 'user-agent', inputs: 'x'.repeat(8193), htmlError: 'User-Agent는 8,192자 이하여야 합니다.' },
@@ -223,6 +205,7 @@ test('user-agent: 외부 ua-parser 스크립트를 요청하지 않는다', asyn
     await route.abort();
   });
   await openTool(page, 'user-agent');
+  await expect(page.locator('#content .note[role="status"]')).toContainText('마지막 검토 2026-08-25');
   const io = ioSection(page);
   await fillInputs(io, 'Mozilla/5.0 (Macintosh; Intel Mac OS X 13_5_2) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Safari/605.1.15');
   await expect.poll(() => kvValue(io, '브라우저')).toBe('Safari 16.6');
@@ -430,6 +413,7 @@ test('http-status: 코드와 문구로 검색', async ({ page }) => {
   await openTool(page, 'http-status');
   const content = page.locator('#content');
   await expect(content.locator('table.kv tr')).toHaveCount(29);
+  await expect(content.locator('.note[role="status"]')).toContainText('전체 목록이 아닌 자주 쓰는 항목');
 
   const search = content.getByLabel('HTTP 상태 코드 검색');
   await search.fill('404');
@@ -439,6 +423,11 @@ test('http-status: 코드와 문구로 검색', async ({ page }) => {
 
   await search.fill('teapot');
   await expect(content.locator('table.kv')).toContainText('418');
+  await expect(content.locator('table.kv')).toContainText('(Unused)');
+
+  await search.fill('Unprocessable Entity');
+  await expect(content.locator('table.kv')).toContainText('422');
+  await expect(content.locator('table.kv')).toContainText('Unprocessable Content');
 
   await search.fill('3xx');
   await expect(content.locator('table.kv tr')).toHaveCount(6);
@@ -457,11 +446,22 @@ test('mime-types: 확장자와 타입으로 검색', async ({ page }) => {
   await expect(content.locator('table.kv tr')).toContainText('.json');
   await expect(content.locator('table.kv tr')).toContainText('application/json');
 
+  await search.fill('application/javascript');
+  await expect(content.locator('table.kv tr')).toContainText('text/javascript');
+  await expect(content.locator('table.kv tr')).toContainText('별칭: application/javascript');
+
   await search.fill('video');
   await expect(content.locator('table.kv tr')).toHaveCount(2);
 
   await search.fill('없는타입');
   await expect(content.locator('table.kv tr')).toHaveCount(0);
+});
+
+test('참조표: 로컬 데이터가 손상되면 한국어 오류를 표시', async ({ page }) => {
+  await page.route('**/assets/data/network-reference.json', (route) =>
+    route.fulfill({ status: 200, contentType: 'application/json', body: '{"schema":0}' }));
+  await openTool(page, 'http-status');
+  await expect(page.locator('#content .note[role="alert"]')).toHaveText('IANA 참조 데이터를 불러오지 못했습니다.');
 });
 
 /* ---------- 브라우저 환경 의존 도구 ---------- */

@@ -17,6 +17,11 @@
   런타임 CDN 요청을 제거
 - User-Agent의 브라우저·엔진·운영체제·기기·CPU 판독 규칙을 자체 코퍼스로 교체해
   `ua-parser-js 1.0.38` 런타임 CDN 의존성을 제거
+- User-Agent 규칙에 Whale·Electron과 Facebook·Messenger·Instagram·KakaoTalk·LINE 인앱
+  토큰, 데스크톱 모드 iPadOS와 축소 UA 한계를 반영하고 지원 범위·마지막 검토일을 UI에 표시
+- HTTP 상태·MIME 참조표를 IANA 등록부 기준의 로컬 데이터로 분리하고 전체 목록이 아닌
+  자주 쓰는 항목임을 명시; HTTP 418은 `(Unused)`, 422는 `Unprocessable Content`로 갱신하고
+  과거·일반 MIME 명칭은 검색 가능한 별칭으로 유지
 - QR 생성기의 UTF-8 바이트 모드, 버전 1~40 선택, Reed–Solomon 오류 정정과 마스킹을
   자체 구현해 `qrcode-generator 1.4.4` 런타임 CDN 의존성을 제거
 - QR 리더의 finder pattern 탐지, 원근 보정, 모듈 샘플링, 데이터 모드와 Reed–Solomon
@@ -59,6 +64,14 @@
   검토용 PR을 자동 생성
 - 데스크톱·모바일·인앱 브라우저 User-Agent 코퍼스와 길이 제한, QR 고정 행렬·용량 경계·
   오류 복원 레벨·다중 블록·한글/이모지 및 독립 디코더 왕복 회귀 테스트를 추가
+- 실제 형식의 데스크톱·모바일·인앱 User-Agent 26개 코퍼스와 검토일을 별도 관리하고,
+  IANA HTTP·MIME 데이터 및 UA·브라우저/CI 기준선이 100일 이상 검토되지 않으면 월간 작업을 실패 처리
+- 런타임·로컬 고정·테스트 의존성 26개를 npm 최신판·OSV·GitHub Advisory와 대조하는
+  월간 감사를 추가하고, 등록부 `tools`를 실제 `LIB`·전역·`vendorUrl` 사용처와 역방향 검증
+- 최소 브라우저·Node.js·현재/최소 Playwright 이미지 digest와 GitHub Actions 메이저를
+  분기별 lock으로 관리하고, 최근 8일 이내 호환성 워크플로 성공을 릴리즈 산출물 게시 조건으로 추가
+- 2026-08-25 원격 감사에서 현재 핀의 알려진 취약점이 없음을 확인하고 14개 최신판 후보,
+  npm이 유지보수 중단으로 표시한 `crypto-js`·`jsrsasign`을 후속 검토 목록으로 기록
 - QR 원근 변환·반전·손상 복원과 GIF 팔레트·투명도·다중 프레임·브라우저 디코더
   상호운용 회귀 테스트를 추가
 - YAML merge chain·`!!omap`, TOML 연속 주석, 변조된 DSA 인증서·서명과 0 경계값

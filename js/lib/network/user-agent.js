@@ -2,6 +2,12 @@
 
 const MAX_UA_LENGTH = 8192;
 
+export const USER_AGENT_SUPPORT = Object.freeze({
+  reviewed: '2026-08-25',
+  scope: '주요 데스크톱·모바일 브라우저와 Android WebView, Facebook·Instagram·KakaoTalk·LINE 등 대표 인앱 브라우저',
+  limitations: '축소되거나 동결된 UA만으로 Windows 11, iPadOS 세부 버전, Brave·Arc처럼 토큰을 노출하지 않는 브라우저는 구분할 수 없습니다.',
+});
+
 function version(value) {
   return value?.replace(/_/g, '.');
 }
@@ -20,7 +26,16 @@ function match(ua, expression) {
 
 function parseBrowser(ua) {
   let found;
+  found = match(ua, /\[(?:FBAN\/MessengerForiOS|FB_IAB\/MESSENGER);[\s\S]*?FBAV\/([\d.]+)/i);
+  if (found) return result('Facebook Messenger', found[1]);
+  found = match(ua, /\[(?:FBAN\/[^;\]]+|FB_IAB\/[^;\]]+);[\s\S]*?FBAV\/([\d.]+)/i);
+  if (found) return result('Facebook', found[1]);
   const rules = [
+    [/\bInstagram[ /]([\d.]+)/i, 'Instagram'],
+    [/\bKAKAOTALK\/([\d.]+)/i, 'KakaoTalk'],
+    [/\bLine\/([\d.]+)/i, 'LINE'],
+    [/\bWhale\/([\d.]+)/i, 'Whale'],
+    [/\bElectron\/([\d.]+)/i, 'Electron'],
     [/(?:EdgiOS|EdgA|Edg|Edge)\/([\d.]+)/i, 'Edge'],
     [/(?:OPiOS|OPR)\/([\d.]+)/i, 'Opera'],
     [/SamsungBrowser\/([\d.]+)/i, 'Samsung Internet'],
@@ -89,10 +104,13 @@ function parseOs(ua) {
   if (found) return result('Windows Phone', found[1]);
   found = match(ua, /Windows NT\s([\d.]+)/i);
   if (found) return result('Windows', WINDOWS_VERSIONS[found[1]] || found[1]);
+  found = match(ua, /\bInstagram[\s\S]*?Android\s*\(\d+\/([\d.]+)/i);
+  if (found) return result('Android', found[1]);
   found = match(ua, /Android[\s/-]?([\d._]+)?/i);
   if (found) return result('Android', found[1]);
   found = match(ua, /(?:CPU (?:iPhone )?OS|iPhone OS)\s([\d_]+)/i);
   if (found) return result('iOS', found[1]);
+  if (/\bMacintosh\b[\s\S]*?\bMobile\//i.test(ua)) return result('iPadOS');
   found = match(ua, /Mac OS X[\s/]([\d_]+)/i);
   if (found) return result('Mac OS', found[1]);
   found = match(ua, /CrOS\s(?:[^;\s]+)\s([\d.]+)/i);
@@ -111,6 +129,8 @@ function parseOs(ua) {
 }
 
 function androidModel(ua) {
+  const instagram = match(ua, /\bInstagram[\s\S]*?Android\s*\((?:[^;]+;){4}\s*([^;)]+)/i);
+  if (instagram) return instagram[1].trim();
   const section = match(ua, /\(([^)]*\bAndroid\b[^)]*)\)/i)?.[1];
   if (!section) return '';
   const parts = section.split(';').map((part) => part.trim()).filter(Boolean);
@@ -145,6 +165,7 @@ function parseDevice(ua) {
   if (/\biPad\b/i.test(ua)) return { vendor: 'Apple', model: 'iPad', type: 'tablet' };
   if (/\biPod\b/i.test(ua)) return { vendor: 'Apple', model: 'iPod', type: 'mobile' };
   if (/\biPhone\b/i.test(ua)) return { vendor: 'Apple', model: 'iPhone', type: 'mobile' };
+  if (/\bMacintosh\b[\s\S]*?\bMobile\//i.test(ua)) return { vendor: 'Apple', model: 'iPad', type: 'tablet' };
   if (/\bMacintosh\b/i.test(ua)) return { vendor: 'Apple', model: 'Macintosh' };
   if (/Windows Phone/i.test(ua)) {
     const model = match(ua, /Microsoft;\s*([^;)]+)/i)?.[1]?.trim();
@@ -153,7 +174,8 @@ function parseDevice(ua) {
   if (/Android/i.test(ua)) {
     const model = androidModel(ua);
     const vendor = androidVendor(model);
-    const type = /\b(?:Tablet|Nexus 7|Nexus 9|SM-T|KF[A-Z0-9]+)\b/i.test(ua) || !/\bMobile\b/i.test(ua)
+    const mobileApp = /^Instagram[\s\S]*?Android\s*\(/i.test(ua);
+    const type = /\b(?:Tablet|Nexus 7|Nexus 9|SM-T|KF[A-Z0-9]+)\b/i.test(ua) || (!mobileApp && !/\bMobile\b/i.test(ua))
       ? 'tablet' : 'mobile';
     return { ...(vendor ? { vendor } : {}), ...(model ? { model } : {}), type };
   }

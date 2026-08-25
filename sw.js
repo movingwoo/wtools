@@ -4,7 +4,7 @@ importScripts('./js/sw-integrity.js');
 
 const CACHE_PREFIX = 'wtools-';
 // scripts/update_cache_version.py가 앱 셸 내용의 SHA-256 앞 12자리와 일치시킨다.
-const CACHE_REVISION = '2cf591b4e07e';
+const CACHE_REVISION = 'a20d5f731287';
 const CACHE_NAME = CACHE_PREFIX + 'shell-' + CACHE_REVISION;
 const EXTERNAL_CACHE_PREFIX = CACHE_PREFIX + 'external-';
 const EXTERNAL_CACHE_NAME = EXTERNAL_CACHE_PREFIX + 'v5';
@@ -31,6 +31,7 @@ const APP_SHELL = [
   './assets/favicon-512.png',
   './assets/favicon-512-maskable.png',
   './assets/data/emoji.json',
+  './assets/data/network-reference.json',
   './assets/data/figlet/Banner.flf',
   './assets/data/figlet/Big.flf',
   './assets/data/figlet/Block.flf',

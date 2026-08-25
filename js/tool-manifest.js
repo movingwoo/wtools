@@ -1291,7 +1291,7 @@ export const TOOL_MANIFESTS = Object.freeze([
     "id": "http-status",
     "cat": "네트워크",
     "name": "HTTP 상태 코드 참조",
-    "desc": "HTTP 상태 코드 목록과 의미를 검색합니다.",
+    "desc": "자주 쓰는 HTTP 상태 코드와 IANA 명칭을 검색합니다.",
     "keywords": "http status code reference 404 500",
     "module": "./tools/network.js",
     "externalLibrary": false
@@ -1300,7 +1300,7 @@ export const TOOL_MANIFESTS = Object.freeze([
     "id": "mime-types",
     "cat": "네트워크",
     "name": "MIME 타입 참조",
-    "desc": "MIME 타입과 파일 확장자를 상호 검색합니다.",
+    "desc": "자주 쓰는 MIME 타입과 파일 확장자를 상호 검색합니다.",
     "keywords": "mime type content-type extension",
     "module": "./tools/network.js",
     "externalLibrary": false

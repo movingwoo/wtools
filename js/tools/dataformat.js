@@ -1066,7 +1066,7 @@ tool({
           case 'toml': {
             if (typeof data !== 'object' || data === null || Array.isArray(data))
               throw new Error('TOML의 최상위는 객체(테이블)여야 합니다.');
-            return (await toml()).stringify(data);
+            return (await toml()).stringify(data).trimEnd();
           }
           case 'env': return toEnv(data);
         }

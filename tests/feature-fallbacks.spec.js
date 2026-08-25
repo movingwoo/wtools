@@ -20,6 +20,14 @@ test('Worker가 없으면 파일 해시를 한국어로 안내한다', async ({ 
   await expect(io).toContainText('Worker');
 });
 
+test('Worker가 없으면 텍스트 Diff를 한국어로 안내한다', async ({ page }) => {
+  await page.addInitScript(() => Object.defineProperty(globalThis, 'Worker', { value: undefined, configurable: true }));
+  await openTool(page, 'text-diff');
+  const io = ioSection(page);
+  await io.getByRole('button', { name: '비교' }).click();
+  await expect(io.locator('.error').first()).toContainText('Web Worker');
+});
+
 test('ImageBitmap이 없으면 이미지 변환을 한국어로 안내한다', async ({ page }) => {
   await page.addInitScript(() => Object.defineProperty(globalThis, 'createImageBitmap', { value: undefined, configurable: true }));
   await openTool(page, 'image-convert');

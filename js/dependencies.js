@@ -10,15 +10,15 @@ globalThis.WTOOLS_DEPENDENCIES = {
       "tools": ["js/tools/cryptotools.js", "js/tools/hashing.js"]
     },
     "jsyaml": {
-      "url": "https://cdn.jsdelivr.net/npm/js-yaml@4.1.0/dist/js-yaml.min.js",
-      "integrity": "sha384-+pxiN6T7yvpryuJmE1gM9PX7yQit15auDb+ZwwvJOd/4be2Cie5/IuVXgQb/S9du",
+      "url": "https://cdn.jsdelivr.net/npm/js-yaml@4.3.1/dist/js-yaml.min.js",
+      "integrity": "sha384-S9ICdlb+JXmKnf3zbM1G+PBNWbhB7ARTUpJyvroFrHHHR8JsKt4oO+kPyfzbT+TM",
       "license": "MIT",
       "kind": "script",
       "tools": ["js/tools/dataformat.js"]
     },
     "jsrsasign": {
-      "url": "https://cdn.jsdelivr.net/npm/jsrsasign@11.1.0/lib/jsrsasign-all-min.js",
-      "integrity": "sha384-vbfVWK2rJ9x1Xsycv0IIV02oWFwkOZ5Ohb/cQGU2ldysPOlCR4OtdM1nvOZFbpzk",
+      "url": "https://cdn.jsdelivr.net/npm/jsrsasign@11.1.5/lib/jsrsasign-all-min.js",
+      "integrity": "sha384-IdrNKmnO2MACDlM1h9Mxh3iC1hsUWqJtqPavxru0+RKPp533myjoFCv8nGIj4QLh",
       "license": "MIT",
       "kind": "script",
       "tools": ["js/tools/cryptotools.js", "js/tools/encoding.js", "js/tools/pki.js"]
@@ -146,10 +146,10 @@ globalThis.WTOOLS_DEPENDENCIES = {
       "tools": ["js/tools/hashing.js"]
     },
     "smolToml": {
-      "path": "assets/vendor/smol-toml-1.2.2.mjs",
-      "integrity": "sha384-+o/LoGqbIrGc9fWR9hZI+JsVoUoMGibYVsEynMz33B/i3P8j4xcdCFR7mBIW9xEP",
-      "source": "https://cdn.jsdelivr.net/npm/smol-toml@1.2.2/+esm",
-      "sourceIntegrity": "sha384-+o/LoGqbIrGc9fWR9hZI+JsVoUoMGibYVsEynMz33B/i3P8j4xcdCFR7mBIW9xEP",
+      "path": "assets/vendor/smol-toml-1.6.1.mjs",
+      "integrity": "sha384-U586bkTVkTaBS4lNPCPzbqyQA8rIgwPE8OUJIjO+Dm4r0LokyMqm0NDYJNq+hhJr",
+      "source": "https://cdn.jsdelivr.net/npm/smol-toml@1.6.1/+esm",
+      "sourceIntegrity": "sha384-U586bkTVkTaBS4lNPCPzbqyQA8rIgwPE8OUJIjO+Dm4r0LokyMqm0NDYJNq+hhJr",
       "license": "BSD-3-Clause",
       "tools": ["js/tools/dataformat.js"]
     },
@@ -210,10 +210,10 @@ globalThis.WTOOLS_DEPENDENCIES = {
       "tools": ["js/tools/archive.js"]
     },
     "openpgp": {
-      "path": "assets/vendor/openpgp-5.11.1.min.mjs",
-      "integrity": "sha384-m6+ZxNo9HLYd6qRh4ooNqJWOFctQSdEpDQkT86+ehzerQ5cvthBinVk9VkpnC2IA",
-      "source": "https://cdn.jsdelivr.net/npm/openpgp@5.11.1/dist/openpgp.min.mjs",
-      "sourceIntegrity": "sha384-m6+ZxNo9HLYd6qRh4ooNqJWOFctQSdEpDQkT86+ehzerQ5cvthBinVk9VkpnC2IA",
+      "path": "assets/vendor/openpgp-5.11.3.min.mjs",
+      "integrity": "sha384-NiknPeWCb1MqBPxyi4JE67L0QiTiFaVZi7scBC1HzhzZFTnG/e2TrY/qRScsXCQm",
+      "source": "https://cdn.jsdelivr.net/npm/openpgp@5.11.3/dist/openpgp.min.mjs",
+      "sourceIntegrity": "sha384-NiknPeWCb1MqBPxyi4JE67L0QiTiFaVZi7scBC1HzhzZFTnG/e2TrY/qRScsXCQm",
       "license": "LGPL-3.0-or-later",
       "tools": ["js/tools/cryptotools.js"]
     }
@@ -234,7 +234,7 @@ globalThis.WTOOLS_DEPENDENCIES = {
       "use": "WCAG 자동 접근성 검사"
     }
   },
-  "reviewed": "2026-08-24"
+  "reviewed": "2026-08-25"
 };
 
 Object.freeze(globalThis.WTOOLS_DEPENDENCIES.cdn);

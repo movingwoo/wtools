@@ -6,8 +6,8 @@ import { cdnCache } from './cdn-cache.js';
 const test = base.extend({ ...cdnCache });
 test.use({ allowServiceWorker: true });
 
-const EXTERNAL_URL = 'https://cdn.jsdelivr.net/npm/js-yaml@4.1.0/dist/js-yaml.min.js';
-const VENDORED_PATH = '/assets/vendor/smol-toml-1.2.2.mjs';
+const EXTERNAL_URL = 'https://cdn.jsdelivr.net/npm/js-yaml@4.3.1/dist/js-yaml.min.js';
+const VENDORED_PATH = '/assets/vendor/smol-toml-1.6.1.mjs';
 const emojiLock = JSON.parse(readFileSync(new URL('../scripts/emoji-data-lock.json', import.meta.url), 'utf8'));
 const emojiCount = Object.values(emojiLock.groupCounts).reduce((sum, count) => sum + count, 0);
 
@@ -31,7 +31,9 @@ test('설치 시 검증된 자산만 캐시하고 이전 버전 캐시를 삭제
     const oldCache = await caches.open('wtools-external-v2');
     await oldCache.put(externalUrl, response.clone());
     await caches.open('wtools-external-v3');
-    const cache = await caches.open('wtools-external-v4');
+    const previousCache = await caches.open('wtools-external-v4');
+    await previousCache.put(externalUrl, response.clone());
+    const cache = await caches.open('wtools-external-v5');
     await cache.put(externalUrl, response);
   }, EXTERNAL_URL);
 
@@ -45,7 +47,7 @@ test('설치 시 검증된 자산만 캐시하고 이전 버전 캐시를 삭제
     const entry = globalThis.WTOOLS_DEPENDENCIES.vendored.smolToml;
     const digest = await crypto.subtle.digest('SHA-384', await vendorResponse.clone().arrayBuffer());
     const integrity = 'sha384-' + btoa(String.fromCharCode(...new Uint8Array(digest)));
-    const external = await caches.open('wtools-external-v4');
+    const external = await caches.open('wtools-external-v5');
     return {
       keys,
       vendorIntegrity: integrity,
@@ -58,6 +60,7 @@ test('설치 시 검증된 자산만 캐시하고 이전 버전 캐시를 삭제
   expect(state.keys).not.toContain('wtools-external-v0');
   expect(state.keys).not.toContain('wtools-external-v2');
   expect(state.keys).not.toContain('wtools-external-v3');
+  expect(state.keys).not.toContain('wtools-external-v4');
   expect(state.shellName).toMatch(/^wtools-shell-[0-9a-f]{12}$/);
   expect(state.vendorIntegrity).toBe(state.expectedVendorIntegrity);
   expect(state.externalCached).toBe(true);

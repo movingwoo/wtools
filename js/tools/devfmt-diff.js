@@ -1,17 +1,38 @@
 // 코드 포맷팅 / 개발 유틸리티 — Diff / 정규식 테스트
-import { tool, makeIO, h, download } from '../core.js';
+import { tool, makeIO, h, download, requireFeature } from '../core.js';
 
 const CAT = '코드 포맷팅 / 개발 유틸리티';
-let diffEnginePromise;
 
-function loadDiffEngine() {
-  if (!diffEnginePromise) {
-    diffEnginePromise = import('../lib/diff/myers.js').catch((error) => {
-      diffEnginePromise = null;
-      throw error;
+function runTextDiff(values, options, signal) {
+  requireFeature('worker', typeof Worker !== 'undefined');
+  return new Promise((resolve, reject) => {
+    const worker = new Worker(new URL('../workers/text-diff.js', import.meta.url), { type: 'module' });
+    let settled = false;
+    const finish = (callback, value) => {
+      if (settled) return;
+      settled = true;
+      signal?.removeEventListener('abort', abort);
+      worker.terminate();
+      callback(value);
+    };
+    const abort = () => finish(reject, new DOMException('텍스트 비교가 취소되었습니다.', 'AbortError'));
+    worker.addEventListener('message', ({ data }) => {
+      if (data.error) finish(reject, new Error(data.error));
+      else finish(resolve, data);
     });
-  }
-  return diffEnginePromise;
+    worker.addEventListener('error', (event) => {
+      event.preventDefault();
+      finish(reject, new Error(event.message || '텍스트 비교 Worker를 실행하지 못했습니다.'));
+    });
+    if (signal?.aborted) abort();
+    else {
+      signal?.addEventListener('abort', abort, { once: true });
+      worker.postMessage({
+        oldText: values.a, newText: values.b,
+        mode: options.mode, ignoreWhitespace: options.ignoreWhitespace,
+      });
+    }
+  });
 }
 
 /* ---------- Diff ---------- */
@@ -73,22 +94,18 @@ tool({
         { id: 'mode', label: '단위', type: 'select', values: [['lines', '라인'], ['words', '단어'], ['chars', '문자']] },
         { id: 'ignoreWhitespace', label: '공백 차이 무시', type: 'checkbox' },
       ],
+      actions: [{ id: 'compare', label: '비교' }],
+      autorun: false,
+      cancelable: true,
       outputHTML: true,
-      async process(v, o) {
-        const { createUnifiedPatch, diffChars, diffLines, diffWords } = await loadDiffEngine();
-        const fn = o.mode === 'words' ? diffWords : o.mode === 'chars' ? diffChars : diffLines;
-        const a = o.ignoreWhitespace && o.mode === 'chars' ? v.a.replace(/\s+/g, '') : v.a;
-        const b = o.ignoreWhitespace && o.mode === 'chars' ? v.b.replace(/\s+/g, '') : v.b;
-        const parts = fn(a, b, { ignoreWhitespace: o.ignoreWhitespace });
+      async process(v, o, _action, signal) {
+        const { parts, patch } = await runTextDiff(v, o, signal);
         const box = h('pre', { style: { margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-all' } });
         for (const p of parts) {
           const cls = p.added ? (o.mode === 'lines' ? 'diff-line-add' : 'diff-add')
             : p.removed ? (o.mode === 'lines' ? 'diff-line-del' : 'diff-del') : null;
           box.append(cls ? h('span', { class: cls }, p.value) : p.value);
         }
-        const patch = createUnifiedPatch('텍스트 A.txt', '텍스트 B.txt', v.a, v.b, {
-          context: 3, ignoreWhitespace: o.ignoreWhitespace,
-        });
         const changed = parts.some((part) => part.added || part.removed);
         return h('div', null,
           o.ignoreWhitespace && !changed
@@ -103,7 +120,7 @@ tool({
             h('summary', { style: { cursor: 'pointer', fontWeight: '600' } }, '통합 diff 보기'),
             h('pre', { class: 'unified-diff', style: { whiteSpace: 'pre-wrap', wordBreak: 'break-all' } }, patch)));
       },
-      note: '공백 차이 무시는 라인 비교와 통합 diff에서는 각 줄 앞뒤 공백을, 문자 비교에서는 모든 공백 문자를 비교 대상에서 제외합니다. 단어 비교는 원래 공백 간격을 구분하지 않습니다.',
+      note: '비교 버튼을 누르면 전용 Worker에서 계산하며 실행 중 취소할 수 있습니다. 공백 차이 무시는 라인 비교와 통합 diff에서는 각 줄 앞뒤 공백을, 문자 비교에서는 모든 공백 문자를 비교 대상에서 제외합니다. 단어 비교는 원래 공백 간격을 구분하지 않습니다.',
     });
   },
 });

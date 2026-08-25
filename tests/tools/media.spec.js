@@ -652,11 +652,50 @@ test('image-convert: 손상 파일과 픽셀 상한 초과를 부분 실패로 �
 for (const { format, name, magic, label } of formats) {
   test(`image-convert: ${label}로 변환`, async ({ page }) => {
     await openTool(page, 'image-convert');
+    if (format === 'image/webp') {
+      const supported = await page.evaluate(async () => {
+        const canvas = document.createElement('canvas');
+        canvas.width = canvas.height = 1;
+        const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/webp'));
+        if (!blob || blob.type !== 'image/webp') return false;
+        const header = new Uint8Array(await blob.slice(0, 12).arrayBuffer());
+        return String.fromCharCode(...header.subarray(0, 4)) === 'RIFF'
+          && String.fromCharCode(...header.subarray(8, 12)) === 'WEBP';
+      });
+      if (!supported) {
+        const content = page.locator('#content');
+        await uploadFile(content, '이미지 선택 (여러 장 가능)', {
+          name: 'red.png', mimeType: 'image/png', buffer: RED_PNG,
+        });
+        await setOption(content, '출력 포맷', format);
+        await expect(content.locator('.error[role="alert"]')).toContainText('WebP 인코딩을 지원하지 않아 PNG로 대체');
+        await expect(content.getByRole('button', { name: '다운로드', exact: true })).toHaveCount(0);
+        return;
+      }
+    }
     const file = await convertOnce(page, { format });
     expect(file.name).toBe(name);
     expect(file.bytes.subarray(0, magic.length / 2).toString('hex')).toBe(magic);
+    if (format === 'image/webp') expect(file.bytes.subarray(8, 12).toString('ascii')).toBe('WEBP');
   });
 }
+
+test('image-convert: WebP 요청이 PNG로 폴백되면 .webp 다운로드를 만들지 않는다', async ({ page }) => {
+  await page.addInitScript(() => {
+    const original = HTMLCanvasElement.prototype.toBlob;
+    HTMLCanvasElement.prototype.toBlob = function (callback, type, quality) {
+      return original.call(this, callback, type === 'image/webp' ? 'image/png' : type, quality);
+    };
+  });
+  await openTool(page, 'image-convert');
+  const content = page.locator('#content');
+  await uploadFile(content, '이미지 선택 (여러 장 가능)', {
+    name: 'red.png', mimeType: 'image/png', buffer: RED_PNG,
+  });
+  await setOption(content, '출력 포맷', 'image/webp');
+  await expect(content.locator('.error[role="alert"]')).toContainText('WebP 인코딩을 지원하지 않아 PNG로 대체');
+  await expect(content.getByRole('button', { name: '다운로드', exact: true })).toHaveCount(0);
+});
 
 test('image-convert: SVG는 PNG를 내장한 SVG 파일', async ({ page }) => {
   await openTool(page, 'image-convert');

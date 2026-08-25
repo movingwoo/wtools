@@ -191,6 +191,46 @@ test('pkcs10-csr: RSA 개인키로 생성한 CSR을 다시 파싱하면 주체�
   expect(await kvValue(parseIo, '주체 대체 이름 (SAN)')).toBe('DNS:test.wtools.local, IP:127.0.0.1');
 });
 
+test('DSA 인증서와 서명: 변조 및 0 경계값 위조를 거부한다', async ({ page }) => {
+  await page.goto('/');
+  const result = await page.evaluate(async ({ certificate, tamperedCertificate }) => {
+    const script = document.createElement('script');
+    script.src = globalThis.WTOOLS_DEPENDENCIES.cdn.jsrsasign.url;
+    script.integrity = globalThis.WTOOLS_DEPENDENCIES.cdn.jsrsasign.integrity;
+    script.crossOrigin = 'anonymous';
+    await new Promise((resolve, reject) => {
+      script.onload = resolve;
+      script.onerror = reject;
+      document.head.append(script);
+    });
+    const valid = new X509(certificate);
+    const tampered = new X509(tamperedCertificate);
+    const publicKey = valid.getPublicKey();
+    let zeroBoundary = false;
+    try {
+      const verifier = new KJUR.crypto.Signature({ alg: 'SHA256withDSA' });
+      verifier.init(publicKey);
+      verifier.updateString('공격자가 바꾼 메시지');
+      // FIPS 186-4는 0 < r,s < q를 요구한다. 과거 구현은 r=s=0을 받아
+      // 임의 메시지의 보편 위조가 가능했다.
+      zeroBoundary = verifier.verify('3006020100020100');
+    } catch { /* 명시적 거부도 올바른 결과다. */ }
+    return {
+      algorithm: valid.getSignatureAlgorithmField(),
+      valid: valid.verifySignature(publicKey),
+      tampered: tampered.verifySignature(publicKey),
+      zeroBoundary,
+    };
+  }, {
+    certificate: pki.dsaCert,
+    tamperedCertificate: tamperPemSignature(pki.dsaCert, 'CERTIFICATE'),
+  });
+
+  expect(result).toEqual({
+    algorithm: 'SHA256withDSA', valid: true, tampered: false, zeroBoundary: false,
+  });
+});
+
 test('pkcs10-csr: 생성 결과를 CSR 파일로 다운로드한다', async ({ page }) => {
   await openTool(page, 'pkcs10-csr');
   const io = ioSection(page, 0);

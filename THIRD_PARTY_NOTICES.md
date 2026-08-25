@@ -49,14 +49,14 @@ SHA-384는 `scripts/emoji-data-lock.json`에, 변환·검증·공식 안정판 �
 | 패키지 | 버전 | 라이선스 | 사용 범위 |
 |---|---:|---|---|
 | CryptoJS | 4.2.0 | MIT | 파일 해시 Worker |
-| smol-toml | 1.2.2 | BSD-3-Clause | TOML 변환 |
+| smol-toml | 1.6.1 | BSD-3-Clause | TOML 변환 |
 | brotli-compress | 1.3.3 | Apache-2.0 | Brotli 압축 |
 | brotli | 1.3.3 | MIT | Brotli 해제 |
 | @bokuweb/zstd-wasm | 0.0.27 | MIT | Zstandard 압축 및 WASM |
 | fzstd | 0.1.1 | MIT | Zstandard 해제 |
 | seek-bzip | 2.0.0 | MIT | Bzip2 해제 |
 | lz4js | 0.2.0 | ISC | LZ4 압축·해제 |
-| OpenPGP.js | 5.11.1 | LGPL-3.0-or-later | PGP 키·암복호화 |
+| OpenPGP.js | 5.11.3 | LGPL-3.0-or-later | PGP 키·암복호화 |
 
 각 파일은 위 패키지의 배포본을 기준으로 사용합니다. 단, Brotli 해제 모듈의
 `base64-js` import는 W-Tools 공통 Base64 모듈로 바꾸고 Zstandard 모듈의 WASM 상대

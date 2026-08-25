@@ -524,6 +524,44 @@ test('data-convert: JSON → TOML → JSON 왕복 보존', async ({ page }) => {
   expect(JSON.parse(back)).toEqual(JSON.parse(JSON_SRC));
 });
 
+test('YAML/TOML 파서: 악성 복잡도와 연속 주석 입력을 제한된 시간에 처리한다', async ({ page }) => {
+  await page.goto('/');
+  const result = await page.evaluate(async () => {
+    const mergeCount = 4_000;
+    const mergeChain = Array.from({ length: mergeCount }, (_, index) => index
+      ? `a${index}: &a${index} { <<: *a${index - 1}, k${index}: ${index} }`
+      : 'a0: &a0 { k0: 0 }').join('\n') + `\nb: *a${mergeCount - 1}`;
+    const omap = '!!omap\n' + Array.from(
+      { length: mergeCount }, (_, index) => `- k${index}: ${index}`,
+    ).join('\n');
+    const timed = (parse, input) => {
+      const started = performance.now();
+      try {
+        const value = parse(input);
+        return { elapsed: performance.now() - started, value };
+      } catch (error) {
+        return { elapsed: performance.now() - started, error: error.message };
+      }
+    };
+    const merge = timed(jsyaml.load, mergeChain);
+    const orderedMap = timed(jsyaml.load, omap);
+    const { parse } = await import('/assets/vendor/smol-toml-1.6.1.mjs');
+    const comments = timed(parse, '# 공격자 제어 주석\n'.repeat(50_000) + 'safe = true\n');
+    return {
+      merge: { elapsed: merge.elapsed, error: merge.error },
+      orderedMap: { elapsed: orderedMap.elapsed, length: orderedMap.value?.length },
+      comments: { elapsed: comments.elapsed, safe: comments.value?.safe, error: comments.error },
+    };
+  });
+
+  expect(result.merge.error).toContain('maxTotalMergeKeys');
+  expect(result.orderedMap.length).toBe(4_000);
+  expect(result.comments).toMatchObject({ safe: true, error: undefined });
+  expect(result.merge.elapsed).toBeLessThan(2_000);
+  expect(result.orderedMap.elapsed).toBeLessThan(2_000);
+  expect(result.comments.elapsed).toBeLessThan(2_000);
+});
+
 test('data-convert: JSON → CSV → JSON 왕복 (값은 문자열로 남음)', async ({ page }) => {
   await openTool(page, 'data-convert');
   const io = ioSection(page);

@@ -36,6 +36,7 @@ DEPENDENCY_REGISTRY_PATTERN = re.compile(
 SRI_PATTERN = re.compile(r'sha384-[A-Za-z0-9+/]{64}')
 VERSIONED_URL_PATTERN = re.compile(r'(?:@|/)\d+\.\d+\.\d+(?:[./+-]|$)')
 SEMVER_PATTERN = re.compile(r'\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?')
+WORKFLOW_PLAIN_VALUE = re.compile(r'^\s*[A-Za-z_][\w-]*:\s+(.+?)\s*$')
 EXTERNAL_EXECUTABLE_CALL = re.compile(
   r'(?:loadScript|loadCss|loadModule|import|importScripts|new\s+Worker)'
   r'\s*\(\s*["\'](https?://[^"\']+)',
@@ -618,6 +619,36 @@ def validate_playwright_ci(validation: Validation) -> None:
       )
 
 
+def ambiguous_workflow_plain_values(source: str) -> list[int]:
+  lines = []
+  for line_number, line in enumerate(source.splitlines(), 1):
+    match = WORKFLOW_PLAIN_VALUE.match(line)
+    if not match:
+      continue
+    value = match.group(1)
+    if value in {'|', '|-', '>', '>-'}:
+      continue
+    if len(value) >= 2 and value[0] == value[-1] and value[0] in {'\'', '"'}:
+      continue
+    if ': ' in value:
+      lines.append(line_number)
+  return lines
+
+
+def validate_workflow_plain_values(validation: Validation) -> None:
+  for path in sorted((ROOT / '.github' / 'workflows').glob('*.yml')):
+    try:
+      source = path.read_text(encoding='utf-8')
+    except OSError as error:
+      validation.error(f'{path.relative_to(ROOT)}: {error}')
+      continue
+    for line_number in ambiguous_workflow_plain_values(source):
+      validation.error(
+        f'{path.relative_to(ROOT)}:{line_number}: plain YAML value contains ": "; '
+        'quote the whole value or use a block scalar'
+      )
+
+
 def validate_app_shell(validation: Validation, vendored_paths: set[Path]) -> list[str]:
   source = (ROOT / 'sw.js').read_text(encoding='utf-8')
   match = re.search(r'const APP_SHELL = \[(.*?)\];', source, re.DOTALL)
@@ -758,6 +789,7 @@ def main() -> int:
   vendored_paths = validate_dependencies(validation)
   validate_node_versions(validation)
   validate_playwright_ci(validation)
+  validate_workflow_plain_values(validation)
   validate_initial_load_budget(validation)
   validate_module_size_budgets(validation)
   refs = validate_app_shell(validation, vendored_paths)

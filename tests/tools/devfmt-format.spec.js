@@ -1,4 +1,4 @@
-// 코드/문서 포맷터 정밀 테스트. sql-formatter·js-beautify·marked 등 CDN 라이브러리 경로도 함께 검증한다.
+// 코드/문서 포맷터 정밀 테스트. 자체 Markdown 파서와 남은 포맷터 CDN 경로를 함께 검증한다.
 import { test, expect, toolCases, openTool, ioSection, runIO, uploadFile } from '../helpers.js';
 import { makePng } from '../fixtures.js';
 
@@ -49,6 +49,62 @@ const cases = [
     name: 'markdown-html: 강조·코드·링크 변환', tool: 'markdown-html', inputs: '**굵게** `코드` [링크](https://example.com)', action: 'HTML 코드',
     htmlValue: '<p><strong>굵게</strong> <code>코드</code> <a href="https://example.com">링크</a></p>\n',
   },
+  {
+    name: 'markdown-html: 블록·raw HTML 변환', tool: 'markdown-html', action: 'HTML 코드',
+    inputs: '문서 제목\n=========\n\n> 인용문\n>\n> 다음 문단\n\n---\n\n<section>\n<strong>raw</strong>\n</section>\n',
+    htmlValue: '<h1>문서 제목</h1>\n<blockquote>\n<p>인용문</p>\n<p>다음 문단</p>\n</blockquote>\n<hr>\n<section>\n<strong>raw</strong>\n</section>\n',
+  },
+  {
+    name: 'markdown-html: 코드 펜스·이스케이프·줄바꿈', tool: 'markdown-html', action: 'HTML 코드',
+    inputs: '```js extra\nconst tag = "<a>";\n```\n\n일반 `a & < b`  \n다음 줄',
+    htmlValue: '<pre><code class="language-js">const tag = &quot;&lt;a&gt;&quot;;\n</code></pre>\n<p>일반 <code>a &amp; &lt; b</code><br>다음 줄</p>\n',
+  },
+  {
+    name: 'markdown-html: 시작 번호·혼합 중첩 목록', tool: 'markdown-html', action: 'HTML 코드',
+    inputs: '3. 셋\n4. 넷\n   - 하위 A\n     1. 더 하위\n   - 하위 B\n5. 다섯',
+    htmlValue: '<ol start="3">\n<li>셋</li>\n<li>넷<ul>\n<li>하위 A<ol>\n<li>더 하위</li>\n</ol>\n</li>\n<li>하위 B</li>\n</ul>\n</li>\n<li>다섯</li>\n</ol>\n',
+  },
+  {
+    name: 'markdown-html: GFM 표·작업 목록·취소선', tool: 'markdown-html', action: 'HTML 코드',
+    inputs: '| 왼쪽 | 가운데 | 오른쪽 |\n| :--- | :---: | ---: |\n| **굵게** | `코드` | ~~취소~~ |\n\n- [x] 완료\n- [ ] 대기',
+    htmlValue: '<table>\n<thead>\n<tr>\n<th align="left">왼쪽</th>\n<th align="center">가운데</th>\n<th align="right">오른쪽</th>\n</tr>\n</thead>\n<tbody><tr>\n<td align="left"><strong>굵게</strong></td>\n<td align="center"><code>코드</code></td>\n<td align="right"><del>취소</del></td>\n</tr>\n</tbody></table>\n<ul>\n<li><input checked="" disabled="" type="checkbox"> 완료</li>\n<li><input disabled="" type="checkbox"> 대기</li>\n</ul>\n',
+  },
+  {
+    name: 'markdown-html: 참조·이미지·자동 링크', tool: 'markdown-html', action: 'HTML 코드',
+    inputs: '[문서][docs]와 ![대체 텍스트](image.png "그림"), <https://example.com?q=1&x=2>\n\n[docs]: https://example.com/a_(b) "문서 제목"',
+    htmlValue: '<p><a href="https://example.com/a_(b)" title="문서 제목">문서</a>와 <img src="image.png" alt="대체 텍스트" title="그림">, <a href="https://example.com?q=1&amp;x=2">https://example.com?q=1&amp;x=2</a></p>\n',
+  },
+  { name: 'markdown-html: 빈 입력', tool: 'markdown-html', inputs: '', action: 'HTML 코드', htmlValue: '' },
+  {
+    name: 'markdown-html: 닫히지 않은 인라인 문법은 텍스트로 보존', tool: 'markdown-html', action: 'HTML 코드',
+    inputs: '닫히지 않은 **강조와 [링크](https://example.com',
+    htmlValue: '<p>닫히지 않은 **강조와 [링크](<a href="https://example.com">https://example.com</a></p>\n',
+  },
+  {
+    name: 'markdown-html: 과도한 중첩 차단', tool: 'markdown-html', action: 'HTML 코드',
+    inputs: '> '.repeat(65) + '본문',
+    htmlError: 'Markdown 중첩이 너무 깊습니다. 목록과 인용문 중첩을 64단계 이하로 줄이세요.',
+  },
+  {
+    name: 'markdown-html: 탭 들여쓰기와 중첩 목록', tool: 'markdown-html', action: 'HTML 코드',
+    inputs: '  \tcode\n\n - foo\n   - bar\n\t - baz\n',
+    htmlValue: '<pre><code>code\n</code></pre>\n<ul>\n<li>foo<ul>\n<li>bar<ul>\n<li>baz</li>\n</ul>\n</li>\n</ul>\n</li>\n</ul>\n',
+  },
+  {
+    name: 'markdown-html: 빈 인용문 뒤 본문과 문단 내 HTML', tool: 'markdown-html', action: 'HTML 코드',
+    inputs: '> bar\n>\noutside\n\nText before\n<a href="bar">\nafter\n',
+    htmlValue: '<blockquote>\n<p>bar</p>\n</blockquote>\n<p>outside</p>\n<p>Text before\n<a href="bar">\nafter</p>\n',
+  },
+  {
+    name: 'markdown-html: GFM 문단 중단·구두점·자동 링크 조합', tool: 'markdown-html', action: 'HTML 코드',
+    inputs: '123\n456\n| a | b |\n| --- | --- |\nd | e\n\nThis is not ~~~~~one~~~~~ huge strikethrough.\n\n**Autolink and http://example.com**\n\n~~www.example.com~~\n',
+    htmlValue: '<p>123\n456</p>\n<table>\n<thead>\n<tr>\n<th>a</th>\n<th>b</th>\n</tr>\n</thead>\n<tbody><tr>\n<td>d</td>\n<td>e</td>\n</tr>\n</tbody></table>\n<p>This is not ~~~~~one~~~~~ huge strikethrough.</p>\n<p><strong>Autolink and <a href="http://example.com">http://example.com</a></strong></p>\n<p><del><a href="http://www.example.com">www.example.com</a></del></p>\n',
+  },
+  {
+    name: 'markdown-html: 이스케이프가 다른 참조 링크는 연결하지 않음', tool: 'markdown-html', action: 'HTML 코드',
+    inputs: '[bar][foo\\!]\n\n[foo!]: /url\n',
+    htmlValue: '<p>[bar][foo!]</p>\n',
+  },
 
   /* ---------- markdown-toc ---------- */
   {
@@ -94,7 +150,145 @@ test('markdown-html: 미리보기는 샌드박스 iframe으로 렌더링', async
   await io.getByRole('button', { name: '미리보기', exact: true }).click();
   const frame = io.locator('.out-html iframe');
   await expect(frame).toHaveAttribute('sandbox', '');
+  await expect(frame).toHaveAttribute('referrerpolicy', 'no-referrer');
   await expect(frame).toHaveAttribute('srcdoc', /<h1>제목<\/h1>/);
+});
+
+test.describe('markdown-html: 악성 미리보기 격리', () => {
+  // 빈 sandbox가 script를 차단할 때 Chromium이 남기는 예상 가능한 보안 로그다.
+  test.use({ allowConsoleErrors: [/Blocked script execution.*frame is sandboxed/] });
+
+  test('raw script와 이벤트 핸들러를 실행하지 않음', async ({ page }) => {
+    await page.addInitScript(() => {
+      globalThis.__markdownPreviewMessages = [];
+      addEventListener('message', (event) => globalThis.__markdownPreviewMessages.push(event.data));
+    });
+    await openTool(page, 'markdown-html');
+    const io = ioSection(page);
+    await io.locator('textarea.mono:not(.out)').fill(
+      '<script>parent.postMessage("script-ran", "*")</script>\n\n'
+        + '<img src="data:image/png;base64,broken" onerror="parent.postMessage(\'handler-ran\', \'*\')">');
+    await io.getByRole('button', { name: '미리보기', exact: true }).click();
+    await expect(io.locator('.out-html iframe')).toBeVisible();
+    await page.waitForTimeout(200);
+    await expect.poll(() => page.evaluate(() => globalThis.__markdownPreviewMessages)).toEqual([]);
+  });
+});
+
+test('markdown-html: 큰 입력을 누락 없이 변환', async ({ page }) => {
+  await page.goto('/');
+  const result = await page.evaluate(async () => {
+    const source = Array.from({ length: 5000 }, (_, index) => `- 항목 ${index + 1}`).join('\n');
+    const worker = new Worker('/js/workers/markdown-render.js', { type: 'module' });
+    try {
+      const html = await new Promise((resolve, reject) => {
+        worker.addEventListener('message', ({ data }) => data.error ? reject(new Error(data.error)) : resolve(data.html), { once: true });
+        worker.addEventListener('error', reject, { once: true });
+        worker.postMessage({ text: source });
+      });
+      return {
+        first: html.includes('<li>항목 1</li>'),
+        last: html.includes('<li>항목 5000</li>'),
+        items: (html.match(/<li>/g) || []).length,
+      };
+    } finally {
+      worker.terminate();
+    }
+  });
+  expect(result).toEqual({ first: true, last: true, items: 5000 });
+});
+
+test('markdown-html: 큰 입력 Worker를 취소', async ({ page }) => {
+  await openTool(page, 'markdown-html');
+  const io = ioSection(page);
+  await io.locator('textarea.mono:not(.out)').evaluate((textarea) => {
+    textarea.value = '**굵게** '.repeat(150000);
+    textarea.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+  await expect.poll(() => io.evaluate((root) => !root.querySelector('.large-input-warning')?.hidden)).toBe(true);
+  await io.evaluate((root) => root.querySelector('.large-input-warning button').click());
+  await expect.poll(() => io.evaluate((root) => {
+    const cancel = [...root.querySelectorAll('button')].find((button) => button.textContent === '취소');
+    return Boolean(cancel && !cancel.hidden && !cancel.disabled);
+  })).toBe(true);
+  await io.evaluate((root) => {
+    [...root.querySelectorAll('button')].find((button) => button.textContent === '취소').click();
+  });
+  await expect.poll(() => io.getAttribute('aria-busy')).toBe('false');
+  await expect(io.locator('.out-html')).toContainText('작업이 취소되었습니다.');
+});
+
+test('markdown-html: 공개 CommonMark·GFM 벡터', async ({ page }) => {
+  await page.goto('/');
+  // Frozen from CommonMark 0.31.2 and GitHub's cmark-gfm extension examples.
+  const vectors = [
+    {
+      markdown: '[foo](/bar\\* "ti\\*tle")\n',
+      html: '<p><a href="/bar*" title="ti*tle">foo</a></p>\n',
+    },
+    {
+      markdown: '| f\\|oo  |\n| ------ |\n| b `\\|` az |\n| b **\\|** im |\n',
+      html: '<table>\n<thead>\n<tr>\n<th>f|oo</th>\n</tr>\n</thead>\n<tbody><tr>\n<td>b <code>|</code> az</td>\n</tr>\n<tr>\n<td>b <strong>|</strong> im</td>\n</tr>\n</tbody></table>\n',
+    },
+    {
+      markdown: 'www.commonmark.org\n',
+      html: '<p><a href="http://www.commonmark.org">www.commonmark.org</a></p>\n',
+    },
+    {
+      markdown: '- [x] 완료\n- [ ] 대기\n',
+      html: '<ul>\n<li><input checked="" disabled="" type="checkbox"> 완료</li>\n<li><input disabled="" type="checkbox"> 대기</li>\n</ul>\n',
+    },
+  ];
+  const results = await page.evaluate(async (inputs) => {
+    const { parseMarkdown } = await import('/js/lib/markdown/parser.js');
+    return inputs.map(({ markdown }) => parseMarkdown(markdown));
+  }, vectors);
+  expect(results).toEqual(vectors.map(({ html }) => html));
+});
+
+test('markdown-html: 닫는 괄호가 많은 자동 링크를 선형 시간에 처리', async ({ page }) => {
+  await page.goto('/');
+  const result = await page.evaluate(async () => {
+    const { parseMarkdown } = await import('/js/lib/markdown/parser.js');
+    const markdown = 'https://example.com/' + ')'.repeat(30000);
+    const started = performance.now();
+    const html = parseMarkdown(markdown);
+    return {
+      elapsed: performance.now() - started,
+      linked: html.startsWith('<p><a href="https://example.com/">https://example.com/</a>'),
+      closingCount: (html.match(/\)/g) || []).length,
+    };
+  });
+  expect(result.elapsed).toBeLessThan(1000);
+  expect(result.linked).toBe(true);
+  expect(result.closingCount).toBe(30000);
+});
+
+test('markdown-html: 입력·출력·구조 상한', async ({ page }) => {
+  await page.goto('/');
+  const result = await page.evaluate(async () => {
+    const { MARKDOWN_LIMITS, parseMarkdown } = await import('/js/lib/markdown/parser.js');
+    const code = (run) => {
+      try {
+        run();
+        return null;
+      } catch (error) {
+        return error.code;
+      }
+    };
+    return {
+      limits: MARKDOWN_LIMITS,
+      input: code(() => parseMarkdown('a'.repeat(MARKDOWN_LIMITS.inputLength + 1))),
+      output: code(() => parseMarkdown('# 제목', { maxOutputLength: 5 })),
+      structures: code(() => parseMarkdown('- 항목\n'.repeat(6), { maxStructures: 5 })),
+      inlineStructures: code(() => parseMarkdown('*a'.repeat(6), { maxStructures: 5 })),
+    };
+  });
+  expect(result).toEqual({
+    limits: { inputLength: 4 * 1024 * 1024, outputLength: 32 * 1024 * 1024, structures: 100000, nesting: 64 },
+    input: 'MAX_INPUT', output: 'MAX_OUTPUT', structures: 'MAX_STRUCTURES',
+    inlineStructures: 'MAX_STRUCTURES',
+  });
 });
 
 /* ---------- 왕복(round-trip) 변환 ---------- */

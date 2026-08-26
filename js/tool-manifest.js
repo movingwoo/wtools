@@ -527,7 +527,7 @@ export const TOOL_MANIFESTS = Object.freeze([
     "id": "markdown-html",
     "cat": "코드 포맷팅 / 개발 유틸리티",
     "name": "Markdown → HTML 변환기",
-    "desc": "Markdown을 HTML 코드로 변환하고 렌더링 미리보기를 제공합니다.",
+    "desc": "CommonMark·GFM의 주요 Markdown 문법을 자체 파서로 HTML 코드로 변환하고 렌더링 미리보기를 제공합니다.",
     "keywords": "markdown md html preview",
     "module": "./tools/devfmt-format.js",
     "externalLibrary": true

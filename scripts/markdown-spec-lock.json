@@ -1,0 +1,22 @@
+{
+  "commonmark": {
+    "version": "0.31.2",
+    "releaseRepository": "commonmark/commonmark-spec",
+    "releaseUrl": "https://github.com/commonmark/commonmark-spec/releases/tag/0.31.2",
+    "vectorsUrl": "https://spec.commonmark.org/0.31.2/spec.json",
+    "vectorsSha384": "sha384-ED393cIYY5/UAPVuStScDbM619v/+SROVKnAA/MZ7D6ObQ2FDvPyWkxFYR6055j+",
+    "examples": 652,
+    "format": "json"
+  },
+  "gfm": {
+    "version": "0.29-gfm",
+    "specUrl": "https://github.github.com/gfm/",
+    "releaseRepository": "github/cmark-gfm",
+    "releaseTag": "0.29.0.gfm.13",
+    "releaseUrl": "https://github.com/github/cmark-gfm/releases/tag/0.29.0.gfm.13",
+    "vectorsUrl": "https://raw.githubusercontent.com/github/cmark-gfm/0.29.0.gfm.13/test/extensions.txt",
+    "vectorsSha384": "sha384-kXp85u873tqIxw0EDxGdSvhGL9F2bRhfg53gd8hT6+YXLyCtPF1AD6M2IEab1hSX",
+    "examples": 30,
+    "format": "cmark"
+  }
+}

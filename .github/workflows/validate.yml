@@ -42,6 +42,7 @@ jobs:
 
       - name: Validate registrations and static assets
         run: |
+          python3 scripts/check_markdown_specs.py
           python3 scripts/validate_static.py
           python3 -m unittest discover -s scripts -p 'test_*.py'
 

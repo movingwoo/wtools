@@ -49,6 +49,13 @@ jobs:
         shell: bash
         run: python3 scripts/check_reference_data.py --check-latest | tee -a "$GITHUB_STEP_SUMMARY"
 
+      - name: Compare Markdown standards with official releases
+        if: ${{ always() }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: python3 scripts/check_markdown_specs.py --check-latest | tee -a "$GITHUB_STEP_SUMMARY"
+
       - name: Audit browser and CI baselines
         if: ${{ always() }}
         env:
@@ -68,14 +75,15 @@ jobs:
       - name: Run representative public vectors
         if: ${{ always() }}
         working-directory: tests
-        run: npx playwright test --project=chromium -g 'JSON Schema|punycode|zip:|tar:'
+        run: |
+          npx playwright test --project=chromium -g 'JSON Schema|punycode|zip:|tar:|markdown-html: 공개|markdown-html: 닫는 괄호'
 
       - name: Write review summary
         if: ${{ always() }}
         shell: bash
         run: |
           echo '## 월간 품질·보안 점검' >> "$GITHUB_STEP_SUMMARY"
-          echo '- npm·OSV·GitHub Advisory, 고정 자산 원본 해시, UA·IANA·브라우저 기준선, JSON Schema·IDN·ZIP/Tar 대표 벡터를 확인했습니다.' >> "$GITHUB_STEP_SUMMARY"
+          echo '- npm·OSV·GitHub Advisory, 고정 자산 원본 해시, UA·IANA·CommonMark·GFM·브라우저 기준선, JSON Schema·IDN·ZIP/Tar·Markdown 대표 벡터를 확인했습니다.' >> "$GITHUB_STEP_SUMMARY"
           echo '- 실제 CDN과 운영 헤더·PWA 검사는 nightly 워크플로 결과를 함께 확인하세요.' >> "$GITHUB_STEP_SUMMARY"
 
   emoji-update:

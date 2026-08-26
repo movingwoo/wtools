@@ -10,6 +10,14 @@
   --danger: #dc2626;
   --ok: #16a34a;
   --code-bg: #f0f2f5;
+  --syntax-comment: #59636e;
+  --syntax-keyword: #7a3fd0;
+  --syntax-string: #0a3069;
+  --syntax-number: #0550ae;
+  --syntax-name: #953800;
+  --syntax-type: #116329;
+  --syntax-meta: #59636e;
+  --syntax-operator: #57606a;
   --shadow: 0 1px 3px rgba(0,0,0,.08);
   --radius: 10px;
 }
@@ -25,6 +33,14 @@
   --danger: #f87171;
   --ok: #4ade80;
   --code-bg: #0d1420;
+  --syntax-comment: #8b949e;
+  --syntax-keyword: #ff7b72;
+  --syntax-string: #a5d6ff;
+  --syntax-number: #79c0ff;
+  --syntax-name: #d2a8ff;
+  --syntax-type: #7ee787;
+  --syntax-meta: #8b949e;
+  --syntax-operator: #c9d1d9;
   --shadow: 0 1px 3px rgba(0,0,0,.4);
 }
 @media (prefers-color-scheme: dark) {
@@ -40,6 +56,14 @@
     --danger: #f87171;
     --ok: #4ade80;
     --code-bg: #0d1420;
+    --syntax-comment: #8b949e;
+    --syntax-keyword: #ff7b72;
+    --syntax-string: #a5d6ff;
+    --syntax-number: #79c0ff;
+    --syntax-name: #d2a8ff;
+    --syntax-type: #7ee787;
+    --syntax-meta: #8b949e;
+    --syntax-operator: #c9d1d9;
     --shadow: 0 1px 3px rgba(0,0,0,.4);
   }
 }
@@ -513,6 +537,28 @@ table.grid th, table.grid td { overflow-wrap: anywhere; word-break: break-word; 
 .note { font-size: 13px; color: var(--muted); background: var(--accent-weak); border-radius: 8px; padding: 8px 12px; }
 .large-input-warning { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; }
 
+/* 자체 구문 강조 테마 */
+.syntax-highlight {
+  margin: 0;
+  padding: 12px;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--code-bg);
+  color: var(--text);
+  tab-size: 2;
+}
+.syntax-highlight code { font-family: ui-monospace, Menlo, Consolas, monospace; }
+.syntax-highlight-note { margin-top: 8px; }
+.syn-comment { color: var(--syntax-comment); font-style: italic; }
+.syn-keyword, .syn-selector { color: var(--syntax-keyword); font-weight: 600; }
+.syn-string, .syn-regexp { color: var(--syntax-string); }
+.syn-number, .syn-literal { color: var(--syntax-number); }
+.syn-title, .syn-attr, .syn-property, .syn-variable { color: var(--syntax-name); }
+.syn-type, .syn-built-in { color: var(--syntax-type); }
+.syn-meta, .syn-symbol { color: var(--syntax-meta); }
+.syn-operator, .syn-punctuation { color: var(--syntax-operator); }
+
 /* diff 표시 */
 .diff-add { background: rgba(22,163,74,.18); color: var(--ok); }
 .diff-del { background: rgba(220,38,38,.15); color: var(--danger); text-decoration: line-through; }
@@ -587,6 +633,7 @@ canvas, iframe, video { max-width: 100%; }
   .error, .io-status.error, .transfer-error { color: Mark; }
   .search-current, .nav-item a.active { outline: 2px solid Highlight; }
   .scanner-guide { border-color: CanvasText; box-shadow: none; }
+  .syntax-highlight span { color: CanvasText; }
 }
 
 .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }

@@ -29,24 +29,6 @@ globalThis.WTOOLS_DEPENDENCIES = {
       "kind": "script",
       "tools": ["js/tools/cryptotools.js", "js/tools/encoding.js", "js/tools/pki.js"]
     },
-    "hljs": {
-      "package": "highlight.js",
-      "version": "11.9.0",
-      "url": "https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js",
-      "integrity": "sha384-F/bZzf7p3Joyp5psL90p/p89AZJsndkSoGwRpXcZhleCWhd8SnRuoYo4d0yirjJp",
-      "license": "BSD-3-Clause",
-      "kind": "script",
-      "tools": ["js/tools/devfmt-format.js"]
-    },
-    "hljsCss": {
-      "package": "highlight.js",
-      "version": "11.9.0",
-      "url": "https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark-dimmed.min.css",
-      "integrity": "sha384-PiLidnnRuzFgp4qiN8oGNmktrV8ETL+6a8heAxljUX4A+3XWlocwaMn9duBUepfK",
-      "license": "BSD-3-Clause",
-      "kind": "style",
-      "tools": ["js/tools/devfmt-format.js"]
-    },
     "beautifyJs": {
       "package": "js-beautify",
       "version": "1.15.1",

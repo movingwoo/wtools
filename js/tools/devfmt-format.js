@@ -1,5 +1,5 @@
 // 코드 포맷팅 / 개발 유틸리티 — 포맷터 / 뷰어
-import { tool, makeIO, h, formLabel, kvTable, loadScript, loadCss, LIB, decodeInput, FMT_IN } from '../core.js';
+import { tool, makeIO, h, formLabel, kvTable, loadScript, LIB, decodeInput, FMT_IN } from '../core.js';
 import { parseXML } from './dataformat.js';
 
 const CAT = '코드 포맷팅 / 개발 유틸리티';
@@ -133,26 +133,65 @@ tool({
   },
 });
 
+let syntaxHighlighterPromise;
+const SYNTAX_LARGE_INPUT_LENGTH = 200_000;
+const SYNTAX_MAX_INPUT_LENGTH = 1_000_000;
+const SYNTAX_RENDER_BATCH = 2_000;
+
+function loadSyntaxHighlighter() {
+  return (syntaxHighlighterPromise ??= import('../lib/code/syntax-highlighter.js').catch(() => {
+    syntaxHighlighterPromise = null;
+    throw new Error('구문 강조 엔진을 불러오지 못했습니다. 잠시 후 다시 시도하세요.');
+  }));
+}
+
+function syntaxAbortError() {
+  return new DOMException('구문 강조 작업이 취소되었습니다.', 'AbortError');
+}
+
+async function renderSyntaxCode(tokens, signal) {
+  const code = h('code');
+  const fragment = document.createDocumentFragment();
+  for (let i = 0; i < tokens.length; i++) {
+    if (signal?.aborted) throw syntaxAbortError();
+    const token = tokens[i];
+    fragment.append(token.type
+      ? h('span', { class: 'syn-' + token.type }, token.value)
+      : document.createTextNode(token.value));
+    if ((i + 1) % SYNTAX_RENDER_BATCH === 0) {
+      code.append(fragment);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+  }
+  code.append(fragment);
+  return code;
+}
+
 tool({
   id: 'syntax-highlight', cat: CAT, name: '구문 강조 (Syntax Highlighter)',
-  desc: '코드에 구문 강조를 적용해 HTML로 보여줍니다. (highlight.js)',
+  desc: '22개 언어의 코드를 자체 토크나이저와 밝은/어두운 테마로 강조합니다.',
   keywords: 'highlight code color',
   render(root) {
     makeIO(root, {
       inputs: [{ id: 'input', label: '코드', rows: 10, placeholder: 'function hello() {\n  console.log("world");\n}' }],
       options: [{ id: 'lang', label: '언어', type: 'select', values: [['auto', '자동 감지'], 'javascript', 'typescript', 'python', 'java', 'c', 'cpp', 'csharp', 'go', 'rust', 'kotlin', 'swift', 'php', 'ruby', 'sql', 'html', 'xml', 'css', 'json', 'yaml', 'bash', 'shell', 'markdown'] }],
       outputHTML: true,
-      async process(text, o) {
+      cancelable: true,
+      largeInputThreshold: SYNTAX_LARGE_INPUT_LENGTH,
+      async process(text, o, _actionId, signal) {
         if (!text.trim()) return '';
-        await loadCss(LIB.hljsCss);
-        await loadScript(LIB.hljs);
-        const res = o.lang === 'auto' ? hljs.highlightAuto(text) : hljs.highlight(text, { language: o.lang });
-        const pre = h('pre', { class: 'hljs', style: { margin: 0, padding: '12px', borderRadius: '8px', overflow: 'auto' } });
-        const code = h('code');
-        code.innerHTML = res.value;
-        pre.append(code);
-        return h('div', null, pre, h('div', { class: 'note', style: { marginTop: '8px' } }, '감지된 언어: ' + (res.language || o.lang)));
+        if (text.length > SYNTAX_MAX_INPUT_LENGTH)
+          throw new Error('구문 강조 입력은 1,000,000자 이하여야 합니다.');
+        const { highlight, highlightAuto } = await loadSyntaxHighlighter();
+        if (signal?.aborted) throw syntaxAbortError();
+        const result = o.lang === 'auto' ? highlightAuto(text) : highlight(text, o.lang);
+        const code = await renderSyntaxCode(result.tokens, signal);
+        const pre = h('pre', { class: 'syntax-highlight' }, code);
+        const detected = o.lang === 'auto' ? (result.language || '일반 텍스트') : result.language;
+        return h('div', null, pre,
+          h('div', { class: 'note syntax-highlight-note' }, '감지된 언어: ' + detected));
       },
+      note: '코드는 브라우저 안에서 처리하며 외부 라이브러리를 요청하지 않습니다. 자동 감지는 확신도가 낮으면 일반 텍스트로 표시하며, 입력은 최대 1,000,000자까지 처리합니다.',
     });
   },
 });

@@ -25,13 +25,18 @@ or `vendorUrl` consumers. Quarterly metadata lives in `tests/fixtures/user-agent
 one of those reviews becomes older than 100 days. A release archive is published only after
 `scripts/check_workflow_freshness.py` finds a successful `compatibility.yml` run from the last eight days.
 
-## 2026-08-25 review record
+The syntax highlighter keeps its 22 language and standard baselines, official source URLs, and review date
+in `scripts/syntax-language-lock.json`. The monthly workflow compares actively released language families
+with their official current-version pages and fails when the full manual grammar review becomes older than
+100 days. Release detection opens a review; it never rewrites keyword or tokenizer rules automatically.
 
-- OSV and GitHub Global Security Advisories reported no known vulnerability for the 26 distinct pinned
+## 2026-08-26 review record
+
+- OSV and GitHub Global Security Advisories reported no known vulnerability for the 24 distinct pinned
   runtime, vendored, and test package versions.
 - npm latest matched 12 pins. The review queue contains axe-core 4.13.0, bcryptjs 3.0.3,
-  brotli-compress 2.2.2, fflate 0.8.3, highlight.js 11.12.0, js-beautify 2.0.3, js-yaml 5.3.0,
-  jsonpath-plus 10.4.0, marked 18.0.11, openpgp 6.3.1, pako 3.0.1, smol-toml 1.8.0,
+  brotli-compress 2.2.2, fflate 0.8.3, js-beautify 2.0.3, js-yaml 5.4.0,
+  jsonpath-plus 10.4.0, openpgp 6.3.1, pako 3.0.1, smol-toml 1.8.0,
   sql-formatter 15.8.2, and z-schema 12.4.3. These are review candidates, not automatically approved
   upgrades; major releases and format-sensitive patches require their tool vectors and minimum browsers.
 - npm marks crypto-js 4.2.0 and jsrsasign 11.1.5 as no longer maintained. Their pinned versions have no

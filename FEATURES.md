@@ -58,7 +58,7 @@
 
 - JSON 포맷/압축/뷰어(트리)
 - XML / CSS / JavaScript / HTML / SQL / YAML 포맷/압축
-- 구문 강조(Syntax Highlighter)
+- 구문 강조 (JavaScript·TypeScript·Python·Java·C·C++·C#·Go·Rust·Kotlin·Swift·PHP·Ruby·SQL·HTML·XML·CSS·JSON·YAML·Bash·Shell·Markdown 자체 토크나이저, 저신뢰 일반 텍스트 처리와 선형 시간 보호를 포함한 자동 감지, 공식 언어 프로필 정기 점검, WCAG AA 밝은/어두운 내부 테마, 큰 입력 승인·취소 및 100만 자 상한)
 - JSON Diff (구조 비교)
 - 텍스트 Diff (자체 Myers 구현 기반 라인·단어·문자 비교, 공백 차이 무시, 수동 실행·Worker 계산·취소, 통합 diff 미리보기·다운로드)
 - 정규식(Regex) 테스터 + 검색·패턴 삽입형 JavaScript 치트시트

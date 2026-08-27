@@ -8,6 +8,8 @@ test.use({ allowServiceWorker: true });
 
 const EXTERNAL_URL = 'https://cdn.jsdelivr.net/npm/js-yaml@4.3.1/dist/js-yaml.min.js';
 const REMOVED_MARKED_URL = 'https://cdn.jsdelivr.net/npm/marked@12.0.2/marked.min.js';
+const REMOVED_HIGHLIGHT_URL = 'https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js';
+const REMOVED_HIGHLIGHT_CSS_URL = 'https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark-dimmed.min.css';
 const VENDORED_PATH = '/assets/vendor/smol-toml-1.6.1.mjs';
 const emojiLock = JSON.parse(readFileSync(new URL('../scripts/emoji-data-lock.json', import.meta.url), 'utf8'));
 const emojiCount = Object.values(emojiLock.groupCounts).reduce((sum, count) => sum + count, 0);
@@ -38,11 +40,17 @@ test('설치 시 검증된 자산만 캐시하고 이전 버전 캐시를 삭제
     await previousCache.put(externalUrl, response.clone());
     await previousCache.put('https://cdn.jsdelivr.net/npm/marked@12.0.2/marked.min.js',
       new Response('stale marked response', { status: 200 }));
+    const latestCache = await caches.open('wtools-external-v6');
+    await latestCache.put(externalUrl, response.clone());
+    await latestCache.put('https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js',
+      new Response('stale highlight response', { status: 200 }));
+    await latestCache.put('https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark-dimmed.min.css',
+      new Response('stale highlight theme', { status: 200 }));
   }, EXTERNAL_URL);
 
   await page.goto('/');
   await waitForControl(page);
-  const state = await page.evaluate(async ({ externalUrl, removedMarkedUrl, vendoredPath }) => {
+  const state = await page.evaluate(async ({ externalUrl, removedMarkedUrl, removedHighlightUrl, removedHighlightCssUrl, vendoredPath }) => {
     const keys = await caches.keys();
     const shellName = keys.find((key) => key.startsWith('wtools-shell-'));
     const shell = await caches.open(shellName);
@@ -50,26 +58,37 @@ test('설치 시 검증된 자산만 캐시하고 이전 버전 캐시를 삭제
     const entry = globalThis.WTOOLS_DEPENDENCIES.vendored.smolToml;
     const digest = await crypto.subtle.digest('SHA-384', await vendorResponse.clone().arrayBuffer());
     const integrity = 'sha384-' + btoa(String.fromCharCode(...new Uint8Array(digest)));
-    const external = await caches.open('wtools-external-v6');
+    const external = await caches.open('wtools-external-v7');
     return {
       keys,
       vendorIntegrity: integrity,
       expectedVendorIntegrity: entry.integrity,
       externalCached: !!await external.match(externalUrl),
       removedMarkedCached: !!await external.match(removedMarkedUrl),
+      removedHighlightCached: !!await external.match(removedHighlightUrl),
+      removedHighlightCssCached: !!await external.match(removedHighlightCssUrl),
       shellName,
     };
-  }, { externalUrl: EXTERNAL_URL, removedMarkedUrl: REMOVED_MARKED_URL, vendoredPath: VENDORED_PATH });
+  }, {
+    externalUrl: EXTERNAL_URL,
+    removedMarkedUrl: REMOVED_MARKED_URL,
+    removedHighlightUrl: REMOVED_HIGHLIGHT_URL,
+    removedHighlightCssUrl: REMOVED_HIGHLIGHT_CSS_URL,
+    vendoredPath: VENDORED_PATH,
+  });
   expect(state.keys).not.toContain('wtools-shell-v0');
   expect(state.keys).not.toContain('wtools-external-v0');
   expect(state.keys).not.toContain('wtools-external-v2');
   expect(state.keys).not.toContain('wtools-external-v3');
   expect(state.keys).not.toContain('wtools-external-v4');
   expect(state.keys).not.toContain('wtools-external-v5');
+  expect(state.keys).not.toContain('wtools-external-v6');
   expect(state.shellName).toMatch(/^wtools-shell-[0-9a-f]{12}$/);
   expect(state.vendorIntegrity).toBe(state.expectedVendorIntegrity);
   expect(state.externalCached).toBe(true);
   expect(state.removedMarkedCached).toBe(false);
+  expect(state.removedHighlightCached).toBe(false);
+  expect(state.removedHighlightCssCached).toBe(false);
 
   await context.setOffline(true);
   const externalStatus = await page.evaluate((url) => fetch(url).then((response) => response.status), EXTERNAL_URL);
@@ -100,6 +119,13 @@ test('설치 시 검증된 자산만 캐시하고 이전 버전 캐시를 삭제
     worker.postMessage({ text: '# Worker 오프라인' });
   }));
   expect(workerHtml).toBe('<h1>Worker 오프라인</h1>\n');
+
+  await page.evaluate(() => { location.hash = '#/tool/syntax-highlight'; });
+  const syntax = page.locator('#content .io');
+  await syntax.getByLabel('언어').selectOption('javascript');
+  await syntax.locator('textarea.mono:not(.out)').fill('const offline = true;');
+  await expect(syntax.locator('.syntax-highlight code')).toHaveText('const offline = true;');
+  await expect(syntax.locator('.syn-keyword')).toHaveText('const');
 });
 
 test('오프라인에서 직접 도구 URL 새로고침과 navigation fallback을 복구한다', async ({ page, context }) => {

@@ -518,7 +518,7 @@ export const TOOL_MANIFESTS = Object.freeze([
     "id": "syntax-highlight",
     "cat": "코드 포맷팅 / 개발 유틸리티",
     "name": "구문 강조 (Syntax Highlighter)",
-    "desc": "코드에 구문 강조를 적용해 HTML로 보여줍니다. (highlight.js)",
+    "desc": "22개 언어의 코드를 자체 토크나이저와 밝은/어두운 테마로 강조합니다.",
     "keywords": "highlight code color",
     "module": "./tools/devfmt-format.js",
     "externalLibrary": true

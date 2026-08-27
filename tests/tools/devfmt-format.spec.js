@@ -1,4 +1,4 @@
-// 코드/문서 포맷터 정밀 테스트. 자체 Markdown 파서와 남은 포맷터 CDN 경로를 함께 검증한다.
+// 코드/문서 포맷터 정밀 테스트. 자체 구문 강조·Markdown 파서와 남은 포맷터 CDN 경로를 검증한다.
 import { test, expect, toolCases, openTool, ioSection, runIO, uploadFile } from '../helpers.js';
 import { makePng } from '../fixtures.js';
 
@@ -142,6 +142,267 @@ const cases = [
 ];
 
 toolCases('devfmt-format', cases);
+
+test('syntax-highlight: 22개 언어 토큰화가 원문을 보존한다', async ({ page }) => {
+  await page.goto('/');
+  const corpus = {
+    javascript: 'const greet = (name) => console.log(`Hello ${name}`);',
+    typescript: 'interface User { name: string }\nconst user: User = { name: "Ada" };',
+    python: 'def greet(name: str):\n    print(f"Hello {name}")\n',
+    java: 'public class Main { public static void main(String[] args) { System.out.println("hi"); } }',
+    c: '#include <stdio.h>\nint main(void) { printf("hi\\n"); return 0; }',
+    cpp: '#include <iostream>\nint main() { std::cout << "hi" << std::endl; }',
+    csharp: 'using System;\nnamespace Demo { public class App { static void Main() { Console.WriteLine("hi"); } } }',
+    go: 'package main\nimport "fmt"\nfunc main() { message := "hi"; fmt.Println(message) }',
+    rust: 'fn main() { let mut items = vec![1, 2]; println!("{:?}", items); }',
+    kotlin: 'package demo\ndata class User(val name: String)\nfun main() { println(User("Ada")) }',
+    swift: 'import Foundation\nprotocol Greeter { func greet() -> String }\nlet name = "Ada"',
+    php: '<?php\n$name = "Ada";\necho "Hello $name";\n?>',
+    ruby: 'class Greeter\n  def greet(name)\n    puts "Hello #{name}"\n  end\nend',
+    sql: 'SELECT users.name, COUNT(*) FROM users LEFT JOIN logs ON logs.user_id = users.id GROUP BY users.name;',
+    html: '<!doctype html><html><body><button class="primary">저장</button></body></html>',
+    xml: '<?xml version="1.0"?><catalog><book id="1"><title>WTools</title></book></catalog>',
+    css: '.card:hover { color: #2563eb; margin: 1rem; }',
+    json: '{"name":"WTools","enabled":true,"count":3}',
+    yaml: 'name: WTools\nenabled: true\nitems:\n  - one\n  - two',
+    bash: '#!/usr/bin/env bash\nfor file in "$@"; do\n  echo "${file}"\ndone',
+    shell: '#!/bin/sh\nfor file in "$@"; do\n  printf "%s\\n" "$file"\ndone',
+    markdown: '# 제목\n\n- [문서](https://example.com)\n\n```js\nconst ok = true;\n```',
+  };
+  const expectedToken = {
+    javascript: ['keyword', 'const'], typescript: ['keyword', 'interface'], python: ['keyword', 'def'],
+    java: ['keyword', 'public'], c: ['meta', '#include <stdio.h>'], cpp: ['meta', '#include <iostream>'],
+    csharp: ['keyword', 'using'], go: ['keyword', 'package'], rust: ['keyword', 'fn'],
+    kotlin: ['keyword', 'data'], swift: ['keyword', 'import'], php: ['meta', '<?php'],
+    ruby: ['keyword', 'class'], sql: ['keyword', 'SELECT'], html: ['title', 'html'],
+    xml: ['title', 'catalog'], css: ['selector', '.card:hover'], json: ['attr', '"name"'],
+    yaml: ['attr', 'name'], bash: ['meta', '#!/usr/bin/env bash'], shell: ['meta', '#!/bin/sh'],
+    markdown: ['keyword', '# '],
+  };
+  const result = await page.evaluate(async ({ samples, expected }) => {
+    const { highlight, SUPPORTED_LANGUAGES } = await import('/js/lib/code/syntax-highlighter.js');
+    return {
+      supported: SUPPORTED_LANGUAGES,
+      rows: SUPPORTED_LANGUAGES.map((language) => {
+        const output = highlight(samples[language], language);
+        return {
+          language: output.language,
+          rebuilt: output.tokens.map((token) => token.value).join(''),
+          tokenTypes: [...new Set(output.tokens.map((token) => token.type).filter(Boolean))],
+          hasExpected: output.tokens.some((token) => token.type === expected[language][0]
+            && token.value === expected[language][1]),
+        };
+      }),
+    };
+  }, { samples: corpus, expected: expectedToken });
+
+  expect(result.supported).toEqual(Object.keys(corpus));
+  for (const row of result.rows) {
+    expect(row.rebuilt).toBe(corpus[row.language]);
+    expect(row.tokenTypes.length, `${row.language} 토큰 종류`).toBeGreaterThan(0);
+    expect(row.hasExpected, `${row.language} 대표 토큰`).toBe(true);
+  }
+  await openTool(page, 'syntax-highlight');
+  const uiLanguages = await ioSection(page).getByLabel('언어').locator('option').evaluateAll((options) =>
+    options.map((option) => option.value).filter((value) => value !== 'auto'));
+  expect(uiLanguages).toEqual(result.supported);
+});
+
+test('syntax-highlight: 자동 감지 정확도와 일반 텍스트 오탐 방지 코퍼스', async ({ page }) => {
+  await page.goto('/');
+  const expected = {
+    javascript: 'const greet = (name) => console.log(`Hello ${name}`);',
+    typescript: 'interface User { name: string }\nconst user: User = { name: "Ada" };',
+    python: 'def greet(name: str):\n    print(f"Hello {name}")',
+    java: 'public class Main { public static void main(String[] args) { System.out.println("hi"); } }',
+    c: '#include <stdio.h>\nint main(void) { printf("hi"); return 0; }',
+    cpp: '#include <iostream>\nint main() { std::cout << "hi" << std::endl; }',
+    csharp: 'using System;\nnamespace Demo { public class App { static void Main() { Console.WriteLine("hi"); } } }',
+    go: 'package main\nimport "fmt"\nfunc main() { message := "hi"; fmt.Println(message) }',
+    rust: 'fn main() { let mut items = vec![1, 2]; println!("{:?}", items); }',
+    kotlin: 'package demo\ndata class User(val name: String)\nfun main() { println(User("Ada")) }',
+    swift: 'import Foundation\nprotocol Greeter { func greet() -> String }',
+    php: '<?php\n$name = "Ada";\necho "Hello $name";',
+    ruby: 'class Greeter\n  def greet(name)\n    puts "Hello #{name}"\n  end\nend',
+    sql: 'SELECT users.name, COUNT(*) FROM users LEFT JOIN logs ON logs.user_id = users.id GROUP BY users.name;',
+    html: '<!doctype html><html><body><button>저장</button></body></html>',
+    xml: '<?xml version="1.0"?><catalog><book id="1"/></catalog>',
+    css: '.card:hover { color: #2563eb; margin: 1rem; }',
+    json: '{"name":"WTools","enabled":true,"count":3}',
+    yaml: 'name: WTools\nenabled: true\nitems:\n  - one\n  - two',
+    bash: '#!/usr/bin/env bash\nfor file in "$@"; do echo "${file}"; done',
+    markdown: '# 제목\n\n- [문서](https://example.com)\n\n```js\nconst ok = true;\n```',
+  };
+  const plain = [
+    '안녕하세요. 오늘 회의는 오후 세 시입니다.',
+    'The quick brown fox jumps over the lazy dog.',
+    'name',
+    '2026-08-26',
+    'hello@example.com',
+    '프로젝트 이름: W-Tools',
+    'SELECT라는 단어와 FROM이라는 단어를 설명하는 일반 문장입니다.',
+  ];
+  const result = await page.evaluate(async ({ samples, prose }) => {
+    const { highlightAuto } = await import('/js/lib/code/syntax-highlighter.js');
+    return {
+      detected: Object.fromEntries(Object.entries(samples).map(([language, source]) =>
+        [language, highlightAuto(source).language])),
+      falsePositives: prose.map((source) => highlightAuto(source).language),
+    };
+  }, { samples: expected, prose: plain });
+  expect(result.detected).toEqual(Object.fromEntries(Object.keys(expected).map((language) => [language, language])));
+  expect(result.falsePositives).toEqual(plain.map(() => null));
+});
+
+test('syntax-highlight: 최신 언어 프로필의 어휘와 문자열 형식을 처리한다', async ({ page }) => {
+  await page.goto('/');
+  const samples = {
+    javascript: ['enum implements interface package private protected public', [['enum', 'keyword'], ['public', 'keyword']]],
+    typescript: ['using resource = open();\naccessor value: string;', [['using', 'keyword'], ['accessor', 'keyword']]],
+    python: ['type Point = tuple[int, int]\nmatch value:\n  case _:\n    text = f"""hello {value}"""', [['type', 'keyword'], ['_', 'keyword'], ['f"""hello {value}"""', 'string']]],
+    java: ['non-sealed class App { Object _; boolean ok = value instanceof int when true; String text = """hello"""; }', [['non-sealed', 'keyword'], ['_', 'keyword'], ['when', 'keyword'], ['"""hello"""', 'string']]],
+    c: ['alignas(16) bool ok = true; constexpr int n = 1; typeof(n) copy; void *p = nullptr; _BitInt(32) wide;', [['alignas', 'keyword'], ['bool', 'type'], ['constexpr', 'keyword'], ['typeof', 'keyword'], ['nullptr', 'literal'], ['_BitInt', 'type']]],
+    cpp: ['export module demo; import <string>; char8_t c; bool same = a and_eq b; auto raw = R"tag(a " b)tag";', [['module', 'keyword'], ['import', 'keyword'], ['char8_t', 'type'], ['and_eq', 'keyword'], ['R"tag(a " b)tag"', 'string']]],
+    csharp: ['extension WidgetExtensions { scoped ref int Value => ref field; }\nvar a = @"a ""b""";\nvar b = $$"""hello {{name}}""";', [['extension', 'keyword'], ['scoped', 'keyword'], ['field', 'keyword'], ['@"a ""b"""', 'string'], ['$$"""hello {{name}}"""', 'string']]],
+    go: ['func f[T comparable](items []T) any { clear(items); return max(1, min(2, 3)) }', [['comparable', 'type'], ['any', 'type'], ['clear', 'built-in'], ['max', 'built-in'], ['min', 'built-in']]],
+    rust: ['gen fn future() {}\nlet raw = r##"a "# b"##;', [['gen', 'keyword'], ['r##"a "# b"##', 'string']]],
+    kotlin: ['context(Logger)\nfun log() { val text = """hello""" }', [['context', 'keyword'], ['"""hello"""', 'string']]],
+    swift: ['borrowing func read(_ value: consuming Item) { let text = #"""hello"""# }', [['borrowing', 'keyword'], ['consuming', 'keyword'], ['#"""hello"""#', 'string']]],
+  };
+  const result = await page.evaluate(async (corpus) => {
+    const { highlight } = await import('/js/lib/code/syntax-highlighter.js');
+    return Object.fromEntries(Object.entries(corpus).map(([language, [source, expected]]) => {
+      const output = highlight(source, language);
+      return [language, {
+        rebuilt: output.tokens.map((token) => token.value).join(''),
+        matches: expected.map(([value, type]) => output.tokens.some((token) => token.value === value && token.type === type)),
+      }];
+    }));
+  }, samples);
+  for (const [language, [source]] of Object.entries(samples)) {
+    expect(result[language].rebuilt, `${language} 원문`).toBe(source);
+    expect(result[language].matches, `${language} 최신 토큰`).not.toContain(false);
+  }
+});
+
+test('syntax-highlight: 자동 감지는 적대 입력을 선형 시간에 처리한다', async ({ page }) => {
+  await page.goto('/');
+  const result = await page.evaluate(async () => {
+    const { detectLanguage } = await import('/js/lib/code/syntax-highlighter.js');
+    const samples = ['a'.repeat(40_000), '('.repeat(40_000), '['.repeat(40_000), 'function(' + 'a'.repeat(39_991)];
+    return samples.map((source) => {
+      const started = performance.now();
+      const detected = detectLanguage(source);
+      return { elapsed: performance.now() - started, detected };
+    });
+  });
+  for (const row of result) {
+    expect(row.detected).toEqual({ language: null, relevance: 0 });
+    expect(row.elapsed).toBeLessThan(1000);
+  }
+});
+
+test('syntax-highlight: 안전한 DOM 렌더링·내부 테마·외부 요청 없음', async ({ page }) => {
+  const highlightRequests = [];
+  page.on('request', (request) => {
+    if (/highlight(?:\.min)?\.js|github-dark-dimmed/i.test(request.url())) highlightRequests.push(request.url());
+  });
+  await openTool(page, 'syntax-highlight');
+  const io = ioSection(page);
+  const input = '<img src=x onerror="window.__syntaxInjected=true"><script>window.__syntaxInjected=true</script>';
+  await io.getByLabel('언어').selectOption('html');
+  await io.locator('textarea.mono:not(.out)').fill(input);
+  const code = io.locator('.syntax-highlight code');
+  await expect(code).toHaveText(input);
+  await expect(code.locator('.syn-title')).toHaveCount(3);
+  await expect(io.locator('.syntax-highlight-note')).toHaveText('감지된 언어: html');
+  expect(await io.locator('img, script').count()).toBe(0);
+  expect(await page.evaluate(() => globalThis.__syntaxInjected)).toBeUndefined();
+
+  const colors = await page.evaluate(() => {
+    const keyword = document.querySelector('.syn-title');
+    document.documentElement.dataset.theme = 'light';
+    const light = getComputedStyle(keyword).color;
+    document.documentElement.dataset.theme = 'dark';
+    const dark = getComputedStyle(keyword).color;
+    const classes = ['comment', 'keyword', 'string', 'number', 'title', 'type', 'meta', 'operator'];
+    const rgb = (value) => value.match(/[\d.]+/g).slice(0, 3).map((part) => Number(part) / 255);
+    const luminance = (value) => rgb(value).map((part) => part <= 0.04045
+      ? part / 12.92 : ((part + 0.055) / 1.055) ** 2.4)
+      .reduce((sum, part, index) => sum + part * [0.2126, 0.7152, 0.0722][index], 0);
+    const ratio = (foreground, background) => {
+      const values = [luminance(foreground), luminance(background)].sort((a, b) => b - a);
+      return (values[0] + 0.05) / (values[1] + 0.05);
+    };
+    const contrast = {};
+    for (const theme of ['light', 'dark']) {
+      document.documentElement.dataset.theme = theme;
+      contrast[theme] = classes.map((name) => {
+        const span = document.createElement('span');
+        span.className = 'syn-' + name;
+        document.querySelector('.syntax-highlight code').append(span);
+        const result = ratio(getComputedStyle(span).color,
+          getComputedStyle(document.querySelector('.syntax-highlight')).backgroundColor);
+        span.remove();
+        return result;
+      });
+    }
+    return { light, dark, contrast };
+  });
+  expect(colors.light).not.toBe(colors.dark);
+  expect(Math.min(...colors.contrast.light)).toBeGreaterThanOrEqual(4.5);
+  expect(Math.min(...colors.contrast.dark)).toBeGreaterThanOrEqual(4.5);
+  expect(highlightRequests).toEqual([]);
+});
+
+test('syntax-highlight: 빈 입력·잘못된 언어·대용량 입력 경계', async ({ page }) => {
+  await page.goto('/');
+  const result = await page.evaluate(async () => {
+    const { highlight, highlightAuto } = await import('/js/lib/code/syntax-highlighter.js');
+    const large = 'const value = 123; // comment\n'.repeat(10000);
+    const started = performance.now();
+    const output = highlight(large, 'javascript');
+    let invalid;
+    try { highlight('x', 'brainfuck'); } catch (error) { invalid = { name: error.name, message: error.message }; }
+    return {
+      empty: highlight('', 'javascript'),
+      autoEmpty: highlightAuto(''),
+      invalid,
+      rebuilt: output.tokens.map((token) => token.value).join('') === large,
+      malformedCss: ['{-;}', '{ -; }', '.x { --: 1; }'].map((source) =>
+        highlight(source, 'css').tokens.map((token) => token.value).join('') === source),
+      elapsed: performance.now() - started,
+    };
+  });
+  expect(result.empty).toEqual({ language: 'javascript', relevance: 0, tokens: [] });
+  expect(result.autoEmpty).toEqual({ language: null, relevance: 0, tokens: [] });
+  expect(result.invalid).toEqual({ name: 'RangeError', message: '지원하지 않는 구문 강조 언어입니다: brainfuck' });
+  expect(result.rebuilt).toBe(true);
+  expect(result.malformedCss).toEqual([true, true, true]);
+  expect(result.elapsed).toBeLessThan(2000);
+});
+
+test('syntax-highlight: 큰 입력은 승인·취소할 수 있고 최대 길이를 제한한다', async ({ page }) => {
+  await openTool(page, 'syntax-highlight');
+  const io = ioSection(page);
+  await io.getByLabel('언어').selectOption('css');
+  await io.locator('textarea.mono:not(.out)').evaluate((input) => {
+    input.value = '.item { color: red; margin: 1rem; }\n'.repeat(8_000);
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+  await expect(io.locator('.large-input-warning')).toBeVisible();
+  await io.getByRole('button', { name: '그래도 처리' }).click();
+  await expect(io.getByRole('button', { name: '취소' })).toBeVisible();
+  await io.getByRole('button', { name: '취소' }).click();
+  await expect(io.locator('.out-html')).toContainText('작업이 취소되었습니다.');
+
+  await io.locator('textarea.mono:not(.out)').evaluate((input) => {
+    input.value = 'a'.repeat(1_000_001);
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+  await io.getByRole('button', { name: '그래도 처리' }).click();
+  await expect(io.locator('.out-html')).toContainText('구문 강조 입력은 1,000,000자 이하여야 합니다.');
+});
 
 test('markdown-html: 미리보기는 샌드박스 iframe으로 렌더링', async ({ page }) => {
   await openTool(page, 'markdown-html');

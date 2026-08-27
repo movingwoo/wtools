@@ -124,6 +124,9 @@ only as a test oracle before cutover.
 Every replacement must pass the following checks:
 
 - Published standard vectors and the project's existing browser contract tests
+- For version-sensitive syntax tokenizers, keep the supported language baseline, official source, and
+  review date in `scripts/syntax-language-lock.json`; update rules only after representative current,
+  malformed, and adversarial corpora pass, never directly from an automated release notification
 - Cross-checks against an available independent oracle such as a Node.js or Python standard library,
   OpenSSL, or an unrelated implementation
 - Empty input, maximum boundaries, truncated input, invalid lengths, checksums, and tags, excessive nesting,

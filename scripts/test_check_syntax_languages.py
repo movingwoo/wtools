@@ -11,10 +11,10 @@ class SyntaxLanguageLockTests(unittest.TestCase):
 
   def test_repository_lock_is_valid(self):
     self.assertEqual(set(self.lock['profiles']), syntax_languages.SUPPORTED_LANGUAGES)
-    self.assertEqual(syntax_languages.check_age(self.lock, dt.date(2026, 12, 4)), [])
+    self.assertEqual(syntax_languages.check_age(self.lock, dt.date(2026, 12, 5)), [])
 
   def test_stale_review_fails(self):
-    errors = syntax_languages.check_age(self.lock, dt.date(2026, 12, 5))
+    errors = syntax_languages.check_age(self.lock, dt.date(2026, 12, 6))
     self.assertRegex(errors[0], r'reviewed \d+ days ago')
 
   def test_missing_profile_is_rejected(self):

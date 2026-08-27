@@ -1,6 +1,9 @@
 // 코드/문서 포맷터 정밀 테스트. 자체 구문 강조·Markdown 파서와 남은 포맷터 CDN 경로를 검증한다.
 import { test, expect, toolCases, openTool, ioSection, runIO, uploadFile } from '../helpers.js';
 import { makePng } from '../fixtures.js';
+import {
+  formatJavaScript, minifyJavaScript, formatCss, minifyCss, formatHtml, minifyHtml,
+} from '../../js/lib/code/formatter.js';
 
 const cases = [
   /* ---------- json-format ---------- */
@@ -25,9 +28,39 @@ const cases = [
   { name: 'code-format: JavaScript 포맷', tool: 'code-format', options: { '언어': 'js' }, inputs: 'function f(){return 1}', action: '포맷', output: 'function f() {\n  return 1\n}' },
   { name: 'code-format: JavaScript 4칸 들여쓰기', tool: 'code-format', options: { '언어': 'js', '들여쓰기': '4' }, inputs: 'function f(){return 1}', action: '포맷', output: 'function f() {\n    return 1\n}' },
   { name: 'code-format: JavaScript 압축 (주석 제거)', tool: 'code-format', options: { '언어': 'js' }, inputs: 'function f() {\n  // 주석\n  return 1;\n}', action: '압축', output: 'function f() { return 1; }' },
+  {
+    name: 'code-format: JavaScript 리터럴·정규식·주석 보존', tool: 'code-format', options: { '언어': 'js' }, action: '포맷',
+    inputs: 'const config={url:"https://example.com/a//b",pattern:/a\\/\\/*b/g,render:(name)=>`Hello ${name}`};if(config){console.log(config)}else{/* no-op */}',
+    output: 'const config = {\n  url: "https://example.com/a//b",\n  pattern: /a\\/\\/*b/g,\n  render: (name) => `Hello ${name}`\n};\nif (config) {\n  console.log(config)\n} else {\n  /* no-op */\n}',
+  },
+  {
+    name: 'code-format: JavaScript 압축 시 문자열 속 주석 기호 보존', tool: 'code-format', options: { '언어': 'js' }, action: '압축',
+    inputs: 'const url = "https://example.com/a//b"; // 제거\nconst pattern = /a\\/\\/*b/g;',
+    output: 'const url = "https://example.com/a//b"; const pattern = /a\\/\\/*b/g;',
+  },
   { name: 'code-format: CSS 포맷', tool: 'code-format', options: { '언어': 'css' }, inputs: 'body{color:red;margin:0}', action: '포맷', output: 'body {\n  color: red;\n  margin: 0\n}' },
   { name: 'code-format: CSS 압축 (주석·공백 제거)', tool: 'code-format', options: { '언어': 'css' }, inputs: '/* c */\nbody { color : red ; }\n', action: '압축', output: 'body{color:red}' },
+  {
+    name: 'code-format: CSS 중첩·함수·문자열 보존', tool: 'code-format', options: { '언어': 'css' }, action: '포맷',
+    inputs: '@media screen and (min-width:600px){.card,.item:hover{color:var(--accent,red);background:url("data:image/svg+xml;a;b");margin:calc(100% - 2rem)}}',
+    output: '@media screen and (min-width:600px) {\n  .card,\n  .item:hover {\n    color: var(--accent, red);\n    background: url("data:image/svg+xml;a;b");\n    margin: calc(100% - 2rem)\n  }\n}',
+  },
+  {
+    name: 'code-format: CSS 압축 시 문자열 속 구분자 보존', tool: 'code-format', options: { '언어': 'css' }, action: '압축',
+    inputs: '/* 제거 */ .card { content: "a;b:c"; background: url("data:a;b") ; }',
+    output: '.card{content:"a;b:c";background:url("data:a;b")}',
+  },
   { name: 'code-format: HTML 포맷', tool: 'code-format', options: { '언어': 'html' }, inputs: '<div><p>a</p></div>', action: '포맷', output: '<div>\n  <p>a</p>\n</div>' },
+  {
+    name: 'code-format: HTML 주석·속성·인라인 구조 보존', tool: 'code-format', options: { '언어': 'html' }, action: '포맷',
+    inputs: '<!doctype html><!--c--><main><p>Hello <strong>world</strong></p><img src="x>y"><section><span>x</span></section></main>',
+    output: '<!doctype html>\n<!--c-->\n<main>\n  <p>Hello <strong>world</strong></p>\n  <img src="x>y">\n  <section><span>x</span></section>\n</main>',
+  },
+  {
+    name: 'code-format: HTML 압축 시 pre 공백 보존', tool: 'code-format', options: { '언어': 'html' }, action: '압축',
+    inputs: '<div>  <p>a</p> </div><pre>  a\n    b</pre>',
+    output: '<div><p>a</p></div><pre>  a\n    b</pre>',
+  },
   { name: 'code-format: XML 포맷', tool: 'code-format', options: { '언어': 'xml' }, inputs: '<root><a x="1">t</a><b/></root>', action: '포맷', output: '<root>\n  <a x="1">t</a>\n  <b/>\n</root>' },
   { name: 'code-format: XML 압축', tool: 'code-format', options: { '언어': 'xml' }, inputs: '<root>\n  <a>t</a>\n</root>', action: '압축', output: '<root><a>t</a></root>' },
   { name: 'code-format: 잘못된 XML은 에러', tool: 'code-format', options: { '언어': 'xml' }, inputs: '<root><a></root>', action: '포맷', output: /^⚠ XML 파싱 오류: / },
@@ -589,6 +622,246 @@ test('code-format: XML 압축 → 포맷 왕복 보존', async ({ page }) => {
   expect(min).toBe('<root><a x="1">t</a><b/></root>');
   const back = await runIO(io, { inputs: min, action: '포맷' });
   expect(back).toBe(xml);
+});
+
+test('code-format: JavaScript 결과를 Node 파서·실행 결과와 교차 검증', async () => {
+  const source = [
+    'const url="https://example.com/a//b";',
+    'const pattern=/a\\/\\/*b/g;',
+    'const text=`outer ${`inner ${2+3}`}`;',
+    'let shifted=8;shifted<<=1;shifted>>=2;',
+    'const numbers=[1.,.5,1e3,1.2e-3,0xffn];',
+    'const data={url,source:pattern.source,text,shifted,numbers:numbers.map(String),nested:{items:[1,2,3]}};',
+  ].join('');
+  const formatted = formatJavaScript(source, { indentSize: 2 });
+  const minified = minifyJavaScript(source);
+  const evaluate = (code) => Function(`${code}\nreturn JSON.stringify(data);`)();
+  expect(evaluate(formatted)).toBe(evaluate(source));
+  expect(evaluate(minified)).toBe(evaluate(source));
+  expect(formatted).toContain('`outer ${`inner ${2+3}`}`');
+  expect(formatJavaScript('const view=<Panel>{items.map(item=><Row key={item.id}/>)}</Panel>;'))
+    .toContain('<Panel>{items.map(item=><Row key={item.id}/>)}</Panel>');
+
+  const asi = 'function boundary(){return\n{x:1}}';
+  expect(Function(`${formatJavaScript(asi)};return boundary();`)()).toBeUndefined();
+  expect(Function(`${minifyJavaScript(asi)};return boundary();`)()).toBeUndefined();
+  const semicolonless = 'let count=1\ncount++\n++count';
+  expect(Function(`${formatJavaScript(semicolonless)};return count;`)()).toBe(3);
+  expect(Function(`${minifyJavaScript(semicolonless)};return count;`)()).toBe(3);
+
+  const edgeCases = [
+    'globalThis.result=77 .toExponential()',
+    String.raw`const \u0061=1;globalThis.result=a`,
+    "let hit=false;if(true) /a/.test('a')&&(hit=true);globalThis.result=hit",
+    "let hit=false;{} /a/.test('a')&&(hit=true);globalThis.result=hit",
+    "let hit=false;class Example{} /a/.test('a')&&(hit=true);globalThis.result=hit",
+    'function f(){return/*\n*/42}globalThis.result=f()',
+    'let a=1,b=1;a/*\n*/++b;globalThis.result=[a,b]',
+    'const 𐐀=7;globalThis.result=𐐀',
+  ];
+  for (const edge of edgeCases) {
+    const execute = (code) => {
+      const box = {};
+      Function('globalThis', code)(box);
+      return box.result;
+    };
+    expect(execute(formatJavaScript(edge))).toEqual(execute(edge));
+    expect(execute(minifyJavaScript(edge))).toEqual(execute(edge));
+  }
+  const hashbang = '#!/usr/bin/env node\nconst value=1;';
+  expect(formatJavaScript(hashbang)).toMatch(/^#!\/usr\/bin\/env node\n/);
+  expect(minifyJavaScript(hashbang)).toMatch(/^#!\/usr\/bin\/env node\n/);
+});
+
+test('code-format: CSS 결과를 브라우저 CSSOM과 교차 검증', async ({ page }) => {
+  const source = '@media screen and (min-width:600px){.card,.item:hover{color:var(--accent,red);margin:calc(100% - 2rem)}}';
+  const outputs = [formatCss(source, { indentSize: 2 }), minifyCss(source)];
+  const parsed = await page.evaluate(([original, ...candidates]) => {
+    const cssom = (css) => {
+      const style = document.createElement('style');
+      const target = document.createElement('div');
+      target.className = 'card';
+      style.textContent = css;
+      document.head.append(style);
+      document.body.append(target);
+      const computed = getComputedStyle(target);
+      const result = {
+        rules: style.sheet.cssRules.length,
+        nestedRules: style.sheet.cssRules[0]?.cssRules?.length || 0,
+        color: computed.color,
+        margin: computed.margin,
+      };
+      style.remove();
+      target.remove();
+      return result;
+    };
+    return { original: cssom(original), candidates: candidates.map(cssom) };
+  }, [source, ...outputs]);
+  expect(parsed.candidates).toEqual([parsed.original, parsed.original]);
+
+  for (const edge of [
+    '.a :hover{color:red}',
+    '.a [data-x]{color:red}',
+    '.a{width:calc(1px + 2px)}',
+    '@font-face{font-family:x;src:url(x);unicode-range:U+0025-00FF}',
+    '.a{background:url(data:image/svg+xml;base64,AAAA)}',
+  ]) {
+    const candidates = [edge, formatCss(edge), minifyCss(edge)];
+    const rules = await page.evaluate((values) => values.map((css) => {
+      const sheet = new CSSStyleSheet();
+      sheet.replaceSync(css);
+      return [...sheet.cssRules].map((rule) => rule.cssText);
+    }), candidates);
+    expect(rules.slice(1)).toEqual([rules[0], rules[0]]);
+  }
+});
+
+test('code-format: HTML 결과를 DOMParser 구조와 교차 검증하고 raw 내용을 보존', async ({ page }) => {
+  const source = '<main><p>Hello <strong>world</strong></p><img src="x>y"><section><span>1 < 2</span></section></main>';
+  const outputs = [formatHtml(source, { indentSize: 2 }), minifyHtml(source)];
+  const snapshots = await page.evaluate(([original, ...candidates]) => {
+    const snapshot = (html) => {
+      const doc = new DOMParser().parseFromString(html, 'text/html');
+      const visit = (node) => {
+        if (node.nodeType === Node.TEXT_NODE) {
+          const value = node.parentElement?.matches('pre, textarea')
+            ? node.nodeValue : node.nodeValue.replace(/\s+/g, ' ').trim();
+          return value ? ['text', value] : null;
+        }
+        if (node.nodeType !== Node.ELEMENT_NODE) return null;
+        return [node.localName, [...node.attributes].map(({ name, value }) => [name, value]).sort(),
+          [...node.childNodes].map(visit).filter(Boolean)];
+      };
+      return [...doc.body.children].map(visit);
+    };
+    return { original: snapshot(original), candidates: candidates.map(snapshot) };
+  }, [source, ...outputs]);
+  expect(snapshots.candidates).toEqual([snapshots.original, snapshots.original]);
+
+  const raw = '<div><script>const value=`line 1\n  line 2`;</script><style>.a{content:"a;b:c"}</style><pre>  a\n    b</pre></div>';
+  const formatted = formatHtml(raw, { indentSize: 2 });
+  expect(formatted).toContain('`line 1\n  line 2`');
+  expect(formatted).toContain('content: "a;b:c"');
+  expect(formatted).toContain('<pre>  a\n    b</pre>');
+  expect(minifyHtml(raw)).toContain('<pre>  a\n    b</pre>');
+
+  for (const edge of [
+    '<span>a</span> <span>b</span>',
+    '<span>a</span><span>b</span>',
+    '<p>a<span> b </span>c</p>',
+  ]) {
+    const rendered = await page.evaluate((values) => values.map((html) => {
+      const host = document.createElement('div');
+      host.innerHTML = html;
+      document.body.append(host);
+      const result = { text: host.innerText, content: host.textContent };
+      host.remove();
+      return result;
+    }), [edge, formatHtml(edge), minifyHtml(edge)]);
+    expect(rendered.slice(1)).toEqual([rendered[0], rendered[0]]);
+  }
+
+  const dataScript = '<script type="text/x-template">{{ user  name }} // keep</script>';
+  expect(formatHtml(dataScript)).toBe(dataScript);
+  expect(minifyHtml(dataScript)).toBe(dataScript);
+  const quotedAttributeText = '<script data-note=" type=application/json src=/fake.js">const value=1;</script>';
+  expect(formatHtml(quotedAttributeText)).toContain('const value = 1;');
+  const importMap = '<script type="importmap"> { "imports": { "x": "/x.js" } } </script>';
+  for (const output of [formatHtml(importMap), minifyHtml(importMap)]) {
+    const value = output.match(/<script[^>]*>([\s\S]*)<\/script>/)?.[1];
+    expect(JSON.parse(value)).toEqual({ imports: { x: '/x.js' } });
+  }
+});
+
+test('code-format: 중첩 템플릿과 과대 결과를 제한한다', () => {
+  let nested = '`x`';
+  for (let index = 0; index < 300; index++) nested = '`${' + nested + '}`';
+  try {
+    formatJavaScript(nested);
+    throw new Error('중첩 제한이 적용되지 않았습니다.');
+  } catch (error) {
+    expect(error.code).toBe('FORMAT_NESTING');
+  }
+  try {
+    formatJavaScript('{'.repeat(30) + 'a;'.repeat(100) + '}'.repeat(30), { maxOutputLength: 1_000 });
+    throw new Error('출력 제한이 적용되지 않았습니다.');
+  } catch (error) {
+    expect(error.code).toBe('FORMAT_OUTPUT_LIMIT');
+  }
+});
+
+test('code-format: 과도한 중첩을 한국어로 거부', async ({ page }) => {
+  await openTool(page, 'code-format');
+  const io = ioSection(page);
+  await io.getByLabel('언어').selectOption('html');
+  await io.locator('textarea.mono:not(.out)').fill('<div>'.repeat(258) + '</div>'.repeat(258));
+  await io.getByRole('button', { name: '포맷', exact: true }).click();
+  await expect(io.locator('textarea.out')).toHaveValue('⚠ HTML 중첩이 너무 깊습니다. 중첩을 256단계 이하로 줄이세요.');
+});
+
+test('code-format: 큰 자체 포맷 작업은 Worker에서 실행하고 취소', async ({ page }) => {
+  await page.route('**/js/workers/code-format.js', async (route) => {
+    const response = await route.fetch();
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    await route.fulfill({ response });
+  });
+  await openTool(page, 'code-format');
+  const io = ioSection(page);
+  await io.getByLabel('언어').selectOption('js');
+  await io.locator('textarea.mono:not(.out)').evaluate((textarea) => {
+    textarea.value = 'const value={a:1,b:[2,3]};\n'.repeat(8_000);
+    textarea.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+  await io.getByRole('button', { name: '포맷', exact: true }).click();
+  await expect(io.locator('.large-input-warning')).toBeVisible();
+  await io.getByRole('button', { name: '그래도 처리' }).click();
+  await expect(io.getByRole('button', { name: '취소' })).toBeVisible();
+  await io.getByRole('button', { name: '취소' }).click();
+  await expect(io.locator('.io-status')).toHaveText('작업이 취소되었습니다.');
+
+  await io.locator('textarea.mono:not(.out)').evaluate((textarea) => {
+    textarea.value = 'a'.repeat(4 * 1024 * 1024 + 1);
+    textarea.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+  await io.getByRole('button', { name: '포맷', exact: true }).click();
+  await io.getByRole('button', { name: '그래도 처리' }).click();
+  await expect(io.locator('textarea.out')).toHaveValue('⚠ 코드 포맷터 입력은 4,194,304자 이하여야 합니다.');
+});
+
+test('code-format: 중간 크기 입력은 경고 없이 Worker에서 처리', async ({ page }) => {
+  let workerRequests = 0;
+  await page.route('**/js/workers/code-format.js', async (route) => {
+    workerRequests++;
+    await route.continue();
+  });
+  await openTool(page, 'code-format');
+  const io = ioSection(page);
+  await io.getByLabel('언어').selectOption('js');
+  await io.locator('textarea.mono:not(.out)').fill('a;'.repeat(1_100));
+  await io.getByRole('button', { name: '포맷', exact: true }).click();
+  await expect(io.locator('textarea.out')).not.toHaveValue('');
+  await expect(io.locator('.large-input-warning')).toBeHidden();
+  expect(workerRequests).toBe(1);
+});
+
+test('code-format: JavaScript·CSS·HTML 처리 중 js-beautify 외부 요청이 없다', async ({ page }) => {
+  const requests = [];
+  page.on('request', (request) => {
+    if (request.url().includes('js-beautify')) requests.push(request.url());
+  });
+  await openTool(page, 'code-format');
+  const io = ioSection(page);
+  for (const [lang, source] of [
+    ['js', 'const value={a:1};'],
+    ['css', '.a{color:red}'],
+    ['html', '<div><span>a</span></div>'],
+  ]) {
+    await io.getByLabel('언어').selectOption(lang);
+    await io.locator('textarea.mono:not(.out)').fill(source);
+    await io.getByRole('button', { name: '포맷', exact: true }).click();
+    await expect(io.locator('textarea.out')).not.toHaveValue('');
+  }
+  expect(requests).toEqual([]);
 });
 
 /* ---------- hex-viewer (파일 / 직접 입력) ---------- */

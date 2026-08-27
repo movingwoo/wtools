@@ -29,33 +29,6 @@ globalThis.WTOOLS_DEPENDENCIES = {
       "kind": "script",
       "tools": ["js/tools/cryptotools.js", "js/tools/encoding.js", "js/tools/pki.js"]
     },
-    "beautifyJs": {
-      "package": "js-beautify",
-      "version": "1.15.1",
-      "url": "https://cdn.jsdelivr.net/npm/js-beautify@1.15.1/js/lib/beautify.min.js",
-      "integrity": "sha384-FVx1WK8VHSskkzcjxDxmZKSJ3KQ8vYOZo+sirXFdjOxUq4Y4+9IrtCG8iiisHHfj",
-      "license": "MIT",
-      "kind": "script",
-      "tools": ["js/tools/devfmt-format.js"]
-    },
-    "beautifyCss": {
-      "package": "js-beautify",
-      "version": "1.15.1",
-      "url": "https://cdn.jsdelivr.net/npm/js-beautify@1.15.1/js/lib/beautify-css.min.js",
-      "integrity": "sha384-YkGkitXFTTE2YT+poOaBOfObka+86Q4ianXfq8SwPtTSW3SIFE4Ha5u33+xVK65+",
-      "license": "MIT",
-      "kind": "script",
-      "tools": ["js/tools/devfmt-format.js"]
-    },
-    "beautifyHtml": {
-      "package": "js-beautify",
-      "version": "1.15.1",
-      "url": "https://cdn.jsdelivr.net/npm/js-beautify@1.15.1/js/lib/beautify-html.min.js",
-      "integrity": "sha384-j7zhOGXtPN67K2CFiNW3h/EvKRoW14dRbO8Pj4f2089y8m2RoxS2l627sobb19d3",
-      "license": "MIT",
-      "kind": "script",
-      "tools": ["js/tools/devfmt-format.js"]
-    },
     "sqlFormatter": {
       "package": "sql-formatter",
       "version": "15.3.2",

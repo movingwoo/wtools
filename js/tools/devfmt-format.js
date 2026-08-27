@@ -3,6 +3,67 @@ import { tool, makeIO, h, formLabel, kvTable, loadScript, LIB, decodeInput, FMT_
 import { parseXML } from './dataformat.js';
 
 const CAT = '코드 포맷팅 / 개발 유틸리티';
+const CODE_FORMAT_WORKER_THRESHOLD = 2_000;
+const CODE_FORMAT_WARNING_THRESHOLD = 200_000;
+const CODE_FORMAT_MAX_INPUT_LENGTH = 4 * 1024 * 1024;
+
+let codeFormatterPromise;
+function loadCodeFormatter() {
+  return (codeFormatterPromise ??= import('../lib/code/formatter.js').catch(() => {
+    codeFormatterPromise = null;
+    throw new Error('코드 포맷터 엔진을 불러오지 못했습니다. 잠시 후 다시 시도하세요.');
+  }));
+}
+
+function formatCodeInWorker(text, lang, action, indentSize, signal) {
+  return new Promise((resolve, reject) => {
+    const worker = new Worker(new URL('../workers/code-format.js', import.meta.url), { type: 'module' });
+    let settled = false;
+    const finish = (callback, value) => {
+      if (settled) return;
+      settled = true;
+      signal?.removeEventListener('abort', abort);
+      worker.terminate();
+      callback(value);
+    };
+    const abort = () => finish(reject, new DOMException('작업이 취소되었습니다.', 'AbortError'));
+    worker.addEventListener('message', ({ data }) => {
+      if (data.error) {
+        const error = new Error(data.error);
+        error.code = data.code;
+        finish(reject, error);
+      } else finish(resolve, data.result);
+    }, { once: true });
+    worker.addEventListener('error', () => {
+      finish(reject, new Error('코드 포맷터 Worker를 실행하지 못했습니다.'));
+    }, { once: true });
+    signal?.addEventListener('abort', abort, { once: true });
+    if (signal?.aborted) abort();
+    else worker.postMessage({ text, lang, action, indentSize });
+  });
+}
+
+async function runInternalFormatter(text, lang, action, indentSize, signal) {
+  if (text.length >= CODE_FORMAT_WORKER_THRESHOLD)
+    return formatCodeInWorker(text, lang, action, indentSize, signal);
+  const formatter = await loadCodeFormatter();
+  if (signal?.aborted) throw new DOMException('작업이 취소되었습니다.', 'AbortError');
+  const functions = {
+    js: { fmt: formatter.formatJavaScript, min: formatter.minifyJavaScript },
+    css: { fmt: formatter.formatCss, min: formatter.minifyCss },
+    html: { fmt: formatter.formatHtml, min: formatter.minifyHtml },
+  };
+  return functions[lang][action](text, { indentSize });
+}
+
+function codeFormatterError(error, lang) {
+  const label = { js: 'JavaScript', css: 'CSS', html: 'HTML' }[lang] || '코드';
+  if (error?.code === 'FORMAT_NESTING')
+    return new Error(`${label} 중첩이 너무 깊습니다. 중첩을 256단계 이하로 줄이세요.`, { cause: error });
+  if (error?.code === 'FORMAT_OUTPUT_LIMIT')
+    return new Error(`${label} 포맷 결과가 16,777,216자를 초과합니다. 입력이나 중첩을 줄이세요.`, { cause: error });
+  return error;
+}
 
 /* ---------- JSON ---------- */
 function jsonTree(value, key) {
@@ -93,15 +154,19 @@ tool({
         { id: 'indent', label: '들여쓰기', type: 'select', values: [['2', '2칸'], ['4', '4칸']] },
       ],
       actions: [{ id: 'fmt', label: '포맷' }, { id: 'min', label: '압축' }],
-      outputRows: 12, autorun: false,
-      async process(text, o, action) {
+      outputRows: 12, autorun: false, cancelable: true,
+      largeInputThreshold: CODE_FORMAT_WARNING_THRESHOLD,
+      async process(text, o, action, signal) {
         if (!text.trim()) return '';
+        if (text.length > CODE_FORMAT_MAX_INPUT_LENGTH)
+          throw new Error('코드 포맷터 입력은 4,194,304자 이하여야 합니다.');
         const size = +o.indent;
         if (action === 'min') {
           switch (o.lang) {
-            case 'xml': case 'html': return text.replace(/>\s+</g, '><').replace(/\s{2,}/g, ' ').trim();
-            case 'css': return text.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\s*([{}:;,>])\s*/g, '$1').replace(/;}/g, '}').replace(/\s+/g, ' ').trim();
-            case 'js': return text.replace(/\/\/[^\n]*/g, '').replace(/\/\*[\s\S]*?\*\//g, '').split('\n').map((l) => l.trim()).filter(Boolean).join(' ');
+            case 'html': case 'css': case 'js':
+              try { return await runInternalFormatter(text, o.lang, action, size, signal); }
+              catch (error) { throw codeFormatterError(error, o.lang); }
+            case 'xml': return text.replace(/>\s+</g, '><').replace(/\s{2,}/g, ' ').trim();
             case 'sql': return text.replace(/\s+/g, ' ').trim();
             case 'yaml': return jsyaml.dump(jsyaml.load(text), { flowLevel: 0 }).trim();
           }
@@ -112,23 +177,22 @@ tool({
             return sqlFormatter.format(text, { tabWidth: size, keywordCase: 'upper' });
           }
           case 'js': {
-            await loadScript(LIB.beautifyJs);
-            return js_beautify(text, { indent_size: size });
+            try { return await runInternalFormatter(text, o.lang, action, size, signal); }
+            catch (error) { throw codeFormatterError(error, o.lang); }
           }
           case 'css': {
-            await loadScript(LIB.beautifyCss);
-            return css_beautify(text, { indent_size: size });
+            try { return await runInternalFormatter(text, o.lang, action, size, signal); }
+            catch (error) { throw codeFormatterError(error, o.lang); }
           }
           case 'html': {
-            await loadScript(LIB.beautifyJs);
-            await loadScript(LIB.beautifyCss);
-            await loadScript(LIB.beautifyHtml);
-            return html_beautify(text, { indent_size: size });
+            try { return await runInternalFormatter(text, o.lang, action, size, signal); }
+            catch (error) { throw codeFormatterError(error, o.lang); }
           }
           case 'xml': return fmtXml(text, ' '.repeat(size));
           case 'yaml': return jsyaml.dump(jsyaml.load(text), { indent: size, lineWidth: 120 });
         }
       },
+      note: 'JavaScript·CSS·HTML은 외부 요청 없이 브라우저 내부 자체 엔진으로 처리합니다. 2천 자 이상은 취소 가능한 Worker를 사용하며 입력은 최대 4,194,304자, 결과는 최대 16,777,216자입니다.',
     });
   },
 });

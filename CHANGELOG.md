@@ -14,6 +14,12 @@
 - Markdown → HTML 변환기의 블록·인라인 문법, GFM 표·작업 목록·취소선, raw HTML,
   링크, 코드 펜스와 중첩 목록을 자체 파서로 교체해 `marked 12.0.2` 런타임 CDN
   의존성을 제거하고 큰 입력은 취소 가능한 Worker에서 처리
+- JavaScript·CSS·HTML 포맷/압축을 문자열·주석·정규식·template literal·중첩 블록과
+  script/style/pre/textarea raw 내용을 보존하는 자체 토크나이저 기반 엔진으로 교체해
+  `js-beautify 1.15.1`의 세 런타임 CDN 의존성을 제거
+- JavaScript ASI·Unicode 식별자·hashbang·제어문 뒤 정규식, CSS descendant 선택자·
+  `calc()`·`unicode-range`·비인용 URL, HTML 인라인 공백·typed script data block을
+  보존하고 2천 자 Worker 전환 및 16,777,216자 결과 상한을 적용
 
 ### 보안
 
@@ -33,15 +39,20 @@
   외부 요청 없음·오프라인 실행 회귀 테스트를 추가하고 제거된 highlight.js 캐시를 정리
 - CSS 블록의 단독 하이픈이 예외를 내던 경로를 수정하고, 밝은 테마의 모든 구문 토큰을
   WCAG AA 4.5:1 이상으로 조정하며 적대 입력·최신 어휘·문자열·취소·상한 회귀를 추가
-- 22개 언어의 지원 버전·공식 출처·검토일을 `syntax-language-lock.json`에 고정하고 월간
-  유지보수 작업에서 활성 언어 릴리스와 100일 수동 문법 검토 기한을 확인
+- 구문 강조·코드 포매터의 지원 버전·공식 출처·검토일을 `syntax-language-lock.json`에
+  고정하고 월간 유지보수 작업에서 ECMAScript·CSS를 포함한 활성 언어 릴리스와 100일
+  수동 문법 검토 기한을 확인
 - 자체 Markdown 파서를 CommonMark 0.31.2 전체 652개·GFM 공개 벡터와 기존
   `marked 12.0.2` 출력 코퍼스로 진단 비교하고 빈 입력, 잘못 닫힌 인라인 문법,
   탭·인용문·표·참조 링크, 5천 개 목록 항목 및 샌드박스 미리보기 회귀 테스트를 추가
+- JavaScript 결과를 Node 파서·실행 결과, CSS 결과를 브라우저 CSSOM, HTML 결과를
+  DOMParser 구조와 교차 검증하고 리터럴·주석·중첩·raw 내용·과대 중첩·오프라인 실행,
+  2천 자 Worker 전환·취소, 4,194,304자 입력·16,777,216자 결과 상한과 의미 보존
+  적대 입력 및 Chromium·Firefox·WebKit 의미 보존 회귀 테스트를 추가
 - CommonMark·GFM 버전과 공식 벡터 SHA-384를 lock으로 고정하고 월간 유지보수 작업에서
   최신 안정 릴리스·벡터 변조 여부와 Markdown 대표 회귀를 확인
 - 서비스 워커 외부 캐시 세대를 갱신하되 현재 의존성의 검증된 이전 캐시는 승계하고,
-  제거된 Markdown 라이브러리 응답은 삭제하도록 오프라인 회귀 테스트를 추가
+  제거된 Markdown·구문 강조·코드 포맷 라이브러리 응답은 삭제하도록 오프라인 회귀 테스트를 추가
 
 ## [1.4.0] - 2026-08-25
 

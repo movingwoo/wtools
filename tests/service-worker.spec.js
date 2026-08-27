@@ -10,6 +10,9 @@ const EXTERNAL_URL = 'https://cdn.jsdelivr.net/npm/js-yaml@4.3.1/dist/js-yaml.mi
 const REMOVED_MARKED_URL = 'https://cdn.jsdelivr.net/npm/marked@12.0.2/marked.min.js';
 const REMOVED_HIGHLIGHT_URL = 'https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js';
 const REMOVED_HIGHLIGHT_CSS_URL = 'https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark-dimmed.min.css';
+const REMOVED_BEAUTIFY_JS_URL = 'https://cdn.jsdelivr.net/npm/js-beautify@1.15.1/js/lib/beautify.min.js';
+const REMOVED_BEAUTIFY_CSS_URL = 'https://cdn.jsdelivr.net/npm/js-beautify@1.15.1/js/lib/beautify-css.min.js';
+const REMOVED_BEAUTIFY_HTML_URL = 'https://cdn.jsdelivr.net/npm/js-beautify@1.15.1/js/lib/beautify-html.min.js';
 const VENDORED_PATH = '/assets/vendor/smol-toml-1.6.1.mjs';
 const emojiLock = JSON.parse(readFileSync(new URL('../scripts/emoji-data-lock.json', import.meta.url), 'utf8'));
 const emojiCount = Object.values(emojiLock.groupCounts).reduce((sum, count) => sum + count, 0);
@@ -46,11 +49,22 @@ test('설치 시 검증된 자산만 캐시하고 이전 버전 캐시를 삭제
       new Response('stale highlight response', { status: 200 }));
     await latestCache.put('https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark-dimmed.min.css',
       new Response('stale highlight theme', { status: 200 }));
+    const formatterCache = await caches.open('wtools-external-v7');
+    await formatterCache.put(externalUrl, response.clone());
+    await formatterCache.put('https://cdn.jsdelivr.net/npm/js-beautify@1.15.1/js/lib/beautify.min.js',
+      new Response('stale JavaScript beautifier', { status: 200 }));
+    await formatterCache.put('https://cdn.jsdelivr.net/npm/js-beautify@1.15.1/js/lib/beautify-css.min.js',
+      new Response('stale CSS beautifier', { status: 200 }));
+    await formatterCache.put('https://cdn.jsdelivr.net/npm/js-beautify@1.15.1/js/lib/beautify-html.min.js',
+      new Response('stale HTML beautifier', { status: 200 }));
   }, EXTERNAL_URL);
 
   await page.goto('/');
   await waitForControl(page);
-  const state = await page.evaluate(async ({ externalUrl, removedMarkedUrl, removedHighlightUrl, removedHighlightCssUrl, vendoredPath }) => {
+  const state = await page.evaluate(async ({
+    externalUrl, removedMarkedUrl, removedHighlightUrl, removedHighlightCssUrl,
+    removedBeautifyJsUrl, removedBeautifyCssUrl, removedBeautifyHtmlUrl, vendoredPath,
+  }) => {
     const keys = await caches.keys();
     const shellName = keys.find((key) => key.startsWith('wtools-shell-'));
     const shell = await caches.open(shellName);
@@ -58,7 +72,7 @@ test('설치 시 검증된 자산만 캐시하고 이전 버전 캐시를 삭제
     const entry = globalThis.WTOOLS_DEPENDENCIES.vendored.smolToml;
     const digest = await crypto.subtle.digest('SHA-384', await vendorResponse.clone().arrayBuffer());
     const integrity = 'sha384-' + btoa(String.fromCharCode(...new Uint8Array(digest)));
-    const external = await caches.open('wtools-external-v7');
+    const external = await caches.open('wtools-external-v8');
     return {
       keys,
       vendorIntegrity: integrity,
@@ -67,6 +81,9 @@ test('설치 시 검증된 자산만 캐시하고 이전 버전 캐시를 삭제
       removedMarkedCached: !!await external.match(removedMarkedUrl),
       removedHighlightCached: !!await external.match(removedHighlightUrl),
       removedHighlightCssCached: !!await external.match(removedHighlightCssUrl),
+      removedBeautifyJsCached: !!await external.match(removedBeautifyJsUrl),
+      removedBeautifyCssCached: !!await external.match(removedBeautifyCssUrl),
+      removedBeautifyHtmlCached: !!await external.match(removedBeautifyHtmlUrl),
       shellName,
     };
   }, {
@@ -74,6 +91,9 @@ test('설치 시 검증된 자산만 캐시하고 이전 버전 캐시를 삭제
     removedMarkedUrl: REMOVED_MARKED_URL,
     removedHighlightUrl: REMOVED_HIGHLIGHT_URL,
     removedHighlightCssUrl: REMOVED_HIGHLIGHT_CSS_URL,
+    removedBeautifyJsUrl: REMOVED_BEAUTIFY_JS_URL,
+    removedBeautifyCssUrl: REMOVED_BEAUTIFY_CSS_URL,
+    removedBeautifyHtmlUrl: REMOVED_BEAUTIFY_HTML_URL,
     vendoredPath: VENDORED_PATH,
   });
   expect(state.keys).not.toContain('wtools-shell-v0');
@@ -83,12 +103,16 @@ test('설치 시 검증된 자산만 캐시하고 이전 버전 캐시를 삭제
   expect(state.keys).not.toContain('wtools-external-v4');
   expect(state.keys).not.toContain('wtools-external-v5');
   expect(state.keys).not.toContain('wtools-external-v6');
+  expect(state.keys).not.toContain('wtools-external-v7');
   expect(state.shellName).toMatch(/^wtools-shell-[0-9a-f]{12}$/);
   expect(state.vendorIntegrity).toBe(state.expectedVendorIntegrity);
   expect(state.externalCached).toBe(true);
   expect(state.removedMarkedCached).toBe(false);
   expect(state.removedHighlightCached).toBe(false);
   expect(state.removedHighlightCssCached).toBe(false);
+  expect(state.removedBeautifyJsCached).toBe(false);
+  expect(state.removedBeautifyCssCached).toBe(false);
+  expect(state.removedBeautifyHtmlCached).toBe(false);
 
   await context.setOffline(true);
   const externalStatus = await page.evaluate((url) => fetch(url).then((response) => response.status), EXTERNAL_URL);
@@ -126,6 +150,24 @@ test('설치 시 검증된 자산만 캐시하고 이전 버전 캐시를 삭제
   await syntax.locator('textarea.mono:not(.out)').fill('const offline = true;');
   await expect(syntax.locator('.syntax-highlight code')).toHaveText('const offline = true;');
   await expect(syntax.locator('.syn-keyword')).toHaveText('const');
+
+  await page.evaluate(() => { location.hash = '#/tool/code-format'; });
+  const formatter = page.locator('#content .io');
+  await formatter.getByLabel('언어').selectOption('js');
+  await formatter.locator('textarea.mono:not(.out)').fill('const value={url:"https://example.com/a//b",items:[1,2]};');
+  await formatter.getByRole('button', { name: '포맷', exact: true }).click();
+  await expect(formatter.locator('textarea.out')).toHaveValue(/url: "https:\/\/example\.com\/a\/\/b"/);
+  const workerFormatted = await page.evaluate(() => new Promise((resolve, reject) => {
+    const worker = new Worker('/js/workers/code-format.js', { type: 'module' });
+    worker.addEventListener('message', ({ data }) => {
+      worker.terminate();
+      if (data.error) reject(new Error(data.error));
+      else resolve(data.result);
+    }, { once: true });
+    worker.addEventListener('error', reject, { once: true });
+    worker.postMessage({ text: '.a{color:red}', lang: 'css', action: 'fmt', indentSize: 2 });
+  }));
+  expect(workerFormatted).toBe('.a {\n  color: red\n}');
 });
 
 test('오프라인에서 직접 도구 URL 새로고침과 navigation fallback을 복구한다', async ({ page, context }) => {

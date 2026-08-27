@@ -1,9 +1,9 @@
 {
   "schemaVersion": 1,
-  "reviewedOn": "2026-08-26",
+  "reviewedOn": "2026-08-27",
   "maxReviewAgeDays": 100,
   "profiles": {
-    "javascript": { "version": "ECMAScript 2026", "source": "https://tc39.es/ecma262/" },
+    "javascript": { "version": "ECMAScript 2027 Draft", "source": "https://tc39.es/ecma262/" },
     "typescript": { "version": "7.0", "source": "https://devblogs.microsoft.com/typescript/announcing-typescript-7-0/" },
     "python": { "version": "3.14", "source": "https://docs.python.org/3.14/reference/lexical_analysis.html" },
     "java": { "version": "Java SE 26", "source": "https://docs.oracle.com/en/java/javase/26/docs/specs/jls/jls-3.html" },
@@ -19,7 +19,7 @@
     "sql": { "version": "SQL:2023 공통 어휘", "source": "https://www.iso.org/standard/76583.html" },
     "html": { "version": "WHATWG Living Standard", "source": "https://html.spec.whatwg.org/" },
     "xml": { "version": "XML 1.0 Fifth Edition", "source": "https://www.w3.org/TR/xml/" },
-    "css": { "version": "CSS Snapshot 2025", "source": "https://www.w3.org/TR/css-2025/" },
+    "css": { "version": "CSS Snapshot 2026 Editor's Draft", "source": "https://drafts.csswg.org/css-2026/" },
     "json": { "version": "RFC 8259", "source": "https://www.rfc-editor.org/rfc/rfc8259" },
     "yaml": { "version": "1.2.2", "source": "https://yaml.org/spec/1.2.2/" },
     "bash": { "version": "5.3", "source": "https://www.gnu.org/software/bash/manual/" },
@@ -27,6 +27,18 @@
     "markdown": { "version": "CommonMark 0.31.2", "source": "https://spec.commonmark.org/0.31.2/" }
   },
   "releaseChecks": {
+    "javascript": {
+      "url": "https://tc39.es/ecma262/",
+      "pattern": "ECMAScript[^0-9]{0,80}(20\\d{2})",
+      "expected": "2027",
+      "selection": "first"
+    },
+    "css": {
+      "url": "https://drafts.csswg.org/css-2026/",
+      "pattern": "CSS Snapshot\\s+(20\\d{2})",
+      "expected": "2026",
+      "selection": "first"
+    },
     "typescript": {
       "url": "https://www.typescriptlang.org/",
       "pattern": "TypeScript(?:\\s|<!--[^>]*-->)+(\\d+\\.\\d+)",

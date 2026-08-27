@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validate syntax-highlighter language baselines and review current releases."""
+"""Validate syntax-sensitive engine baselines and review current releases."""
 
 from __future__ import annotations
 
@@ -15,7 +15,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 LOCK_PATH = ROOT / 'scripts' / 'syntax-language-lock.json'
-USER_AGENT = 'W-Tools syntax language audit (https://github.com/movingwoo/wtools)'
+USER_AGENT = 'W-Tools syntax engine audit (https://github.com/movingwoo/wtools)'
 SUPPORTED_LANGUAGES = {
   'javascript', 'typescript', 'python', 'java', 'c', 'cpp', 'csharp', 'go', 'rust',
   'kotlin', 'swift', 'php', 'ruby', 'sql', 'html', 'xml', 'css', 'json', 'yaml',
@@ -110,7 +110,7 @@ def check_latest(lock: dict, fetch=request_text) -> list[str]:
 
 
 def main() -> int:
-  parser = argparse.ArgumentParser(description='Validate syntax-highlighter language profiles.')
+  parser = argparse.ArgumentParser(description='Validate syntax-sensitive engine language profiles.')
   parser.add_argument('--check-age', action='store_true', help='fail when the manual review is stale')
   parser.add_argument('--check-latest', action='store_true', help='compare tracked releases with official sources')
   args = parser.parse_args()

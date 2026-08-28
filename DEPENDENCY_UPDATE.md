@@ -28,16 +28,18 @@ one of those reviews becomes older than 100 days. A release archive is published
 The syntax highlighter and code formatter keep their language and standard baselines, official source URLs, and review date
 in `scripts/syntax-language-lock.json`. The monthly workflow compares actively released language families
 with their official current-version pages and fails when the full manual grammar review becomes older than
-100 days. Release detection opens a review; it never rewrites keyword or tokenizer rules automatically.
+100 days. SQL checks track the ISO/IEC 9075-2 publication, its published corrigendum and next-edition stage,
+plus the current PostgreSQL, MySQL, and SQLite documentation. Release detection opens a review; it never
+rewrites keyword or tokenizer rules automatically.
 
-## 2026-08-27 review record
+## 2026-08-28 review record
 
-- OSV and GitHub Global Security Advisories reported no known vulnerability for the 23 distinct pinned
+- OSV and GitHub Global Security Advisories reported no known vulnerability for the 22 distinct pinned
   runtime, vendored, and test package versions.
 - npm latest matched 12 pins. The review queue contains axe-core 4.13.0, bcryptjs 3.0.3,
   brotli-compress 2.2.2, fflate 0.8.3, js-yaml 5.4.1,
   jsonpath-plus 10.4.0, openpgp 6.3.1, pako 3.0.1, smol-toml 1.8.0,
-  sql-formatter 15.8.2, and z-schema 12.4.3. These are review candidates, not automatically approved
+  and z-schema 12.4.4. These are review candidates, not automatically approved
   upgrades; major releases and format-sensitive patches require their tool vectors and minimum browsers.
 - npm marks crypto-js 4.2.0 and jsrsasign 11.1.5 as no longer maintained. Their pinned versions have no
   known advisory in the two queried databases, and their first-party replacement work remains tracked in

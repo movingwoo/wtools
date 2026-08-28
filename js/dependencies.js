@@ -29,15 +29,6 @@ globalThis.WTOOLS_DEPENDENCIES = {
       "kind": "script",
       "tools": ["js/tools/cryptotools.js", "js/tools/encoding.js", "js/tools/pki.js"]
     },
-    "sqlFormatter": {
-      "package": "sql-formatter",
-      "version": "15.3.2",
-      "url": "https://cdn.jsdelivr.net/npm/sql-formatter@15.3.2/dist/sql-formatter.min.js",
-      "integrity": "sha384-7mUXtMlypVs4NSv+ZCUHAniscLZNgJXAaaOQrdOuYqKA6LvRVSlgbYyiMX0xyHuz",
-      "license": "MIT",
-      "kind": "script",
-      "tools": ["js/tools/devfmt-format.js"]
-    },
     "pako": {
       "package": "pako",
       "version": "2.1.0",

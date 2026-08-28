@@ -16,6 +16,7 @@ test('자체 코드 포매터가 브라우저별 의미와 공백을 보존한�
   await page.goto('/');
   const result = await page.evaluate(async (paths) => {
     const formatter = await import('/js/lib/code/formatter.js');
+    const sqlFormatter = await import('/js/lib/code/sql-formatter.js');
     const execute = (path) => new Promise((resolve, reject) => {
       globalThis.result = undefined;
       const script = document.createElement('script');
@@ -54,6 +55,10 @@ test('자체 코드 포매터가 브라우저별 의미와 공백을 보존한�
       css: cssRules,
       html: htmlText,
       dataScript: formatter.formatHtml('<script type="text/x-template">{{ user  name }}</script>'),
+      sql: [
+        sqlFormatter.formatSql("select id,name from users where note='a  b'"),
+        sqlFormatter.minifySql("SELECT id,\n  name FROM users WHERE note = 'a  b'"),
+      ],
     };
   }, modulePaths);
 
@@ -61,4 +66,8 @@ test('자체 코드 포매터가 브라우저별 의미와 공백을 보존한�
   expect(result.css.slice(1)).toEqual([result.css[0], result.css[0]]);
   expect(result.html.slice(1)).toEqual([result.html[0], result.html[0]]);
   expect(result.dataScript).toBe('<script type="text/x-template">{{ user  name }}</script>');
+  expect(result.sql).toEqual([
+    "SELECT\n  id,\n  name\nFROM\n  users\nWHERE\n  note = 'a  b'",
+    "SELECT id, name FROM users WHERE note = 'a  b'",
+  ]);
 });

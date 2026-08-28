@@ -15,7 +15,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 LOCK_PATH = ROOT / 'scripts' / 'syntax-language-lock.json'
-USER_AGENT = 'W-Tools syntax engine audit (https://github.com/movingwoo/wtools)'
+USER_AGENT = 'curl/8.0 W-Tools-syntax-audit/1.0 (https://github.com/movingwoo/wtools)'
 SUPPORTED_LANGUAGES = {
   'javascript', 'typescript', 'python', 'java', 'c', 'cpp', 'csharp', 'go', 'rust',
   'kotlin', 'swift', 'php', 'ruby', 'sql', 'html', 'xml', 'css', 'json', 'yaml',
@@ -51,17 +51,18 @@ def validate_lock(data: dict) -> None:
       raise ValueError(f'{language}.version must be a non-empty string')
     if not isinstance(profile['source'], str) or not profile['source'].startswith('https://'):
       raise ValueError(f'{language}.source must be an HTTPS URL')
-  for language, check in data['releaseChecks'].items():
+  for check_id, check in data['releaseChecks'].items():
+    language = check_id.split(':', 1)[0]
     if language not in SUPPORTED_LANGUAGES:
-      raise ValueError(f'unknown release check language: {language}')
+      raise ValueError(f'unknown release check language: {check_id}')
     if set(check) != {'url', 'pattern', 'expected', 'selection'}:
-      raise ValueError(f'{language} release check has unexpected fields')
+      raise ValueError(f'{check_id} release check has unexpected fields')
     if not check['url'].startswith('https://'):
-      raise ValueError(f'{language}.url must be an HTTPS URL')
+      raise ValueError(f'{check_id}.url must be an HTTPS URL')
     if check['selection'] not in {'first', 'max-version'}:
-      raise ValueError(f'{language}.selection must be first or max-version')
+      raise ValueError(f'{check_id}.selection must be first or max-version')
     if not isinstance(check['expected'], str) or not check['expected']:
-      raise ValueError(f'{language}.expected must be a non-empty string')
+      raise ValueError(f'{check_id}.expected must be a non-empty string')
     re.compile(check['pattern'], re.IGNORECASE)
 
 
@@ -99,13 +100,13 @@ def extract_version(text: str, check: dict) -> str:
 
 def check_latest(lock: dict, fetch=request_text) -> list[str]:
   errors = []
-  for language, check in lock['releaseChecks'].items():
+  for check_id, check in lock['releaseChecks'].items():
     try:
       current = extract_version(fetch(check['url']), check)
       if current != check['expected']:
-        errors.append(f'{language}: reviewed {check["expected"]}, current {current}')
+        errors.append(f'{check_id}: reviewed {check["expected"]}, current {current}')
     except (OSError, ValueError, urllib.error.URLError) as error:
-      errors.append(f'{language}: latest-version check failed: {error}')
+      errors.append(f'{check_id}: latest-version check failed: {error}')
   return errors
 
 

@@ -3,7 +3,11 @@ self.addEventListener('message', async ({ data }) => {
     if (typeof data?.text !== 'string' || data.text.length > 4 * 1024 * 1024)
       throw new Error('Formatter input exceeds 4,194,304 characters');
     let formatter;
-    if (data.lang === 'sql') {
+    if (data.lang === 'yaml') {
+      const yaml = await import('../lib/data/yaml.js');
+      formatter = (text, options) => yaml.dump(yaml.load(text), data.action === 'min'
+        ? { flowLevel: 0 } : { indent: options.indentSize, lineWidth: 120 });
+    } else if (data.lang === 'sql') {
       const sql = await import('../lib/code/sql-formatter.js');
       formatter = data.action === 'fmt' ? sql.formatSql : data.action === 'min' ? sql.minifySql : null;
     } else {

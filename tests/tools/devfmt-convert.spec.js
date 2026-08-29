@@ -118,6 +118,22 @@ const cases = [
     action: 'run → compose',
     output: 'services:\n  db:\n    image: postgres:16\n    container_name: db\n    command: postgres -c max_connections=200\n    volumes:\n      - ./data:/var/lib/postgresql/data\n',
   },
+  {
+    name: 'docker-convert: Compose 값은 셸 명령 주입 없이 인용', tool: 'docker-convert',
+    inputs: "services:\n  web:\n    image: 'alpine; echo IMAGE_INJECTION'\n    container_name: 'safe; echo NAME_INJECTION'\n    environment:\n      NOTE: \"a'b\"\n    command: [sh, -c, 'echo $HOME; touch /tmp/injected']\n",
+    action: 'compose → run',
+    output: "docker run -d \\\n  --name 'safe; echo NAME_INJECTION' \\\n  -e 'NOTE=a'\\''b' \\\n  'alpine; echo IMAGE_INJECTION' \\\n  sh \\\n  -c \\\n  'echo $HOME; touch /tmp/injected'",
+  },
+  {
+    name: 'docker-convert: 구조화된 환경값은 거부', tool: 'docker-convert',
+    inputs: 'services:\n  web:\n    image: alpine\n    environment:\n      BAD: {nested: value}\n',
+    action: 'compose → run', error: 'environment 값은 문자열, 숫자, 불리언 또는 null이어야 합니다.',
+  },
+  {
+    name: 'docker-convert: 비어 있는 services는 거부', tool: 'docker-convert',
+    inputs: 'services: {}\n', action: 'compose → run',
+    error: 'Compose services에 서비스가 하나 이상 필요합니다.',
+  },
   { name: 'docker-convert: 이미지가 없으면 에러', tool: 'docker-convert', inputs: 'docker run -d --name web', action: 'run → compose', error: '이미지 이름을 찾지 못했습니다.' },
 ];
 

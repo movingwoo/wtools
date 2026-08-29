@@ -10,6 +10,12 @@ const cases = [
   { name: 'data-convert: JSON → YAML', tool: 'data-convert', options: { '입력 포맷': 'json', '출력 포맷': 'yaml' }, inputs: JSON_SRC, output: YAML_SRC },
   { name: 'data-convert: YAML → JSON', tool: 'data-convert', options: { '입력 포맷': 'yaml', '출력 포맷': 'json' }, inputs: YAML_SRC, output: JSON_PRETTY },
   {
+    name: 'data-convert: YAML 앵커·merge·블록 문자열', tool: 'data-convert',
+    options: { '입력 포맷': 'yaml', '출력 포맷': 'json' },
+    inputs: 'base: &base\n  enabled: true\nitem:\n  <<: *base\n  note: |-\n    첫 줄\n    둘째 줄\n',
+    output: '{\n  "base": {\n    "enabled": true\n  },\n  "item": {\n    "enabled": true,\n    "note": "첫 줄\\n둘째 줄"\n  }\n}',
+  },
+  {
     name: 'data-convert: JSON → XML', tool: 'data-convert', options: { '입력 포맷': 'json', '출력 포맷': 'xml' }, inputs: JSON_SRC,
     output: '<?xml version="1.0" encoding="UTF-8"?>\n<root>\n  <name>WTools</name>\n  <version>1</version>\n  <tags>web</tags>\n  <tags>tools</tags>\n</root>',
   },
@@ -86,6 +92,9 @@ const cases = [
     inputs: 'id,note\n1,"값"oops', error: 'CSV 구문 오류: 2행의 닫는 따옴표 뒤에는 구분자나 줄바꿈만 올 수 있습니다.',
   },
   { name: 'data-convert: 잘못된 JSON은 에러', tool: 'data-convert', options: { '입력 포맷': 'json', '출력 포맷': 'yaml' }, inputs: '{bad json', output: /^⚠ .*JSON/ },
+  { name: 'data-convert: YAML 중복 키는 행 번호로 에러', tool: 'data-convert', options: { '입력 포맷': 'yaml', '출력 포맷': 'json' }, inputs: 'a: 1\na: 2\n', error: 'YAML 구문 오류: 키 "a"가 중복되었습니다. (2행)' },
+  { name: 'data-convert: YAML 사용자 태그는 안전하게 거부', tool: 'data-convert', options: { '입력 포맷': 'yaml', '출력 포맷': 'json' }, inputs: 'value: !javascript alert(1)', error: 'YAML 구문 오류: 안전한 데이터 태그만 지원합니다: !javascript (1행)' },
+  { name: 'data-convert: YAML 다중 문서는 전용 API 안내와 함께 거부', tool: 'data-convert', options: { '입력 포맷': 'yaml', '출력 포맷': 'json' }, inputs: '---\na: 1\n---\nb: 2\n', error: 'YAML 구문 오류: load()에는 문서 하나만 입력할 수 있습니다. 다중 문서는 loadAll()을 사용하세요.' },
 
   /* ---------- JSON Lines / NDJSON ---------- */
   {
@@ -516,6 +525,161 @@ test('data-convert: JSON → YAML → JSON 왕복 보존', async ({ page }) => {
   expect(JSON.parse(back)).toEqual(JSON.parse(JSON_SRC));
 });
 
+test('YAML 1.2: 공식 YAML Test Suite 공개 벡터를 파싱한다', async ({ page }) => {
+  await page.goto('/');
+  // yaml/yaml-test-suite data-2022-01-17에서 W-Tools의 안전한 데이터 태그 범위를
+  // 대표하는 공개 벡터를 ID와 함께 고정했다.
+  const vectors = [
+    { id: '229Q', yaml: '-\n  name: Mark McGwire\n  hr:   65\n  avg:  0.278\n-\n  name: Sammy Sosa\n  hr:   63\n  avg:  0.288\n', expected: [{ name: 'Mark McGwire', hr: 65, avg: 0.278 }, { name: 'Sammy Sosa', hr: 63, avg: 0.288 }] },
+    { id: 'FQ7F', yaml: '- Mark McGwire\n- Sammy Sosa\n- Ken Griffey\n', expected: ['Mark McGwire', 'Sammy Sosa', 'Ken Griffey'] },
+    { id: 'SYW4', yaml: 'hr:  65    # Home runs\navg: 0.278 # Batting average\nrbi: 147   # Runs Batted In\n', expected: { hr: 65, avg: 0.278, rbi: 147 } },
+    { id: '54T7', yaml: '{foo: you, bar: far}\n', expected: { foo: 'you', bar: 'far' } },
+    { id: '5KJE', yaml: '- [ one, two, ]\n- [three ,four]\n', expected: [['one', 'two'], ['three', 'four']] },
+    { id: '3GZX', yaml: 'First occurrence: &anchor Foo\nSecond occurrence: *anchor\nOverride anchor: &anchor Bar\nReuse anchor: *anchor\n', expected: { 'First occurrence': 'Foo', 'Second occurrence': 'Foo', 'Override anchor': 'Bar', 'Reuse anchor': 'Bar' } },
+    { id: '7BUB', yaml: '---\nhr:\n  - Mark McGwire\n  # Following node labeled SS\n  - &SS Sammy Sosa\nrbi:\n  - *SS # Subsequent occurrence\n  - Ken Griffey\n', expected: { hr: ['Mark McGwire', 'Sammy Sosa'], rbi: ['Sammy Sosa', 'Ken Griffey'] } },
+    { id: '4WA9', yaml: '- aaa: |2\n    xxx\n  bbb: |\n    xxx\n', expected: [{ aaa: 'xxx\n', bbb: 'xxx\n' }] },
+    { id: 'G992', yaml: '>\n folded\n text\n\n\n', expected: 'folded text\n' },
+    { id: 'F8F9', yaml: 'strip: |-\n  # text\n  \nclip: |\n  # text\n \nkeep: |+\n  # text\n\n', expected: { strip: '# text', clip: '# text\n', keep: '# text\n\n' } },
+    { id: 'P2AD', yaml: '- | # Empty header\n literal\n- >1 # Indentation indicator\n  folded\n- |+ # Chomping indicator\n keep\n\n- >1- # Both indicators\n  strip\n', expected: ['literal\n', ' folded\n', 'keep\n\n', ' strip'] },
+    { id: 'U3C3', yaml: '%TAG !yaml! tag:yaml.org,2002:\n---\n!yaml!str "foo"\n', expected: 'foo' },
+    { id: '2AUY', yaml: ' - !!str a\n - b\n - !!int 42\n - d\n', expected: ['a', 'b', 42, 'd'] },
+    { id: 'F2C7', yaml: ' - &a !!str a\n - !!int 2\n - !!int &c 4\n - &d d\n', expected: ['a', 2, 4, 'd'] },
+    { id: 'RTP8', yaml: '%YAML 1.2\n---\nDocument\n... # Suffix\n', expected: 'Document' },
+    { id: '4GC6', yaml: '\'here\'\'s to "quotes"\'\n', expected: 'here\'s to "quotes"' },
+    { id: 'G4RS', yaml: 'unicode: "Sosa did fine.\\u263A"\ncontrol: "\\b1998\\t1999\\t2000\\n"\nhex esc: "\\x0d\\x0a is \\r\\n"\nsingle: \'"Howdy!" he cried.\'\nquoted: \' # Not a \'\'comment\'\'.\'\ntie-fighter: \'|\\-*-/|\'\n', expected: { unicode: 'Sosa did fine.☺', control: '\b1998\t1999\t2000\n', 'hex esc': '\r\n is \r\n', single: '"Howdy!" he cried.', quoted: ' # Not a \'comment\'.', 'tie-fighter': '|\\-*-/|' } },
+    { id: 'K858', yaml: 'strip: >-\n\nclip: >\n\nkeep: |+\n\n', expected: { strip: '', clip: '', keep: '\n' } },
+    { id: 'GH63', yaml: '? a\n: 1.3\nfifteen: d\n', expected: { a: 1.3, fifteen: 'd' } },
+    { id: '735Y', yaml: '-\n  "flow in block"\n- >\n Block scalar\n- !!map # Block collection\n  foo : bar\n', expected: ['flow in block', 'Block scalar\n', { foo: 'bar' }] },
+    { id: '9U5K', yaml: '---\n- item    : Super Hoop\n  quantity: 1\n- item    : Basketball\n  quantity: 4\n', expected: [{ item: 'Super Hoop', quantity: 1 }, { item: 'Basketball', quantity: 4 }] },
+    { id: 'F3CP', yaml: '---\n{ a: [b, c, { d: [e, f] } ] }\n', expected: { a: ['b', 'c', { d: ['e', 'f'] }] } },
+    { id: 'UDM2', yaml: '- { url: http://example.org }\n', expected: [{ url: 'http://example.org' }] },
+  ];
+  const results = await page.evaluate(async (items) => {
+    const { load } = await import('/js/lib/data/yaml.js');
+    return items.map(({ id, yaml }) => ({ id, value: load(yaml) }));
+  }, vectors);
+  expect(results).toEqual(vectors.map(({ id, expected }) => ({ id, value: expected })));
+});
+
+test('YAML 1.2: 다중 문서·안전 태그·앵커 그래프와 직렬화를 보존한다', async ({ page }) => {
+  await page.goto('/');
+  const result = await page.evaluate(async () => {
+    const { load, loadAll, dump } = await import('/js/lib/data/yaml.js');
+    const docs = loadAll('---\nname: one\n...\n---\nname: two\n---\n');
+    const tagged = load('text: !!str 12\nbinary: !!binary SGVsbG8=\ndate: !!timestamp 2026-08-29T12:34:56Z\n');
+    const recursive = load('&root {self: *root}');
+    const shared = { enabled: true };
+    const dumped = dump({ first: shared, second: shared, multiline: '첫 줄\n둘째 줄' });
+    const restored = load(dumped);
+    let unsafeTag = '';
+    try { load('value: !javascript alert(1)'); } catch (error) { unsafeTag = error.code; }
+    let multiLoad = '';
+    try { load('---\na: 1\n---\nb: 2\n'); } catch (error) { multiLoad = error.message; }
+    return {
+      docs,
+      tagged: { text: tagged.text, binary: [...tagged.binary], date: tagged.date.toISOString() },
+      recursive: recursive.self === recursive,
+      aliases: restored.first === restored.second,
+      restored: { first: restored.first, second: restored.second, multiline: restored.multiline },
+      dumpHasAnchor: /&ref_0/.test(dumped) && /\*ref_0/.test(dumped),
+      unsafeTag,
+      multiLoad,
+    };
+  });
+  expect(result).toEqual({
+    docs: [{ name: 'one' }, { name: 'two' }, null],
+    tagged: { text: '12', binary: [72, 101, 108, 108, 111], date: '2026-08-29T12:34:56.000Z' },
+    recursive: true,
+    aliases: true,
+    restored: { first: { enabled: true }, second: { enabled: true }, multiline: '첫 줄\n둘째 줄' },
+    dumpHasAnchor: true,
+    unsafeTag: 'YAML_UNSAFE_TAG',
+    multiLoad: expect.stringContaining('loadAll()'),
+  });
+});
+
+test('YAML 1.2 Core: 숫자·날짜·merge 키를 손실 없이 처리하고 잘못된 문법을 거부한다', async ({ page }) => {
+  await page.goto('/');
+  const result = await page.evaluate(async () => {
+    const { load, dump } = await import('/js/lib/data/yaml.js');
+    const core = load('decimal: 01\nunderscores: [1_, _1, 1__0]\ndate: 2026-08-29\nmixedBool: TrUe\n');
+    const mergeKeyYaml = dump({ '<<': 1, date: '2026-08-29' });
+    const mergeKeyRoundTrip = load(mergeKeyYaml);
+    const date = new Date('2026-08-29T12:34:56Z');
+    const dateRoundTrip = load(dump({ date })).date;
+    const specialKeys = load('__proto__: {polluted: true}\nconstructor: safe\nemoji: 😀\n');
+    let surrogateError = '';
+    try { dump({ value: String.fromCharCode(0xd800) }); } catch (error) { surrogateError = error.message; }
+    const errors = {};
+    for (const [name, source] of Object.entries({
+      integerRange: 'value: 999999999999999999999\n',
+      invalidDate: 'value: !!timestamp 2023-02-29\n',
+      character: 'value: a\u0001b\n',
+    })) {
+      try { load(source); } catch (error) { errors[name] = { code: error.code, message: error.message }; }
+    }
+    const malformed = [
+      '[a,,b]\n', '%YAML 1.2\n', 'key: "value"#comment\n', 'key: - a\n',
+      'key: [one\n# comment\n  two]\n', 'block: |\n     \n  invalid\n',
+    ].map((source) => {
+      try { load(source); return false; } catch { return true; }
+    });
+    return {
+      core,
+      mergeKeyYaml,
+      mergeKeyRoundTrip,
+      dateRoundTrip: dateRoundTrip.toISOString(),
+      specialKeys: {
+        prototypeUnchanged: Object.getPrototypeOf(specialKeys) === Object.prototype
+          && Object.getPrototypeOf({}).polluted === undefined,
+        protoIsOwnData: Object.prototype.hasOwnProperty.call(specialKeys, '__proto__')
+          && specialKeys.__proto__.polluted === true,
+        constructor: specialKeys.constructor,
+        emoji: specialKeys.emoji,
+      },
+      surrogateError,
+      errors,
+      malformed,
+    };
+  });
+  expect(result).toEqual({
+    core: { decimal: 1, underscores: ['1_', '_1', '1__0'], date: '2026-08-29', mixedBool: 'TrUe' },
+    mergeKeyYaml: "'<<': 1\ndate: 2026-08-29\n",
+    mergeKeyRoundTrip: { '<<': 1, date: '2026-08-29' },
+    dateRoundTrip: '2026-08-29T12:34:56.000Z',
+    specialKeys: {
+      prototypeUnchanged: true,
+      protoIsOwnData: true,
+      constructor: 'safe',
+      emoji: '😀',
+    },
+    surrogateError: expect.stringContaining('단독 UTF-16 surrogate'),
+    errors: {
+      integerRange: { code: 'YAML_INTEGER_RANGE', message: expect.stringContaining('안전하게 표현할 수 없는 정수') },
+      invalidDate: { code: 'YAML_SYNTAX', message: expect.stringContaining('!!timestamp') },
+      character: { code: 'YAML_CHARACTER', message: expect.stringContaining('U+0001') },
+    },
+    malformed: [true, true, true, true, true, true],
+  });
+});
+
+test('data-convert: 16 KiB 이상 YAML은 경고 없이 취소 가능한 Worker에서 처리한다', async ({ page }) => {
+  let workerRequests = 0;
+  await page.route('**/js/workers/yaml.js', async (route) => {
+    workerRequests++;
+    await route.continue();
+  });
+  await openTool(page, 'data-convert');
+  const io = ioSection(page);
+  const source = 'items:\n' + Array.from({ length: 2_000 }, (_, index) => `  - item_${index}`).join('\n');
+  const output = await runIO(io, {
+    options: { '입력 포맷': 'yaml', '출력 포맷': 'json' }, inputs: source,
+  });
+  expect(JSON.parse(output).items).toHaveLength(2_000);
+  await expect(io.locator('.large-input-warning')).toBeHidden();
+  expect(workerRequests).toBeGreaterThan(0);
+});
+
 test('data-convert: JSON → TOML → JSON 왕복 보존', async ({ page }) => {
   await openTool(page, 'data-convert');
   const io = ioSection(page);
@@ -527,6 +691,7 @@ test('data-convert: JSON → TOML → JSON 왕복 보존', async ({ page }) => {
 test('YAML/TOML 파서: 악성 복잡도와 연속 주석 입력을 제한된 시간에 처리한다', async ({ page }) => {
   await page.goto('/');
   const result = await page.evaluate(async () => {
+    const { dump, load } = await import('/js/lib/data/yaml.js');
     const mergeCount = 4_000;
     const mergeChain = Array.from({ length: mergeCount }, (_, index) => index
       ? `a${index}: &a${index} { <<: *a${index - 1}, k${index}: ${index} }`
@@ -540,25 +705,51 @@ test('YAML/TOML 파서: 악성 복잡도와 연속 주석 입력을 제한된 �
         const value = parse(input);
         return { elapsed: performance.now() - started, value };
       } catch (error) {
-        return { elapsed: performance.now() - started, error: error.message };
+        return { elapsed: performance.now() - started, error: error.message, code: error.code };
       }
     };
-    const merge = timed(jsyaml.load, mergeChain);
-    const orderedMap = timed(jsyaml.load, omap);
+    const merge = timed(load, mergeChain);
+    const orderedMap = timed(load, omap);
+    const depth = timed((input) => load(input, { limits: { depth: 20 } }),
+      Array.from({ length: 25 }, (_, index) => `${'  '.repeat(index)}k${index}:`).join('\n')
+        + `\n${'  '.repeat(25)}end`);
+    const aliases = timed((input) => load(input, { limits: { aliases: 10 } }),
+      'anchor: &a value\nitems: [' + Array.from({ length: 11 }, () => '*a').join(', ') + ']');
+    const nodes = timed((input) => load(input, { limits: { nodes: 10 } }),
+      Array.from({ length: 20 }, (_, index) => `- ${index}`).join('\n'));
+    const inputLimit = timed((input) => load(input, { limits: { inputLength: 3 } }), 'abcd');
+    const quotedScalar = timed((input) => load(input, { limits: { scalarLength: 3 } }), '"abcd"');
+    const blockScalar = timed((input) => load(input, { limits: { scalarLength: 3 } }), '|\n  abcd\n');
+    const shared = {};
+    const dumpAliases = timed((input) => dump(input, { limits: { aliases: 2 } }), [shared, shared, shared, shared]);
+    const unfinishedFlow = timed(load, 'key: [\n' + '  a\n'.repeat(32_000));
     const { parse } = await import('/assets/vendor/smol-toml-1.6.1.mjs');
     const comments = timed(parse, '# 공격자 제어 주석\n'.repeat(50_000) + 'safe = true\n');
     return {
       merge: { elapsed: merge.elapsed, error: merge.error },
       orderedMap: { elapsed: orderedMap.elapsed, length: orderedMap.value?.length },
+      limits: [depth, aliases, nodes, inputLimit, quotedScalar, blockScalar]
+        .map(({ code, elapsed }) => ({ code, elapsed })),
+      dumpAliases: { elapsed: dumpAliases.elapsed, error: dumpAliases.error },
+      unfinishedFlow: { elapsed: unfinishedFlow.elapsed, error: unfinishedFlow.error },
       comments: { elapsed: comments.elapsed, safe: comments.value?.safe, error: comments.error },
     };
   });
 
   expect(result.merge.error).toContain('maxTotalMergeKeys');
   expect(result.orderedMap.length).toBe(4_000);
+  expect(result.limits.map(({ code }) => code)).toEqual([
+    'YAML_DEPTH', 'YAML_ALIASES', 'YAML_NODES', 'YAML_INPUT_LIMIT',
+    'YAML_SCALAR_LIMIT', 'YAML_SCALAR_LIMIT',
+  ]);
+  expect(result.dumpAliases.error).toContain('출력 별칭');
+  expect(result.unfinishedFlow.error).toContain('닫히지 않았습니다');
   expect(result.comments).toMatchObject({ safe: true, error: undefined });
   expect(result.merge.elapsed).toBeLessThan(2_000);
   expect(result.orderedMap.elapsed).toBeLessThan(2_000);
+  for (const limit of result.limits) expect(limit.elapsed).toBeLessThan(1_000);
+  expect(result.dumpAliases.elapsed).toBeLessThan(1_000);
+  expect(result.unfinishedFlow.elapsed).toBeLessThan(1_000);
   expect(result.comments.elapsed).toBeLessThan(2_000);
 });
 

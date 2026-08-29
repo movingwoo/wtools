@@ -1,6 +1,8 @@
 // 코드 포맷팅 / 개발 유틸리티 — 변환기
 import { tool, makeIO } from '../core.js';
-import { parseCSV, toCSV } from './dataformat.js';
+import {
+  parseCSV, toCSV, parseYaml, dumpYaml, YAML_LARGE_INPUT_THRESHOLD,
+} from './dataformat.js';
 
 const CAT = '코드 포맷팅 / 개발 유틸리티';
 
@@ -319,7 +321,7 @@ function tokenize(cmd) {
   while ((m = re.exec(cmd))) tokens.push(m[1] ?? m[2] ?? m[3]);
   return tokens;
 }
-function dockerRunToCompose(cmd) {
+async function dockerRunToCompose(cmd, signal) {
   const tokens = tokenize(cmd.replace(/\\\s*\n/g, ' ').trim());
   if (tokens[0] === 'docker') tokens.shift();
   if (tokens[0] === 'run') tokens.shift();
@@ -352,30 +354,66 @@ function dockerRunToCompose(cmd) {
   const ordered = { image: svc.image };
   for (const k of ['container_name', 'command', 'entrypoint', 'ports', 'volumes', 'environment', 'env_file', 'restart', 'network_mode', 'hostname', 'user', 'working_dir', 'labels', 'extra_hosts', 'dns', 'cap_add', 'devices', 'mem_limit', 'privileged', 'stdin_open', 'tty'])
     if (svc[k] !== undefined) ordered[k] = svc[k];
-  return jsyaml.dump({ services: { [name]: ordered } }, { lineWidth: 120 });
+  return dumpYaml({ services: { [name]: ordered } }, { lineWidth: 120 }, signal, cmd.length);
 }
-function composeToDockerRun(yml) {
-  const doc = jsyaml.load(yml);
-  const services = doc.services || doc;
+function shellQuote(value) {
+  const text = String(value);
+  if (text && /^[A-Za-z0-9_@%+=:,./-]+$/.test(text)) return text;
+  return `'${text.replace(/'/g, "'\\''")}'`;
+}
+function scalarList(value, label) {
+  if (value == null) return [];
+  if (!Array.isArray(value)) throw new Error(`${label} 항목은 배열이어야 합니다.`);
+  return value.map((item) => {
+    if (item == null || typeof item === 'object') throw new Error(`${label} 항목은 문자열 또는 숫자여야 합니다.`);
+    return String(item);
+  });
+}
+function commandArguments(command) {
+  if (command == null || command === '') return [];
+  if (Array.isArray(command)) return command.map((value) => {
+    if (value == null || typeof value === 'object') throw new Error('command 배열에는 문자열 또는 숫자만 사용할 수 있습니다.');
+    return String(value);
+  });
+  if (typeof command !== 'string') throw new Error('command는 문자열 또는 문자열 배열이어야 합니다.');
+  return shellTokens(command);
+}
+async function composeToDockerRun(yml, signal) {
+  const doc = await parseYaml(yml, signal);
+  const services = doc && typeof doc === 'object' && !Array.isArray(doc)
+    && Object.prototype.hasOwnProperty.call(doc, 'services') ? doc.services : doc;
+  if (!services || typeof services !== 'object' || Array.isArray(services))
+    throw new Error('Compose services는 서비스 객체여야 합니다.');
+  if (!Object.keys(services).length) throw new Error('Compose services에 서비스가 하나 이상 필요합니다.');
   const out = [];
   for (const [name, s] of Object.entries(services)) {
+    if (!s || typeof s !== 'object' || Array.isArray(s))
+      throw new Error(`서비스 ${JSON.stringify(name)} 설정은 객체여야 합니다.`);
+    if (typeof s.image !== 'string' || !s.image.trim())
+      throw new Error(`서비스 ${JSON.stringify(name)}에 image가 필요합니다.`);
+    if (s.image.startsWith('-')) throw new Error('이미지 이름은 하이픈으로 시작할 수 없습니다.');
     const parts = ['docker run -d'];
-    parts.push('--name ' + (s.container_name || name));
-    const q = (v) => /[\s"'$]/.test(String(v)) ? `'${v}'` : v;
-    for (const p of s.ports || []) parts.push('-p ' + q(p));
-    for (const v of s.volumes || []) parts.push('-v ' + q(v));
+    parts.push('--name ' + shellQuote(s.container_name || name));
+    for (const p of scalarList(s.ports, 'ports')) parts.push('-p ' + shellQuote(p));
+    for (const v of scalarList(s.volumes, 'volumes')) parts.push('-v ' + shellQuote(v));
     const env = s.environment || [];
-    const envList = Array.isArray(env) ? env : Object.entries(env).map(([k, v]) => `${k}=${v}`);
-    for (const e of envList) parts.push('-e ' + q(e));
-    if (s.restart) parts.push('--restart ' + s.restart);
-    if (s.network_mode) parts.push('--network ' + s.network_mode);
-    if (s.hostname) parts.push('--hostname ' + s.hostname);
-    if (s.user) parts.push('--user ' + s.user);
-    if (s.working_dir) parts.push('-w ' + s.working_dir);
-    if (s.entrypoint) parts.push('--entrypoint ' + q(s.entrypoint));
+    if (!Array.isArray(env) && (!env || typeof env !== 'object'))
+      throw new Error('environment는 배열 또는 객체여야 합니다.');
+    const envList = Array.isArray(env) ? scalarList(env, 'environment')
+      : Object.entries(env).map(([key, value]) => {
+        if (value != null && typeof value === 'object') throw new Error('environment 값은 문자열, 숫자, 불리언 또는 null이어야 합니다.');
+        return `${key}=${value ?? ''}`;
+      });
+    for (const e of envList) parts.push('-e ' + shellQuote(e));
+    if (s.restart) parts.push('--restart ' + shellQuote(s.restart));
+    if (s.network_mode) parts.push('--network ' + shellQuote(s.network_mode));
+    if (s.hostname) parts.push('--hostname ' + shellQuote(s.hostname));
+    if (s.user) parts.push('--user ' + shellQuote(s.user));
+    if (s.working_dir) parts.push('-w ' + shellQuote(s.working_dir));
+    if (s.entrypoint) parts.push('--entrypoint ' + shellQuote(s.entrypoint));
     if (s.privileged) parts.push('--privileged');
-    parts.push(s.image || '<image>');
-    if (s.command) parts.push(Array.isArray(s.command) ? s.command.join(' ') : s.command);
+    parts.push(shellQuote(s.image));
+    for (const argument of commandArguments(s.command)) parts.push(shellQuote(argument));
     out.push(parts.join(' \\\n  '));
   }
   return out.join('\n\n');
@@ -390,10 +428,13 @@ tool({
       inputs: [{ id: 'input', label: '입력', rows: 8, value: 'docker run -d --name web -p 8080:80 -v ./html:/usr/share/nginx/html -e TZ=Asia/Seoul --restart unless-stopped nginx:alpine' }],
       actions: [{ id: 'toCompose', label: 'run → compose' }, { id: 'toRun', label: 'compose → run' }],
       outputRows: 12,
-      process(text, o, action) {
+      cancelable: true,
+      largeInputThreshold: YAML_LARGE_INPUT_THRESHOLD,
+      async process(text, o, action, signal) {
         if (!text.trim()) return '';
-        return action === 'toRun' ? composeToDockerRun(text) : dockerRunToCompose(text);
+        return action === 'toRun' ? composeToDockerRun(text, signal) : dockerRunToCompose(text, signal);
       },
+      note: 'Compose 값은 실행 가능한 셸 인자로 안전하게 인용해 출력합니다. 지원 범위는 image, command, ports, volumes, environment와 화면에 표시된 공통 옵션입니다.',
     });
   },
 });

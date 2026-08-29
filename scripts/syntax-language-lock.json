@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "reviewedOn": "2026-08-27",
+  "reviewedOn": "2026-08-28",
   "maxReviewAgeDays": 100,
   "profiles": {
     "javascript": { "version": "ECMAScript 2027 Draft", "source": "https://tc39.es/ecma262/" },
@@ -16,7 +16,7 @@
     "swift": { "version": "6.3", "source": "https://docs.swift.org/swift-book/ReferenceManual/LexicalStructure.html" },
     "php": { "version": "8.5", "source": "https://www.php.net/manual/en/reserved.keywords.php" },
     "ruby": { "version": "4.0", "source": "https://docs.ruby-lang.org/en/master/syntax/keywords_rdoc.html" },
-    "sql": { "version": "SQL:2023 공통 어휘", "source": "https://www.iso.org/standard/76583.html" },
+    "sql": { "version": "SQL:2023 + Cor 1:2026 공통 어휘", "source": "https://www.iso.org/standard/76584.html" },
     "html": { "version": "WHATWG Living Standard", "source": "https://html.spec.whatwg.org/" },
     "xml": { "version": "XML 1.0 Fifth Edition", "source": "https://www.w3.org/TR/xml/" },
     "css": { "version": "CSS Snapshot 2026 Editor's Draft", "source": "https://drafts.csswg.org/css-2026/" },
@@ -31,6 +31,42 @@
       "url": "https://tc39.es/ecma262/",
       "pattern": "ECMAScript[^0-9]{0,80}(20\\d{2})",
       "expected": "2027",
+      "selection": "first"
+    },
+    "sql:iso-foundation": {
+      "url": "https://www.iso.org/contents/data/standard/07/65/76584.detail.rss",
+      "pattern": "reached stage\\s+(\\d+\\.\\d+)",
+      "expected": "90.92",
+      "selection": "first"
+    },
+    "sql:iso-corrigendum": {
+      "url": "https://www.iso.org/contents/data/standard/09/36/93691.detail.rss",
+      "pattern": "reached stage\\s+(\\d+\\.\\d+)",
+      "expected": "60.60",
+      "selection": "first"
+    },
+    "sql:iso-next-edition": {
+      "url": "https://www.iso.org/contents/data/standard/08/73/87341.detail.rss",
+      "pattern": "reached stage\\s+(\\d+\\.\\d+)",
+      "expected": "30.60",
+      "selection": "first"
+    },
+    "sql:postgresql": {
+      "url": "https://www.postgresql.org/docs/release/",
+      "pattern": "PostgreSQL\\s+(\\d+)(?:\\.\\d+)?",
+      "expected": "18",
+      "selection": "first"
+    },
+    "sql:mysql": {
+      "url": "https://dev.mysql.com/doc/refman/9.7/en/",
+      "pattern": "<title>MySQL :: MySQL\\s+(\\d+\\.\\d+)\\s+Reference Manual</title>",
+      "expected": "9.7",
+      "selection": "first"
+    },
+    "sql:sqlite": {
+      "url": "https://www.sqlite.org/changes.html",
+      "pattern": "<h3>20\\d{2}-\\d{2}-\\d{2}\\s+\\((\\d+\\.\\d+)\\.\\d+\\)</h3>",
+      "expected": "3.53",
       "selection": "first"
     },
     "css": {
@@ -93,11 +129,11 @@
       "expected": "4.0",
       "selection": "max-version"
     },
-    "bash": {
-      "url": "https://ftp.gnu.org/gnu/bash/",
-      "pattern": "bash-(\\d+\\.\\d+)\\.tar\\.gz",
-      "expected": "5.3",
-      "selection": "max-version"
+    "bash:announcement": {
+      "url": "https://lists.gnu.org/archive/html/bash-announce/",
+      "pattern": "<li><b>(\\d{4}-\\d{2})</b>",
+      "expected": "2025-07",
+      "selection": "first"
     }
   }
 }

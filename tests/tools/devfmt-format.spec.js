@@ -1,9 +1,11 @@
 // 코드/문서 포맷터 정밀 테스트. 자체 구문 강조·Markdown 파서와 남은 포맷터 CDN 경로를 검증한다.
+import { DatabaseSync } from 'node:sqlite';
 import { test, expect, toolCases, openTool, ioSection, runIO, uploadFile } from '../helpers.js';
 import { makePng } from '../fixtures.js';
 import {
   formatJavaScript, minifyJavaScript, formatCss, minifyCss, formatHtml, minifyHtml,
 } from '../../js/lib/code/formatter.js';
+import { formatSql, minifySql, tokenizeSql } from '../../js/lib/code/sql-formatter.js';
 
 const cases = [
   /* ---------- json-format ---------- */
@@ -24,7 +26,67 @@ const cases = [
     inputs: 'select id,name from users where age>20 order by name', action: '포맷',
     output: 'SELECT\n  id,\n  name\nFROM\n  users\nWHERE\n  age > 20\nORDER BY\n  name',
   },
+  {
+    name: 'code-format: sql-formatter 15.3.2 복합 SELECT 기준 출력', tool: 'code-format',
+    options: { '언어': 'sql' }, action: '포맷',
+    inputs: 'select u.id,u.name,count(o.id) as orders from users u left join orders o on o.user_id=u.id where u.active=true and (o.total>=100 or o.id is null) group by u.id,u.name having count(o.id)>1 order by orders desc limit 10 offset 5;',
+    output: 'SELECT\n  u.id,\n  u.name,\n  count(o.id) AS orders\nFROM\n  users u\n  LEFT JOIN orders o ON o.user_id = u.id\nWHERE\n  u.active = TRUE\n  AND (\n    o.total >= 100\n    OR o.id IS NULL\n  )\nGROUP BY\n  u.id,\n  u.name\nHAVING\n  count(o.id) > 1\nORDER BY\n  orders DESC\nLIMIT\n  10\nOFFSET\n  5;',
+  },
+  {
+    name: 'code-format: SQL CTE·서브쿼리·파라미터', tool: 'code-format',
+    options: { '언어': 'sql' }, action: '포맷',
+    inputs: 'with recent as (select id,user_id from orders where created_at>=:since) select u.name,r.id from users u join recent r on r.user_id=u.id;',
+    output: 'WITH\n  recent AS (\n    SELECT\n      id,\n      user_id\n    FROM\n      orders\n    WHERE\n      created_at >= :since\n  )\nSELECT\n  u.name,\n  r.id\nFROM\n  users u\n  JOIN recent r ON r.user_id = u.id;',
+  },
+  {
+    name: 'code-format: SQL 4칸 들여쓰기', tool: 'code-format',
+    options: { '언어': 'sql', '들여쓰기': '4' }, action: '포맷',
+    inputs: 'select id,name from users where active=true',
+    output: 'SELECT\n    id,\n    name\nFROM\n    users\nWHERE\n    active = TRUE',
+  },
   { name: 'code-format: SQL 압축', tool: 'code-format', options: { '언어': 'sql' }, inputs: 'SELECT id,\n  name\nFROM users', action: '압축', output: 'SELECT id, name FROM users' },
+  {
+    name: 'code-format: PostgreSQL 다문자 연산자와 배열 보존', tool: 'code-format',
+    options: { '언어': 'sql', 'SQL 종류': 'postgresql' }, action: '포맷',
+    inputs: "select data ?| array['a','b'],payload @@ to_tsquery('cat') from docs;",
+    output: "SELECT\n  data ?| ARRAY['a', 'b'],\n  payload @@ to_tsquery('cat')\nFROM\n  docs;",
+  },
+  {
+    name: 'code-format: MySQL 붙어 있는 해시 주석 줄바꿈 보존', tool: 'code-format',
+    options: { '언어': 'sql', 'SQL 종류': 'mysql' }, action: '포맷',
+    inputs: 'select 1# 메모\n+2;', output: 'SELECT\n  1 # 메모\n  + 2;',
+  },
+  {
+    name: 'code-format: SQLite 문자열 끝 백슬래시 보존', tool: 'code-format',
+    options: { '언어': 'sql', 'SQL 종류': 'sqlite' }, action: '포맷',
+    inputs: String.raw`select 'a\' as result;`, output: "SELECT\n  'a\\' AS result;",
+  },
+  {
+    name: 'code-format: MySQL NO_BACKSLASH_ESCAPES 반영', tool: 'code-format',
+    options: { '언어': 'sql', 'SQL 종류': 'mysql', 'MySQL 백슬래시 이스케이프': false }, action: '포맷',
+    inputs: String.raw`select 'a\' as result;`, output: "SELECT\n  'a\\' AS result;",
+  },
+  {
+    name: 'code-format: MySQL ANSI_QUOTES 반영', tool: 'code-format',
+    options: { '언어': 'sql', 'SQL 종류': 'mysql', 'MySQL ANSI_QUOTES': true }, action: '포맷',
+    inputs: String.raw`select "a\" as result;`, output: 'SELECT\n  "a\\" AS result;',
+  },
+  {
+    name: 'code-format: SQL 압축 시 문자열과 줄 주석 보존', tool: 'code-format',
+    options: { '언어': 'sql' }, action: '압축',
+    inputs: "SELECT 'a  b',  id -- 메모\nFROM users  WHERE note = '-- x'",
+    output: "SELECT 'a  b', id -- 메모\nFROM users WHERE note = '-- x'",
+  },
+  {
+    name: 'code-format: 닫히지 않은 SQL 문자열은 한국어 오류', tool: 'code-format',
+    options: { '언어': 'sql' }, action: '포맷', inputs: "select 'oops",
+    error: 'SQL 문자열, 인용 식별자 또는 블록 주석이 닫히지 않았습니다.',
+  },
+  {
+    name: 'code-format: 잘못된 SQL 괄호는 한국어 오류', tool: 'code-format',
+    options: { '언어': 'sql' }, action: '포맷', inputs: 'select (id from users',
+    error: 'SQL 괄호 구조가 올바르지 않습니다.',
+  },
   { name: 'code-format: JavaScript 포맷', tool: 'code-format', options: { '언어': 'js' }, inputs: 'function f(){return 1}', action: '포맷', output: 'function f() {\n  return 1\n}' },
   { name: 'code-format: JavaScript 4칸 들여쓰기', tool: 'code-format', options: { '언어': 'js', '들여쓰기': '4' }, inputs: 'function f(){return 1}', action: '포맷', output: 'function f() {\n    return 1\n}' },
   { name: 'code-format: JavaScript 압축 (주석 제거)', tool: 'code-format', options: { '언어': 'js' }, inputs: 'function f() {\n  // 주석\n  return 1;\n}', action: '압축', output: 'function f() { return 1; }' },
@@ -624,6 +686,159 @@ test('code-format: XML 압축 → 포맷 왕복 보존', async ({ page }) => {
   expect(back).toBe(xml);
 });
 
+test('code-format: SQL 포맷·압축 결과를 SQLite 실행 결과와 교차 검증', () => {
+  const setup = `
+    create table users(id integer primary key, name text not null, active boolean not null);
+    create table orders(id integer primary key, user_id integer, total numeric not null);
+    insert into users(id,name,active) values(1,'Kim',true),(2,'Lee',true),(3,'Park',false);
+    insert into orders(id,user_id,total) values(1,1,120),(2,1,30),(3,2,200);
+  `;
+  const query = `
+    with spending as (
+      select user_id,sum(total) as total from orders group by user_id
+    )
+    select u.id,u.name,coalesce(s.total,0) as total
+    from users u left join spending s on s.user_id=u.id
+    where u.active=true and coalesce(s.total,0)>=100
+    order by total desc,u.id;
+  `;
+  const results = [
+    (value) => value,
+    (value) => formatSql(value, { indentSize: 2, dialect: 'sqlite' }),
+    (value) => minifySql(value, { dialect: 'sqlite' }),
+  ].map((transform) => {
+    const database = new DatabaseSync(':memory:');
+    try {
+      database.exec(transform(setup));
+      return JSON.stringify(database.prepare(transform(query)).all());
+    } finally {
+      database.close();
+    }
+  });
+  expect(results.slice(1)).toEqual([results[0], results[0]]);
+  const literal = String.raw`select 'a\' as value;`;
+  const literalValues = [
+    literal,
+    formatSql(literal, { dialect: 'sqlite' }),
+    minifySql(literal, { dialect: 'sqlite' }),
+  ].map((sql) => {
+    const database = new DatabaseSync(':memory:');
+    try { return database.prepare(sql).get().value; }
+    finally { database.close(); }
+  });
+  expect(literalValues).toEqual(['a\\', 'a\\', 'a\\']);
+});
+
+test('code-format: SQL 토크나이저가 선택한 SQL 종류별 토큰을 불투명하게 보존', () => {
+  const opaque = (source, options) => tokenizeSql(source, options)
+    .filter(({ type }) => ['quoted', 'string', 'parameter', 'operator', 'line-comment'].includes(type))
+    .map(({ raw }) => raw);
+  expect(opaque('select "a b",U&"d\\0061t",?,:name', { dialect: 'standard' })).toEqual([
+    '"a b"', 'U&"d\\0061t"', '?', ':name',
+  ]);
+  expect(opaque(String.raw`select E'a\'b',$tag$x -- y$tag$,$태그$z$태그$,$1,data ?| ARRAY[']']`,
+    { dialect: 'postgresql' })).toEqual([
+    String.raw`E'a\'b'`, '$tag$x -- y$tag$', '$태그$z$태그$', '$1', '?|', "']'",
+  ]);
+  expect(opaque("select `c d`,'a\\'b',?,:name,@@global.sql_mode", { dialect: 'mysql' })).toEqual([
+    '`c d`', "'a\\'b'", '?', ':name', '@@global',
+  ]);
+  expect(opaque("select [e f],`c d`,'a\\',?1,:name,@name,$name", { dialect: 'sqlite' })).toEqual([
+    '[e f]', '`c d`', "'a\\'", '?1', ':name', '@name', '$name',
+  ]);
+  expect(opaque('select [a]] from docs', { dialect: 'sqlite' })).toEqual(['[a]']);
+  expect(formatSql('select count(*),users.* from users where score=-1 and delta=+2;')).toBe(
+    'SELECT\n  count(*),\n  users.*\nFROM\n  users\nWHERE\n  score = -1\n  AND delta = +2;',
+  );
+  expect(formatSql("select data #>> '{a,b}',data#>'{c}' from docs;")).toBe(
+    "SELECT\n  data #>> '{a,b}',\n  data #> '{c}'\nFROM\n  docs;",
+  );
+  expect(formatSql('')).toBe('');
+  expect(minifySql('   ')).toBe('');
+  expect(formatSql("select 'foo'\n'bar';")).toBe("SELECT\n  'foo'\n  'bar';");
+  expect(minifySql("select 'foo'\n'bar';")).toBe("select 'foo'\n'bar';");
+  expect(formatSql("select payload OPERATOR(public.===) other from docs;", { dialect: 'postgresql' }))
+    .toContain('OPERATOR(public.===)');
+  expect(formatSql("select array[']', 'x'] as items;", { dialect: 'postgresql' }))
+    .toContain("ARRAY[']', 'x'] AS items");
+  expect(formatSql('select 1# 메모\n+2;', { dialect: 'mysql' }))
+    .toBe('SELECT\n  1 # 메모\n  + 2;');
+  expect(minifySql('select 1# 메모\n+2;', { dialect: 'mysql' }))
+    .toBe('select 1# 메모\n+2;');
+  expect(formatSql('select 1--2\n+3;', { dialect: 'mysql' }))
+    .toBe('SELECT\n  1 - -2 + 3;');
+  expect(formatSql('select payload::jsonb from docs;', { dialect: 'postgresql' }))
+    .toContain('payload::jsonb');
+  expect(formatSql('select ?+1,?2-1;', { dialect: 'mysql' }))
+    .toBe('SELECT\n  ? + 1,\n  ?2 - 1;');
+  const mysqlNoBackslash = String.raw`select 'a\' as result;`;
+  expect(formatSql(mysqlNoBackslash, { dialect: 'mysql', mysqlBackslashEscapes: false }))
+    .toBe("SELECT\n  'a\\' AS result;");
+  expect(() => formatSql(mysqlNoBackslash, { dialect: 'mysql' })).toThrow(/Unterminated SQL quote/);
+  const mysqlAnsiQuotes = String.raw`select "a\" as result;`;
+  expect(formatSql(mysqlAnsiQuotes, { dialect: 'mysql', mysqlAnsiQuotes: true }))
+    .toBe('SELECT\n  "a\\" AS result;');
+  expect(() => formatSql(mysqlAnsiQuotes, { dialect: 'mysql' })).toThrow(/Unterminated SQL quote/);
+  expect(() => formatSql("select 1 /* outer /* inner */ + 2;", { dialect: 'standard' }))
+    .toThrow(/Unterminated SQL comment/);
+  expect(formatSql("select 1 /* outer /* inner */ + 2;", { dialect: 'mysql' }))
+    .toBe('SELECT\n  1 /* outer /* inner */ + 2;');
+  try {
+    formatSql('select 1', { dialect: 'oracle' });
+    throw new Error('지원하지 않는 SQL 종류가 거부되지 않았습니다.');
+  } catch (error) {
+    expect(error.code).toBe('SQL_DIALECT');
+  }
+  expect(() => formatSql('select (1')).toThrow(/Unclosed parenthesis/);
+  try {
+    formatSql('select ' + '('.repeat(257) + '1' + ')'.repeat(257));
+    throw new Error('중첩 제한이 적용되지 않았습니다.');
+  } catch (error) {
+    expect(error.code).toBe('FORMAT_NESTING');
+  }
+  try {
+    formatSql('select a,b,c from t', { maxOutputLength: 20 });
+    throw new Error('출력 제한이 적용되지 않았습니다.');
+  } catch (error) {
+    expect(error.code).toBe('FORMAT_OUTPUT_LIMIT');
+  }
+  const statements = 'select 1;'.repeat(20);
+  const formattedStatements = formatSql(statements);
+  expect(() => formatSql(statements, { maxOutputLength: formattedStatements.length - 1 }))
+    .toThrow(/exceeds/);
+  expect(formatSql(statements, { maxOutputLength: formattedStatements.length }))
+    .toBe(formattedStatements);
+  const minifiedStatements = minifySql(statements);
+  expect(() => minifySql(statements, { maxOutputLength: minifiedStatements.length - 1 }))
+    .toThrow(/exceeds/);
+  expect(minifySql(statements, { maxOutputLength: minifiedStatements.length }))
+    .toBe(minifiedStatements);
+  try {
+    tokenizeSql('?,'.repeat(250_001));
+    throw new Error('토큰 제한이 적용되지 않았습니다.');
+  } catch (error) {
+    expect(error.code).toBe('SQL_TOKEN_LIMIT');
+  }
+});
+
+test('code-format: PostgreSQL 대량 달러 파라미터를 선형 시간에 토큰화', async ({ page }) => {
+  await page.goto('/');
+  const result = await page.evaluate(async () => {
+    const { tokenizeSql: tokenize } = await import('/js/lib/code/sql-formatter.js');
+    const source = '$name,'.repeat(100_000);
+    const started = performance.now();
+    const tokens = tokenize(source, { dialect: 'postgresql' });
+    return {
+      elapsed: performance.now() - started,
+      count: tokens.length,
+      first: tokens[0]?.raw,
+      last: tokens.at(-1)?.raw,
+    };
+  });
+  expect(result).toMatchObject({ count: 200_000, first: '$name', last: ',' });
+  expect(result.elapsed).toBeLessThan(2_000);
+});
+
 test('code-format: JavaScript 결과를 Node 파서·실행 결과와 교차 검증', async () => {
   const source = [
     'const url="https://example.com/a//b";',
@@ -844,14 +1059,50 @@ test('code-format: 중간 크기 입력은 경고 없이 Worker에서 처리', a
   expect(workerRequests).toBe(1);
 });
 
-test('code-format: JavaScript·CSS·HTML 처리 중 js-beautify 외부 요청이 없다', async ({ page }) => {
+test('code-format: 언어와 SQL 종류에 맞는 옵션만 표시', async ({ page }) => {
+  await openTool(page, 'code-format');
+  const io = ioSection(page);
+  const dialect = io.getByLabel('SQL 종류');
+  const backslashEscapes = io.getByLabel('MySQL 백슬래시 이스케이프');
+  const ansiQuotes = io.getByLabel('MySQL ANSI_QUOTES');
+  await expect(dialect).toBeVisible();
+  await expect(backslashEscapes).toBeHidden();
+  await expect(ansiQuotes).toBeHidden();
+  await dialect.selectOption('mysql');
+  await expect(backslashEscapes).toBeVisible();
+  await expect(ansiQuotes).toBeVisible();
+  await io.getByLabel('언어').selectOption('js');
+  await expect(dialect).toBeHidden();
+  await expect(backslashEscapes).toBeHidden();
+  await expect(ansiQuotes).toBeHidden();
+});
+
+test('code-format: 큰 SQL 입력은 자체 Worker에서 포맷', async ({ page }) => {
+  let workerRequests = 0;
+  await page.route('**/js/workers/code-format.js', async (route) => {
+    workerRequests++;
+    await route.continue();
+  });
+  await openTool(page, 'code-format');
+  const io = ioSection(page);
+  await io.getByLabel('언어').selectOption('sql');
+  await io.getByLabel('SQL 종류').selectOption('postgresql');
+  await io.locator('textarea.mono:not(.out)').fill("select data ?| array['a','b'] from docs;".repeat(80));
+  await io.getByRole('button', { name: '포맷', exact: true }).click();
+  await expect(io.locator('textarea.out')).toHaveValue(/^SELECT\n  data \?\| ARRAY\['a', 'b'\]\nFROM\n  docs;/);
+  expect(workerRequests).toBe(1);
+});
+
+test('code-format: SQL·JavaScript·CSS·HTML 처리 중 제거된 포맷터 외부 요청이 없다', async ({ page }) => {
   const requests = [];
   page.on('request', (request) => {
-    if (request.url().includes('js-beautify')) requests.push(request.url());
+    if (request.url().includes('js-beautify') || request.url().includes('sql-formatter@'))
+      requests.push(request.url());
   });
   await openTool(page, 'code-format');
   const io = ioSection(page);
   for (const [lang, source] of [
+    ['sql', 'select id,name from users where active=true'],
     ['js', 'const value={a:1};'],
     ['css', '.a{color:red}'],
     ['html', '<div><span>a</span></div>'],

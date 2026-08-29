@@ -1,5 +1,5 @@
 // 코드 포맷팅 / 개발 유틸리티 — 포맷터 / 뷰어
-import { tool, makeIO, h, formLabel, kvTable, loadScript, LIB, decodeInput, FMT_IN } from '../core.js';
+import { tool, makeIO, h, formLabel, kvTable, decodeInput, FMT_IN } from '../core.js';
 import { parseXML } from './dataformat.js';
 
 const CAT = '코드 포맷팅 / 개발 유틸리티';
@@ -15,7 +15,15 @@ function loadCodeFormatter() {
   }));
 }
 
-function formatCodeInWorker(text, lang, action, indentSize, signal) {
+let sqlFormatterPromise;
+function loadSqlFormatter() {
+  return (sqlFormatterPromise ??= import('../lib/code/sql-formatter.js').catch(() => {
+    sqlFormatterPromise = null;
+    throw new Error('SQL 포맷터 엔진을 불러오지 못했습니다. 잠시 후 다시 시도하세요.');
+  }));
+}
+
+function formatCodeInWorker(text, lang, action, indentSize, signal, formatterOptions = {}) {
   return new Promise((resolve, reject) => {
     const worker = new Worker(new URL('../workers/code-format.js', import.meta.url), { type: 'module' });
     let settled = false;
@@ -39,29 +47,46 @@ function formatCodeInWorker(text, lang, action, indentSize, signal) {
     }, { once: true });
     signal?.addEventListener('abort', abort, { once: true });
     if (signal?.aborted) abort();
-    else worker.postMessage({ text, lang, action, indentSize });
+    else worker.postMessage({ text, lang, action, indentSize, formatterOptions });
   });
 }
 
-async function runInternalFormatter(text, lang, action, indentSize, signal) {
+async function runInternalFormatter(text, lang, action, indentSize, signal, formatterOptions = {}) {
   if (text.length >= CODE_FORMAT_WORKER_THRESHOLD)
-    return formatCodeInWorker(text, lang, action, indentSize, signal);
-  const formatter = await loadCodeFormatter();
+    return formatCodeInWorker(text, lang, action, indentSize, signal, formatterOptions);
+  const formatter = lang === 'sql' ? await loadSqlFormatter() : await loadCodeFormatter();
   if (signal?.aborted) throw new DOMException('작업이 취소되었습니다.', 'AbortError');
   const functions = {
     js: { fmt: formatter.formatJavaScript, min: formatter.minifyJavaScript },
     css: { fmt: formatter.formatCss, min: formatter.minifyCss },
     html: { fmt: formatter.formatHtml, min: formatter.minifyHtml },
+    sql: { fmt: formatter.formatSql, min: formatter.minifySql },
   };
-  return functions[lang][action](text, { indentSize });
+  return functions[lang][action](text, { indentSize, ...formatterOptions });
+}
+
+function sqlFormatterOptions(options) {
+  return {
+    dialect: options.sqlDialect,
+    mysqlBackslashEscapes: options.mysqlBackslashEscapes,
+    mysqlAnsiQuotes: options.mysqlAnsiQuotes,
+  };
 }
 
 function codeFormatterError(error, lang) {
-  const label = { js: 'JavaScript', css: 'CSS', html: 'HTML' }[lang] || '코드';
+  const label = { js: 'JavaScript', css: 'CSS', html: 'HTML', sql: 'SQL' }[lang] || '코드';
   if (error?.code === 'FORMAT_NESTING')
     return new Error(`${label} 중첩이 너무 깊습니다. 중첩을 256단계 이하로 줄이세요.`, { cause: error });
   if (error?.code === 'FORMAT_OUTPUT_LIMIT')
     return new Error(`${label} 포맷 결과가 16,777,216자를 초과합니다. 입력이나 중첩을 줄이세요.`, { cause: error });
+  if (error?.code === 'SQL_UNTERMINATED')
+    return new Error('SQL 문자열, 인용 식별자 또는 블록 주석이 닫히지 않았습니다.', { cause: error });
+  if (error?.code === 'SQL_TOKEN_LIMIT')
+    return new Error('SQL 토큰이 500,000개를 초과합니다. 입력을 줄이세요.', { cause: error });
+  if (error?.code === 'SQL_DIALECT')
+    return new Error('지원하지 않는 SQL 종류입니다.', { cause: error });
+  if (error?.code === 'SQL_SYNTAX')
+    return new Error('SQL 괄호 구조가 올바르지 않습니다.', { cause: error });
   return error;
 }
 
@@ -147,11 +172,16 @@ tool({
   desc: '각종 코드를 정렬(beautify)하거나 압축(minify)합니다.',
   keywords: 'beautify minify format pretty',
   render(root) {
-    makeIO(root, {
+    const io = makeIO(root, {
       inputs: [{ id: 'input', label: '코드', rows: 12, placeholder: 'SELECT id,name FROM users WHERE age>20 ORDER BY name' }],
       options: [
         { id: 'lang', label: '언어', type: 'select', values: [['sql', 'SQL'], ['js', 'JavaScript'], ['css', 'CSS'], ['html', 'HTML'], ['xml', 'XML'], ['yaml', 'YAML']] },
         { id: 'indent', label: '들여쓰기', type: 'select', values: [['2', '2칸'], ['4', '4칸']] },
+        { id: 'sqlDialect', label: 'SQL 종류', type: 'select', value: 'standard', values: [
+          ['standard', 'SQL:2023'], ['postgresql', 'PostgreSQL'], ['mysql', 'MySQL'], ['sqlite', 'SQLite'],
+        ] },
+        { id: 'mysqlBackslashEscapes', label: 'MySQL 백슬래시 이스케이프', type: 'checkbox', value: true },
+        { id: 'mysqlAnsiQuotes', label: 'MySQL ANSI_QUOTES', type: 'checkbox' },
       ],
       actions: [{ id: 'fmt', label: '포맷' }, { id: 'min', label: '압축' }],
       outputRows: 12, autorun: false, cancelable: true,
@@ -167,14 +197,23 @@ tool({
               try { return await runInternalFormatter(text, o.lang, action, size, signal); }
               catch (error) { throw codeFormatterError(error, o.lang); }
             case 'xml': return text.replace(/>\s+</g, '><').replace(/\s{2,}/g, ' ').trim();
-            case 'sql': return text.replace(/\s+/g, ' ').trim();
+            case 'sql': {
+              try {
+                return await runInternalFormatter(text, o.lang, action, size, signal,
+                  sqlFormatterOptions(o));
+              }
+              catch (error) { throw codeFormatterError(error, o.lang); }
+            }
             case 'yaml': return jsyaml.dump(jsyaml.load(text), { flowLevel: 0 }).trim();
           }
         }
         switch (o.lang) {
           case 'sql': {
-            await loadScript(LIB.sqlFormatter);
-            return sqlFormatter.format(text, { tabWidth: size, keywordCase: 'upper' });
+            try {
+              return await runInternalFormatter(text, o.lang, action, size, signal,
+                sqlFormatterOptions(o));
+            }
+            catch (error) { throw codeFormatterError(error, o.lang); }
           }
           case 'js': {
             try { return await runInternalFormatter(text, o.lang, action, size, signal); }
@@ -192,8 +231,18 @@ tool({
           case 'yaml': return jsyaml.dump(jsyaml.load(text), { indent: size, lineWidth: 120 });
         }
       },
-      note: 'JavaScript·CSS·HTML은 외부 요청 없이 브라우저 내부 자체 엔진으로 처리합니다. 2천 자 이상은 취소 가능한 Worker를 사용하며 입력은 최대 4,194,304자, 결과는 최대 16,777,216자입니다.',
+      note: 'SQL은 SQL:2023 공통 DML·DDL과 CTE·조인·집합 연산·CASE·윈도 함수 범위를 포맷합니다. 선택한 SQL 종류에 맞춰 인용문·주석·연산자·파라미터를 보존하며, MySQL 연결의 SQL 모드와 옵션을 같게 설정해야 합니다. 각 SQL 종류의 전체 문법을 검사하지는 않습니다. SQL·JavaScript·CSS·HTML은 외부 요청 없이 자체 엔진으로 처리하고, 2천 자 이상은 취소 가능한 Worker를 사용하며 입력은 최대 4,194,304자, 결과는 최대 16,777,216자입니다.',
     });
+    const sqlOnly = ['sqlDialect', 'mysqlBackslashEscapes', 'mysqlAnsiQuotes'];
+    const updateSqlOptions = () => {
+      const isSql = io.optEls.lang.value === 'sql';
+      const isMysql = isSql && io.optEls.sqlDialect.value === 'mysql';
+      for (const id of sqlOnly)
+        io.optEls[id].closest('.opt-item').classList.toggle('hidden', !isSql || id !== 'sqlDialect' && !isMysql);
+    };
+    io.optEls.lang.addEventListener('change', updateSqlOptions);
+    io.optEls.sqlDialect.addEventListener('change', updateSqlOptions);
+    updateSqlOptions();
   },
 });
 

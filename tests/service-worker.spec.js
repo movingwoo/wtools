@@ -13,6 +13,7 @@ const REMOVED_HIGHLIGHT_CSS_URL = 'https://cdnjs.cloudflare.com/ajax/libs/highli
 const REMOVED_BEAUTIFY_JS_URL = 'https://cdn.jsdelivr.net/npm/js-beautify@1.15.1/js/lib/beautify.min.js';
 const REMOVED_BEAUTIFY_CSS_URL = 'https://cdn.jsdelivr.net/npm/js-beautify@1.15.1/js/lib/beautify-css.min.js';
 const REMOVED_BEAUTIFY_HTML_URL = 'https://cdn.jsdelivr.net/npm/js-beautify@1.15.1/js/lib/beautify-html.min.js';
+const REMOVED_SQL_FORMATTER_URL = 'https://cdn.jsdelivr.net/npm/sql-formatter@15.3.2/dist/sql-formatter.min.js';
 const VENDORED_PATH = '/assets/vendor/smol-toml-1.6.1.mjs';
 const emojiLock = JSON.parse(readFileSync(new URL('../scripts/emoji-data-lock.json', import.meta.url), 'utf8'));
 const emojiCount = Object.values(emojiLock.groupCounts).reduce((sum, count) => sum + count, 0);
@@ -57,13 +58,17 @@ test('설치 시 검증된 자산만 캐시하고 이전 버전 캐시를 삭제
       new Response('stale CSS beautifier', { status: 200 }));
     await formatterCache.put('https://cdn.jsdelivr.net/npm/js-beautify@1.15.1/js/lib/beautify-html.min.js',
       new Response('stale HTML beautifier', { status: 200 }));
+    const sqlFormatterCache = await caches.open('wtools-external-v8');
+    await sqlFormatterCache.put(externalUrl, response.clone());
+    await sqlFormatterCache.put('https://cdn.jsdelivr.net/npm/sql-formatter@15.3.2/dist/sql-formatter.min.js',
+      new Response('stale SQL formatter', { status: 200 }));
   }, EXTERNAL_URL);
 
   await page.goto('/');
   await waitForControl(page);
   const state = await page.evaluate(async ({
     externalUrl, removedMarkedUrl, removedHighlightUrl, removedHighlightCssUrl,
-    removedBeautifyJsUrl, removedBeautifyCssUrl, removedBeautifyHtmlUrl, vendoredPath,
+    removedBeautifyJsUrl, removedBeautifyCssUrl, removedBeautifyHtmlUrl, removedSqlFormatterUrl, vendoredPath,
   }) => {
     const keys = await caches.keys();
     const shellName = keys.find((key) => key.startsWith('wtools-shell-'));
@@ -72,7 +77,7 @@ test('설치 시 검증된 자산만 캐시하고 이전 버전 캐시를 삭제
     const entry = globalThis.WTOOLS_DEPENDENCIES.vendored.smolToml;
     const digest = await crypto.subtle.digest('SHA-384', await vendorResponse.clone().arrayBuffer());
     const integrity = 'sha384-' + btoa(String.fromCharCode(...new Uint8Array(digest)));
-    const external = await caches.open('wtools-external-v8');
+    const external = await caches.open('wtools-external-v9');
     return {
       keys,
       vendorIntegrity: integrity,
@@ -84,6 +89,7 @@ test('설치 시 검증된 자산만 캐시하고 이전 버전 캐시를 삭제
       removedBeautifyJsCached: !!await external.match(removedBeautifyJsUrl),
       removedBeautifyCssCached: !!await external.match(removedBeautifyCssUrl),
       removedBeautifyHtmlCached: !!await external.match(removedBeautifyHtmlUrl),
+      removedSqlFormatterCached: !!await external.match(removedSqlFormatterUrl),
       shellName,
     };
   }, {
@@ -94,6 +100,7 @@ test('설치 시 검증된 자산만 캐시하고 이전 버전 캐시를 삭제
     removedBeautifyJsUrl: REMOVED_BEAUTIFY_JS_URL,
     removedBeautifyCssUrl: REMOVED_BEAUTIFY_CSS_URL,
     removedBeautifyHtmlUrl: REMOVED_BEAUTIFY_HTML_URL,
+    removedSqlFormatterUrl: REMOVED_SQL_FORMATTER_URL,
     vendoredPath: VENDORED_PATH,
   });
   expect(state.keys).not.toContain('wtools-shell-v0');
@@ -104,6 +111,7 @@ test('설치 시 검증된 자산만 캐시하고 이전 버전 캐시를 삭제
   expect(state.keys).not.toContain('wtools-external-v5');
   expect(state.keys).not.toContain('wtools-external-v6');
   expect(state.keys).not.toContain('wtools-external-v7');
+  expect(state.keys).not.toContain('wtools-external-v8');
   expect(state.shellName).toMatch(/^wtools-shell-[0-9a-f]{12}$/);
   expect(state.vendorIntegrity).toBe(state.expectedVendorIntegrity);
   expect(state.externalCached).toBe(true);
@@ -113,6 +121,7 @@ test('설치 시 검증된 자산만 캐시하고 이전 버전 캐시를 삭제
   expect(state.removedBeautifyJsCached).toBe(false);
   expect(state.removedBeautifyCssCached).toBe(false);
   expect(state.removedBeautifyHtmlCached).toBe(false);
+  expect(state.removedSqlFormatterCached).toBe(false);
 
   await context.setOffline(true);
   const externalStatus = await page.evaluate((url) => fetch(url).then((response) => response.status), EXTERNAL_URL);
@@ -157,6 +166,10 @@ test('설치 시 검증된 자산만 캐시하고 이전 버전 캐시를 삭제
   await formatter.locator('textarea.mono:not(.out)').fill('const value={url:"https://example.com/a//b",items:[1,2]};');
   await formatter.getByRole('button', { name: '포맷', exact: true }).click();
   await expect(formatter.locator('textarea.out')).toHaveValue(/url: "https:\/\/example\.com\/a\/\/b"/);
+  await formatter.getByLabel('언어').selectOption('sql');
+  await formatter.locator('textarea.mono:not(.out)').fill('select id,name from users where active=true');
+  await formatter.getByRole('button', { name: '포맷', exact: true }).click();
+  await expect(formatter.locator('textarea.out')).toHaveValue('SELECT\n  id,\n  name\nFROM\n  users\nWHERE\n  active = TRUE');
   const workerFormatted = await page.evaluate(() => new Promise((resolve, reject) => {
     const worker = new Worker('/js/workers/code-format.js', { type: 'module' });
     worker.addEventListener('message', ({ data }) => {

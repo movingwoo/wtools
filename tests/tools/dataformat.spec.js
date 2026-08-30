@@ -680,12 +680,214 @@ test('data-convert: 16 KiB 이상 YAML은 경고 없이 취소 가능한 Worker�
   expect(workerRequests).toBeGreaterThan(0);
 });
 
+test('data-convert: 64 KiB 이상 TOML 파싱·직렬화는 Worker에서 날짜 의미를 보존한다', async ({ page }) => {
+  let workerRequests = 0;
+  await page.route('**/js/workers/toml.js', async (route) => {
+    workerRequests++;
+    await route.continue();
+  });
+  await openTool(page, 'data-convert');
+  const io = ioSection(page);
+  const input = io.locator('textarea.mono:not(.out)');
+  const output = io.locator('textarea.out');
+  const tomlSource = '# 큰 입력 주석\n'.repeat(8_000) + 'created = 2026-08-30T12:34:56+09:00\nsafe = true\n';
+  await setOption(io, '입력 포맷', 'toml');
+  await setOption(io, '출력 포맷', 'json');
+  await input.evaluate((element, value) => {
+    element.value = value;
+    element.dispatchEvent(new Event('input', { bubbles: true }));
+  }, tomlSource);
+  await expect(output).toHaveValue('{\n  "created": "2026-08-30T12:34:56.000+09:00",\n  "safe": true\n}');
+
+  const jsonSource = JSON.stringify({ items: Array.from({ length: 8_000 }, (_, index) => `item_${index}`) });
+  await setOption(io, '입력 포맷', 'json');
+  await setOption(io, '출력 포맷', 'toml');
+  await input.evaluate((element, value) => {
+    element.value = value;
+    element.dispatchEvent(new Event('input', { bubbles: true }));
+  }, jsonSource);
+  await expect(output).toHaveValue(/^items = \[ "item_0", "item_1".*"item_7999" \]$/s);
+  await expect(io.locator('.large-input-warning')).toBeHidden();
+  expect(workerRequests).toBeGreaterThanOrEqual(2);
+});
+
+test('data-convert: 대용량 TOML Worker 작업을 취소하면 상태를 정리한다', async ({ page }) => {
+  await page.route('**/js/workers/toml.js', (route) => route.fulfill({
+    contentType: 'text/javascript',
+    body: 'self.addEventListener("message", () => {});',
+  }));
+  await openTool(page, 'data-convert');
+  const io = ioSection(page);
+  await setOption(io, '입력 포맷', 'toml');
+  await setOption(io, '출력 포맷', 'json');
+  await io.locator('textarea.mono:not(.out)').evaluate((element) => {
+    element.value = '# 취소 대기\n'.repeat(10_000) + 'safe = true\n';
+    element.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+  const cancel = io.getByRole('button', { name: '취소', exact: true });
+  await expect(cancel).toBeVisible();
+  await cancel.click();
+  await expect(io.locator('.io-status')).toHaveText('작업이 취소되었습니다.');
+  await expect(io).toHaveAttribute('aria-busy', 'false');
+});
+
 test('data-convert: JSON → TOML → JSON 왕복 보존', async ({ page }) => {
   await openTool(page, 'data-convert');
   const io = ioSection(page);
   const toml = await runIO(io, { options: { '입력 포맷': 'json', '출력 포맷': 'toml' }, inputs: JSON_SRC });
   const back = await runIO(io, { options: { '입력 포맷': 'toml', '출력 포맷': 'json' }, inputs: toml });
   expect(JSON.parse(back)).toEqual(JSON.parse(JSON_SRC));
+});
+
+test('TOML 1.0: 표준 문자열·dotted key·테이블 배열·날짜 벡터를 파싱한다', async ({ page }) => {
+  await page.goto('/');
+  const result = await page.evaluate(async () => {
+    const { parse } = await import('/js/lib/data/toml.js');
+    const source = `title = "TOML Example"
+literal = 'C:\\Users\\nodejs\\templates'
+multiline = """
+The quick brown \\
+  fox jumps over the lazy dog."""
+owner.name = "Tom"
+owner.dob = 1979-05-27T07:32:00Z
+[database]
+ports = [ 8000, 8001, 8002 ]
+temp_targets = { cpu = 79.5, case = 72.0 }
+[[products]]
+name = "Hammer"
+[[products]]
+name = "Nail"
+[products.details]
+color = "gray"
+`;
+    const value = parse(source);
+    return {
+      json: JSON.parse(JSON.stringify(value)),
+      dateType: value.owner.dob.tomlType,
+      dateIso: value.owner.dob.toISOString(),
+    };
+  });
+  expect(result).toEqual({
+    json: {
+      title: 'TOML Example',
+      literal: 'C:\\Users\\nodejs\\templates',
+      multiline: 'The quick brown fox jumps over the lazy dog.',
+      owner: { name: 'Tom', dob: '1979-05-27T07:32:00.000Z' },
+      database: { ports: [8000, 8001, 8002], temp_targets: { cpu: 79.5, case: 72 } },
+      products: [
+        { name: 'Hammer' },
+        { name: 'Nail', details: { color: 'gray' } },
+      ],
+    },
+    dateType: 'offset-date-time',
+    dateIso: '1979-05-27T07:32:00.000Z',
+  });
+});
+
+test('TOML 1.0: 직렬화 호환성과 안전한 키·숫자·복잡도 경계를 지킨다', async ({ page }) => {
+  await page.goto('/');
+  const result = await page.evaluate(async () => {
+    const { parse, stringify } = await import('/js/lib/data/toml.js');
+    const safe = parse('__proto__.polluted = true\nconstructor = "safe"\nprototype = "data"');
+    const serialized = stringify({
+      name: 'WTools', version: 1, tags: ['web', 'tools'], unsafe: 9007199254740992,
+      empty: {}, rows: [{ id: 1 }, { id: 2 }],
+    });
+    const failures = {};
+    const invalid = {
+      duplicate: 'a = 1\na = 2',
+      date: 'day = 2026-02-30',
+      float: 'value = 01.2',
+      inline: 'value = { a = 1,\n b = 2 }',
+      integer: 'value = 9007199254740992',
+    };
+    for (const [name, source] of Object.entries(invalid)) {
+      try { parse(source); } catch (error) { failures[name] = error.code; }
+    }
+    for (const [name, source, limits] of [
+      ['inputLimit', 'abcd', { inputLength: 3 }],
+      ['scalarLimit', 'a = "abcd"', { scalarLength: 3 }],
+      ['depthLimit', 'a = [[[1]]]', { depth: 2 }],
+      ['nodeLimit', 'a = [1, 2, 3]', { nodes: 3 }],
+    ]) {
+      try { parse(source, { limits }); } catch (error) { failures[name] = error.code; }
+    }
+    return {
+      prototypeSafe: ({}).polluted === undefined,
+      protoIsOwnData: Object.prototype.hasOwnProperty.call(safe, '__proto__')
+        && safe.__proto__.polluted === true,
+      safe: { constructor: safe.constructor, prototype: safe.prototype },
+      serialized,
+      restored: JSON.parse(JSON.stringify(parse(serialized))),
+      failures,
+      empty: parse(''),
+    };
+  });
+  expect(result).toEqual({
+    prototypeSafe: true,
+    protoIsOwnData: true,
+    safe: { constructor: 'safe', prototype: 'data' },
+    serialized: 'name = "WTools"\nversion = 1\ntags = [ "web", "tools" ]\nunsafe = 9007199254740992.0\n\n[empty]\n\n[[rows]]\nid = 1\n\n[[rows]]\nid = 2\n',
+    restored: {
+      name: 'WTools', version: 1, tags: ['web', 'tools'], unsafe: 9007199254740992,
+      empty: {}, rows: [{ id: 1 }, { id: 2 }],
+    },
+    failures: {
+      duplicate: 'TOML_DUPLICATE', date: 'TOML_DATE', float: 'TOML_VALUE',
+      inline: 'TOML_SYNTAX', integer: 'TOML_INTEGER_PRECISION',
+      inputLimit: 'TOML_INPUT_LIMIT', scalarLimit: 'TOML_SCALAR_LIMIT',
+      depthLimit: 'TOML_DEPTH', nodeLimit: 'TOML_NODE_LIMIT',
+    },
+    empty: {},
+  });
+});
+
+test('TOML 1.0: 경로·출력 제한과 공개 날짜·배열 API를 안전하게 처리한다', async ({ page }) => {
+  await page.goto('/');
+  const result = await page.evaluate(async () => {
+    const { parse, stringify, TomlDate } = await import('/js/lib/data/toml.js');
+    const { dumpToml, TOML_WORKER_THRESHOLD } = await import('/js/tools/dataformat.js');
+    const failures = {};
+    const dotted = Array.from({ length: 20 }, (_, index) => `k${index}`).join('.') + ' = 1';
+    const table = `[${Array.from({ length: 20 }, (_, index) => `k${index}`).join('.')}]`;
+    for (const [name, callback] of [
+      ['dottedDepth', () => parse(dotted, { limits: { depth: 10 } })],
+      ['tableDepth', () => parse(table, { maxDepth: 10 })],
+      ['outputNodes', () => stringify({ a: {}, b: {} }, { maxNodes: 2 })],
+      ['sparseArray', () => stringify({ values: [1, , 2] })],
+      ['dateInjection', () => new TomlDate(
+        Date.UTC(2026, 7, 30), '2026-08-30T00:00:00Z\ninjected = true', 'offset-date-time',
+      )],
+    ]) {
+      try { callback(); } catch (error) { failures[name] = error.code || error.message; }
+    }
+    const deepOutput = {};
+    let cursor = deepOutput;
+    for (let depth = 0; depth < 300; depth++) cursor = cursor.child = {};
+    try { await dumpToml(deepOutput, undefined, TOML_WORKER_THRESHOLD); }
+    catch (error) { failures.outputDepth = error.message; }
+    const constructed = new TomlDate('2026-08-30T00:00:00Z');
+    const offset = TomlDate.wrapAsOffsetDateTime(new Date('2026-08-30T00:00:00Z'), '+09:00');
+    return {
+      failures,
+      constructed: stringify({ value: constructed }).trim(),
+      constructedType: [constructed.isValid(), constructed.isDateTime(), constructed.isLocal()],
+      offset: offset.toISOString(),
+    };
+  });
+  expect(result).toEqual({
+    failures: {
+      dottedDepth: 'TOML_DEPTH',
+      tableDepth: 'TOML_DEPTH',
+      outputNodes: 'TOML 출력 노드가 2개를 넘었습니다.',
+      sparseArray: 'TOML 배열에 null 또는 undefined를 넣을 수 없습니다.',
+      dateInjection: 'TOML 날짜·시간 메타데이터가 유효하지 않습니다.',
+      outputDepth: 'TOML 출력 중첩이 256단계를 넘었습니다.',
+    },
+    constructed: 'value = 2026-08-30T00:00:00.000Z',
+    constructedType: [true, true, false],
+    offset: '2026-08-30T09:00:00.000+09:00',
+  });
 });
 
 test('YAML/TOML 파서: 악성 복잡도와 연속 주석 입력을 제한된 시간에 처리한다', async ({ page }) => {
@@ -723,7 +925,7 @@ test('YAML/TOML 파서: 악성 복잡도와 연속 주석 입력을 제한된 �
     const shared = {};
     const dumpAliases = timed((input) => dump(input, { limits: { aliases: 2 } }), [shared, shared, shared, shared]);
     const unfinishedFlow = timed(load, 'key: [\n' + '  a\n'.repeat(32_000));
-    const { parse } = await import('/assets/vendor/smol-toml-1.6.1.mjs');
+    const { parse } = await import('/js/lib/data/toml.js');
     const comments = timed(parse, '# 공격자 제어 주석\n'.repeat(50_000) + 'safe = true\n');
     return {
       merge: { elapsed: merge.elapsed, error: merge.error },

@@ -43,7 +43,7 @@
 
 ## 2. 데이터 포맷 변환
 
-- JSON ↔ YAML ↔ XML ↔ CSV ↔ TOML ↔ ENV(.env) 상호 변환 (YAML 1.2 핵심 스키마 기반의 안전한 데이터 하위 범위, 안전한 표준 태그, 앵커·별칭·merge, literal/folded 블록 문자열과 단일 문서 변환, 16 KiB 이상 Worker·취소와 256 KiB 큰 입력 확인; CSV 구분자·헤더 옵션, 표준 따옴표 검증, 빈·중복 헤더 자동 보정)
+- JSON ↔ YAML ↔ XML ↔ CSV ↔ TOML ↔ ENV(.env) 상호 변환 (YAML 1.2 핵심 스키마 기반의 안전한 데이터 하위 범위, 안전한 표준 태그, 앵커·별칭·merge, literal/folded 블록 문자열과 단일 문서 변환, 16 KiB 이상 Worker·취소와 256 KiB 큰 입력 확인; TOML 1.0 날짜·시간, dotted key, 테이블 배열, 기본·리터럴·다중 행 문자열, 64 KiB 이상 Worker·취소; CSV 구분자·헤더 옵션, 표준 따옴표 검증, 빈·중복 헤더 자동 보정)
 - JSON Lines/NDJSON ↔ JSON 배열/CSV/YAML 변환 (줄 번호 오류, BOM·CRLF, 텍스트·다운로드, NDJSON·JSON 배열·CSV 파일 512 KiB 청크 파싱, YAML 32 MiB 전체 파싱, 진행률·취소, 지원 브라우저 디스크 직접 저장과 128 MiB 호환 다운로드)
 - JSONPath / JMESPath 테스터
 - JSON Schema 검증(Draft 4/6/7/2019-09/2020-12 핵심 키워드) 및 샘플 생성 (공식 벡터 검증, 로컬 `$ref`, 조합·배열·패턴; 외부 `$ref`와 `$dynamicRef`, `unevaluated*`, `contentSchema`는 명시적으로 거부)

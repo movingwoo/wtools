@@ -63,6 +63,13 @@ jobs:
         shell: bash
         run: python3 scripts/check_yaml_specs.py --check-latest | tee -a "$GITHUB_STEP_SUMMARY"
 
+      - name: Verify TOML 1.0 specification and official corpus
+        if: ${{ always() }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: python3 scripts/check_toml_specs.py --check-latest | tee -a "$GITHUB_STEP_SUMMARY"
+
       - name: Compare syntax language profiles with official releases
         if: ${{ always() }}
         shell: bash
@@ -88,14 +95,14 @@ jobs:
         if: ${{ always() }}
         working-directory: tests
         run: |
-          npx playwright test --project=chromium -g 'JSON Schema|YAML 1.2|punycode|zip:|tar:|markdown-html: 공개|markdown-html: 닫는 괄호|code-format: SQL 포맷·압축 결과|code-format: JavaScript 결과|code-format: CSS 결과|code-format: HTML 결과|code-format: 중첩 템플릿'
+          npx playwright test --project=chromium -g 'JSON Schema|YAML 1.2|TOML 1.0|punycode|zip:|tar:|markdown-html: 공개|markdown-html: 닫는 괄호|code-format: SQL 포맷·압축 결과|code-format: JavaScript 결과|code-format: CSS 결과|code-format: HTML 결과|code-format: 중첩 템플릿'
 
       - name: Write review summary
         if: ${{ always() }}
         shell: bash
         run: |
           echo '## 월간 품질·보안 점검' >> "$GITHUB_STEP_SUMMARY"
-          echo '- npm·OSV·GitHub Advisory, 고정 자산 원본 해시, UA·IANA·CommonMark·GFM·YAML 1.2·구문 강조·코드 포매터 언어 프로필·브라우저 기준선, JSON Schema·IDN·ZIP/Tar·Markdown·포매터 대표 벡터를 확인했습니다.' >> "$GITHUB_STEP_SUMMARY"
+          echo '- npm·OSV·GitHub Advisory, 고정 자산 원본 해시, UA·IANA·CommonMark·GFM·YAML 1.2·TOML 1.0·구문 강조·코드 포매터 언어 프로필·브라우저 기준선, JSON Schema·IDN·ZIP/Tar·Markdown·포매터 대표 벡터를 확인했습니다.' >> "$GITHUB_STEP_SUMMARY"
           echo '- 실제 CDN과 운영 헤더·PWA 검사는 nightly 워크플로 결과를 함께 확인하세요.' >> "$GITHUB_STEP_SUMMARY"
 
   emoji-update:

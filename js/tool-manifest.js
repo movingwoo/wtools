@@ -503,7 +503,7 @@ export const TOOL_MANIFESTS = Object.freeze([
       ]
     },
     "module": "./tools/devfmt-format.js",
-    "externalLibrary": true
+    "externalLibrary": false
   },
   {
     "id": "code-format",
@@ -512,7 +512,7 @@ export const TOOL_MANIFESTS = Object.freeze([
     "desc": "각종 코드를 정렬(beautify)하거나 압축(minify)합니다.",
     "keywords": "beautify minify format pretty",
     "module": "./tools/devfmt-format.js",
-    "externalLibrary": true
+    "externalLibrary": false
   },
   {
     "id": "syntax-highlight",
@@ -521,7 +521,7 @@ export const TOOL_MANIFESTS = Object.freeze([
     "desc": "22개 언어의 코드를 자체 토크나이저와 밝은/어두운 테마로 강조합니다.",
     "keywords": "highlight code color",
     "module": "./tools/devfmt-format.js",
-    "externalLibrary": true
+    "externalLibrary": false
   },
   {
     "id": "markdown-html",
@@ -530,7 +530,7 @@ export const TOOL_MANIFESTS = Object.freeze([
     "desc": "CommonMark·GFM의 주요 Markdown 문법을 자체 파서로 HTML 코드로 변환하고 렌더링 미리보기를 제공합니다.",
     "keywords": "markdown md html preview",
     "module": "./tools/devfmt-format.js",
-    "externalLibrary": true
+    "externalLibrary": false
   },
   {
     "id": "markdown-toc",
@@ -539,7 +539,7 @@ export const TOOL_MANIFESTS = Object.freeze([
     "desc": "Markdown 헤딩을 분석해 GitHub 스타일 앵커가 적용된 목차를 생성합니다.",
     "keywords": "markdown md toc table of contents heading anchor slug 목차 헤딩 앵커 번호",
     "module": "./tools/devfmt-format.js",
-    "externalLibrary": true
+    "externalLibrary": false
   },
   {
     "id": "html-strip",
@@ -548,7 +548,7 @@ export const TOOL_MANIFESTS = Object.freeze([
     "desc": "HTML을 안전한 샌드박스에서 렌더링해 보거나, 태그를 제거해 순수 텍스트만 추출합니다.",
     "keywords": "html strip tags render sandbox",
     "module": "./tools/devfmt-format.js",
-    "externalLibrary": true
+    "externalLibrary": false
   },
   {
     "id": "hex-viewer",
@@ -557,7 +557,7 @@ export const TOOL_MANIFESTS = Object.freeze([
     "desc": "파일이나 텍스트를 16진수 덤프(xxd 형식)로 보고, 매직 넘버로 파일 형식을 판별합니다.",
     "keywords": "hex dump viewer binary magic number file type xxd signature",
     "module": "./tools/devfmt-format.js",
-    "externalLibrary": true
+    "externalLibrary": false
   },
   {
     "id": "curl-fetch",

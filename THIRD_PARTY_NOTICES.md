@@ -49,7 +49,6 @@ SHA-384는 `scripts/emoji-data-lock.json`에, 변환·검증·공식 안정판 �
 | 패키지 | 버전 | 라이선스 | 사용 범위 |
 |---|---:|---|---|
 | CryptoJS | 4.2.0 | MIT | 파일 해시 Worker |
-| smol-toml | 1.6.1 | BSD-3-Clause | TOML 변환 |
 | brotli-compress | 1.3.3 | Apache-2.0 | Brotli 압축 |
 | brotli | 1.3.3 | MIT | Brotli 해제 |
 | @bokuweb/zstd-wasm | 0.0.27 | MIT | Zstandard 압축 및 WASM |

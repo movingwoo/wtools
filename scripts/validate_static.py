@@ -45,7 +45,6 @@ SCRIPT_TAG_PATTERN = re.compile(r'<script\b([^>]*)>', re.IGNORECASE)
 HTML_ATTR_PATTERN = re.compile(r'([\w-]+)=["\']([^"\']*)["\']')
 DEPENDENCY_GLOBALS = {
   'cryptoJs': ('CryptoJS',),
-  'jsyaml': ('jsyaml',),
   'jsrsasign': ('ASN1HEX', 'KEYUTIL', 'KJUR', 'X509', 'X509CRL', 'hextopem', 'pemtohex'),
   'pako': ('pako',),
   'fflate': ('fflate',),

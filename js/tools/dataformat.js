@@ -2,6 +2,56 @@
 import { tool, makeIO, h, kvTable, formLabel, loadScript, loadModule, vendorUrl, LIB, download, createAsyncRunner, readFileChunks, throwIfAborted, formatBytes } from '../core.js';
 
 const CAT = '데이터 포맷 변환';
+export const YAML_WORKER_THRESHOLD = 16 * 1024;
+export const YAML_LARGE_INPUT_THRESHOLD = 256 * 1024;
+
+let yamlMod = null;
+async function yaml() {
+  return (yamlMod ??= import('../lib/data/yaml.js').catch(() => {
+    yamlMod = null;
+    throw new Error('YAML 엔진을 불러오지 못했습니다. 잠시 후 다시 시도하세요.');
+  }));
+}
+
+function yamlWorker(action, payload, signal) {
+  return new Promise((resolve, reject) => {
+    const worker = new Worker(new URL('../workers/yaml.js', import.meta.url), { type: 'module' });
+    let settled = false;
+    const finish = (callback, value) => {
+      if (settled) return;
+      settled = true;
+      signal?.removeEventListener('abort', abort);
+      worker.terminate();
+      callback(value);
+    };
+    const abort = () => finish(reject, new DOMException('작업이 취소되었습니다.', 'AbortError'));
+    worker.addEventListener('message', ({ data }) => {
+      if (data.error) {
+        const error = new Error(data.error);
+        error.code = data.code;
+        finish(reject, error);
+      } else finish(resolve, data.result);
+    }, { once: true });
+    worker.addEventListener('error', () => finish(reject, new Error('YAML Worker를 실행하지 못했습니다.')), { once: true });
+    signal?.addEventListener('abort', abort, { once: true });
+    if (signal?.aborted) abort();
+    else worker.postMessage({ action, ...payload });
+  });
+}
+
+export async function parseYaml(text, signal) {
+  if (text.length >= YAML_WORKER_THRESHOLD) return yamlWorker('load', { text }, signal);
+  const engine = await yaml();
+  if (signal?.aborted) throw new DOMException('작업이 취소되었습니다.', 'AbortError');
+  return engine.load(text);
+}
+
+export async function dumpYaml(value, options = {}, signal, sizeHint = 0) {
+  if (sizeHint >= YAML_WORKER_THRESHOLD) return yamlWorker('dump', { value, options }, signal);
+  const engine = await yaml();
+  if (signal?.aborted) throw new DOMException('작업이 취소되었습니다.', 'AbortError');
+  return engine.dump(value, options);
+}
 
 tool({
   id: 'json-query', cat: CAT, name: 'JSONPath / JMESPath 테스터',
@@ -605,19 +655,19 @@ function requireCsvObjects(values) {
   return values;
 }
 
-export function convertJsonLines(text, from, to, { csvDelim = ',', csvHeader = true } = {}) {
+export async function convertJsonLines(text, from, to, { csvDelim = ',', csvHeader = true, signal } = {}) {
   let values;
   switch (from) {
     case 'ndjson': values = parseNDJSON(text); break;
     case 'json': values = requireRecordArray(JSON.parse(text), 'JSON'); break;
-    case 'yaml': values = requireRecordArray(jsyaml.load(text), 'YAML'); break;
+    case 'yaml': values = requireRecordArray(await parseYaml(text, signal), 'YAML'); break;
     case 'csv': values = rowsToObjects(parseCSV(text, csvDelim), csvHeader); break;
     default: throw new Error(`지원하지 않는 입력 포맷입니다: ${from}`);
   }
   switch (to) {
     case 'ndjson': return values.map((value) => JSON.stringify(value)).join('\n');
     case 'json': return JSON.stringify(values, null, 2);
-    case 'yaml': return jsyaml.dump(values, { lineWidth: 120, noRefs: true });
+    case 'yaml': return dumpYaml(values, { lineWidth: 120, noRefs: true }, signal, text.length);
     case 'csv': {
       const rows = objectsToRows(requireCsvObjects(values));
       return toCSV(csvHeader ? rows : rows.slice(1), csvDelim);
@@ -842,7 +892,8 @@ async function prepareRecordInput(file, format, options, task) {
     throw new Error(`파일은 최대 ${formatBytes(RECORD_FILE_MAX_BYTES)}까지 처리할 수 있습니다.`);
   if (format === 'yaml') {
     task.progress('YAML 목록을 읽는 중…');
-    const values = requireRecordArray(jsyaml.load(await readUtf8File(file, YAML_FILE_MAX_BYTES, task.signal)), 'YAML');
+    const values = requireRecordArray(await parseYaml(
+      await readUtf8File(file, YAML_FILE_MAX_BYTES, task.signal), task.signal), 'YAML');
     return {
       async replay(onRecord, progress) {
         for (const [index, value] of values.entries()) {
@@ -973,7 +1024,7 @@ async function convertRecordFile(file, from, to, options, task) {
       else if (to === 'json') {
         const json = JSON.stringify(value, null, 2).replace(/^/gm, '  ');
         await sink.write(`${index ? ',\n' : ''}${json}`);
-      } else if (to === 'yaml') await sink.write(jsyaml.dump([value], { lineWidth: 120, noRefs: true }));
+      } else if (to === 'yaml') await sink.write(await dumpYaml([value], { lineWidth: 120, noRefs: true }, task.signal));
       else if (to === 'csv') {
         const row = headers.map((key) => {
           const cell = value[key];
@@ -1032,12 +1083,14 @@ tool({
         id: ({ opts }) => `format-${opts.to}`,
         when: ({ result }) => !!String(result).trim(),
       },
-      async process(text, o) {
+      cancelable: true,
+      largeInputThreshold: YAML_LARGE_INPUT_THRESHOLD,
+      async process(text, o, action, signal) {
         if (!text.trim()) return '';
         let data;
         switch (o.from) {
           case 'json': data = JSON.parse(text); break;
-          case 'yaml': data = jsyaml.load(text); break;
+          case 'yaml': data = await parseYaml(text, signal); break;
           case 'xml': data = parseXML(text); break;
           case 'csv': data = rowsToObjects(parseCSV(text, o.csvDelim), o.csvHeader); break;
           case 'toml': data = (await toml()).parse(text); break;
@@ -1045,7 +1098,7 @@ tool({
         }
         switch (o.to) {
           case 'json': return JSON.stringify(data, null, 2);
-          case 'yaml': return jsyaml.dump(data, { lineWidth: 120 });
+          case 'yaml': return dumpYaml(data, { lineWidth: 120 }, signal, text.length);
           case 'xml': {
             if (Array.isArray(data)) data = { item: data };
             const entries = Object.entries(data);
@@ -1071,7 +1124,7 @@ tool({
           case 'env': return toEnv(data);
         }
       },
-      note: 'CSV 구분자·헤더 옵션은 입력 또는 출력 포맷이 CSV일 때 적용됩니다. 따옴표는 표준 CSV 방식(셀 전체를 감싸고 내부 따옴표는 ""로 이스케이프)으로 처리합니다. ENV 값은 숫자나 true/false처럼 보여도 문자열로 유지됩니다.',
+      note: 'YAML 입력은 YAML 1.2 핵심 스키마의 단일 문서와 안전한 표준 태그만 처리하며, 앵커·별칭·merge와 블록 문자열을 지원합니다. CSV 구분자·헤더 옵션은 입력 또는 출력 포맷이 CSV일 때 적용됩니다. 따옴표는 표준 CSV 방식(셀 전체를 감싸고 내부 따옴표는 ""로 이스케이프)으로 처리합니다. ENV 값은 숫자나 true/false처럼 보여도 문자열로 유지됩니다.',
     });
   },
 });
@@ -1108,16 +1161,18 @@ tool({
       autorun: false,
       outputRows: 14,
       transferOutput: { id: ({ opts }) => `json-lines-${opts.to}`, when: ({ result }) => !!String(result).trim() },
-      process(text, options, action) {
+      cancelable: true,
+      largeInputThreshold: YAML_LARGE_INPUT_THRESHOLD,
+      async process(text, options, action, signal) {
         if (!text.trim()) return '';
-        const result = convertJsonLines(text, options.from, options.to, options);
+        const result = await convertJsonLines(text, options.from, options.to, { ...options, signal });
         if (action === 'download') {
           const [extension, type] = outputFileInfo(options.to);
           download(`wtools-json-lines.${extension}`, result + (result.endsWith('\n') ? '' : '\n'), type);
         }
         return result;
       },
-      note: '빈 줄은 무시하고 잘못된 NDJSON은 줄 번호와 함께 중단합니다. CSV로 변환할 때는 각 레코드가 객체여야 하며 중첩 값은 JSON 문자열로 보존됩니다.',
+      note: '빈 줄은 무시하고 잘못된 NDJSON은 줄 번호와 함께 중단합니다. YAML은 안전한 표준 태그의 단일 문서 목록만 처리합니다. CSV로 변환할 때는 각 레코드가 객체여야 하며 중첩 값은 JSON 문자열로 보존됩니다.',
     });
 
     root.append(h('h3', null, '파일 변환'));

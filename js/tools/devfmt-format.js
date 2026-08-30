@@ -23,6 +23,23 @@ function loadSqlFormatter() {
   }));
 }
 
+let yamlPromise;
+function loadYaml() {
+  return (yamlPromise ??= import('../lib/data/yaml.js').catch(() => {
+    yamlPromise = null;
+    throw new Error('YAML 엔진을 불러오지 못했습니다. 잠시 후 다시 시도하세요.');
+  }));
+}
+
+async function runYamlFormatter(text, action, indentSize, signal) {
+  if (text.length >= CODE_FORMAT_WORKER_THRESHOLD)
+    return formatCodeInWorker(text, 'yaml', action, indentSize, signal);
+  const yaml = await loadYaml();
+  if (signal?.aborted) throw new DOMException('작업이 취소되었습니다.', 'AbortError');
+  return yaml.dump(yaml.load(text), action === 'min'
+    ? { flowLevel: 0 } : { indent: indentSize, lineWidth: 120 });
+}
+
 function formatCodeInWorker(text, lang, action, indentSize, signal, formatterOptions = {}) {
   return new Promise((resolve, reject) => {
     const worker = new Worker(new URL('../workers/code-format.js', import.meta.url), { type: 'module' });
@@ -204,7 +221,7 @@ tool({
               }
               catch (error) { throw codeFormatterError(error, o.lang); }
             }
-            case 'yaml': return jsyaml.dump(jsyaml.load(text), { flowLevel: 0 }).trim();
+            case 'yaml': return (await runYamlFormatter(text, action, size, signal)).trim();
           }
         }
         switch (o.lang) {
@@ -228,10 +245,10 @@ tool({
             catch (error) { throw codeFormatterError(error, o.lang); }
           }
           case 'xml': return fmtXml(text, ' '.repeat(size));
-          case 'yaml': return jsyaml.dump(jsyaml.load(text), { indent: size, lineWidth: 120 });
+          case 'yaml': return runYamlFormatter(text, action, size, signal);
         }
       },
-      note: 'SQL은 SQL:2023 공통 DML·DDL과 CTE·조인·집합 연산·CASE·윈도 함수 범위를 포맷합니다. 선택한 SQL 종류에 맞춰 인용문·주석·연산자·파라미터를 보존하며, MySQL 연결의 SQL 모드와 옵션을 같게 설정해야 합니다. 각 SQL 종류의 전체 문법을 검사하지는 않습니다. SQL·JavaScript·CSS·HTML은 외부 요청 없이 자체 엔진으로 처리하고, 2천 자 이상은 취소 가능한 Worker를 사용하며 입력은 최대 4,194,304자, 결과는 최대 16,777,216자입니다.',
+      note: 'SQL은 SQL:2023 공통 DML·DDL과 CTE·조인·집합 연산·CASE·윈도 함수 범위를 포맷합니다. 선택한 SQL 종류에 맞춰 인용문·주석·연산자·파라미터를 보존하며, MySQL 연결의 SQL 모드와 옵션을 같게 설정해야 합니다. 각 SQL 종류의 전체 문법을 검사하지는 않습니다. SQL·JavaScript·CSS·HTML·YAML은 외부 요청 없이 자체 엔진으로 처리하고, 2천 자 이상은 취소 가능한 Worker를 사용하며 입력은 최대 4,194,304자, 결과는 최대 16,777,216자입니다.',
     });
     const sqlOnly = ['sqlDialect', 'mysqlBackslashEscapes', 'mysqlAnsiQuotes'];
     const updateSqlOptions = () => {

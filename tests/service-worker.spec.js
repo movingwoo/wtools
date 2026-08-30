@@ -6,7 +6,8 @@ import { cdnCache } from './cdn-cache.js';
 const test = base.extend({ ...cdnCache });
 test.use({ allowServiceWorker: true });
 
-const EXTERNAL_URL = 'https://cdn.jsdelivr.net/npm/js-yaml@4.3.1/dist/js-yaml.min.js';
+const EXTERNAL_URL = 'https://cdn.jsdelivr.net/npm/pako@2.1.0/dist/pako.min.js';
+const REMOVED_YAML_URL = 'https://cdn.jsdelivr.net/npm/js-yaml@4.3.1/dist/js-yaml.min.js';
 const REMOVED_MARKED_URL = 'https://cdn.jsdelivr.net/npm/marked@12.0.2/marked.min.js';
 const REMOVED_HIGHLIGHT_URL = 'https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js';
 const REMOVED_HIGHLIGHT_CSS_URL = 'https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark-dimmed.min.css';
@@ -31,7 +32,7 @@ async function waitForControl(page) {
 
 test('설치 시 검증된 자산만 캐시하고 이전 버전 캐시를 삭제한다', async ({ page, context }) => {
   await page.goto('/404.html');
-  await page.evaluate(async (externalUrl) => {
+  await page.evaluate(async ({ externalUrl, removedYamlUrl }) => {
     await caches.open('wtools-shell-v0');
     await caches.open('wtools-external-v0');
     const response = await fetch(externalUrl);
@@ -62,13 +63,17 @@ test('설치 시 검증된 자산만 캐시하고 이전 버전 캐시를 삭제
     await sqlFormatterCache.put(externalUrl, response.clone());
     await sqlFormatterCache.put('https://cdn.jsdelivr.net/npm/sql-formatter@15.3.2/dist/sql-formatter.min.js',
       new Response('stale SQL formatter', { status: 200 }));
-  }, EXTERNAL_URL);
+    const yamlCache = await caches.open('wtools-external-v9');
+    await yamlCache.put(externalUrl, response.clone());
+    await yamlCache.put(removedYamlUrl, new Response('stale YAML parser', { status: 200 }));
+  }, { externalUrl: EXTERNAL_URL, removedYamlUrl: REMOVED_YAML_URL });
 
   await page.goto('/');
   await waitForControl(page);
   const state = await page.evaluate(async ({
     externalUrl, removedMarkedUrl, removedHighlightUrl, removedHighlightCssUrl,
-    removedBeautifyJsUrl, removedBeautifyCssUrl, removedBeautifyHtmlUrl, removedSqlFormatterUrl, vendoredPath,
+    removedBeautifyJsUrl, removedBeautifyCssUrl, removedBeautifyHtmlUrl, removedSqlFormatterUrl,
+    removedYamlUrl, vendoredPath,
   }) => {
     const keys = await caches.keys();
     const shellName = keys.find((key) => key.startsWith('wtools-shell-'));
@@ -77,7 +82,7 @@ test('설치 시 검증된 자산만 캐시하고 이전 버전 캐시를 삭제
     const entry = globalThis.WTOOLS_DEPENDENCIES.vendored.smolToml;
     const digest = await crypto.subtle.digest('SHA-384', await vendorResponse.clone().arrayBuffer());
     const integrity = 'sha384-' + btoa(String.fromCharCode(...new Uint8Array(digest)));
-    const external = await caches.open('wtools-external-v9');
+    const external = await caches.open('wtools-external-v10');
     return {
       keys,
       vendorIntegrity: integrity,
@@ -90,6 +95,7 @@ test('설치 시 검증된 자산만 캐시하고 이전 버전 캐시를 삭제
       removedBeautifyCssCached: !!await external.match(removedBeautifyCssUrl),
       removedBeautifyHtmlCached: !!await external.match(removedBeautifyHtmlUrl),
       removedSqlFormatterCached: !!await external.match(removedSqlFormatterUrl),
+      removedYamlCached: !!await external.match(removedYamlUrl),
       shellName,
     };
   }, {
@@ -101,6 +107,7 @@ test('설치 시 검증된 자산만 캐시하고 이전 버전 캐시를 삭제
     removedBeautifyCssUrl: REMOVED_BEAUTIFY_CSS_URL,
     removedBeautifyHtmlUrl: REMOVED_BEAUTIFY_HTML_URL,
     removedSqlFormatterUrl: REMOVED_SQL_FORMATTER_URL,
+    removedYamlUrl: REMOVED_YAML_URL,
     vendoredPath: VENDORED_PATH,
   });
   expect(state.keys).not.toContain('wtools-shell-v0');
@@ -112,6 +119,7 @@ test('설치 시 검증된 자산만 캐시하고 이전 버전 캐시를 삭제
   expect(state.keys).not.toContain('wtools-external-v6');
   expect(state.keys).not.toContain('wtools-external-v7');
   expect(state.keys).not.toContain('wtools-external-v8');
+  expect(state.keys).not.toContain('wtools-external-v9');
   expect(state.shellName).toMatch(/^wtools-shell-[0-9a-f]{12}$/);
   expect(state.vendorIntegrity).toBe(state.expectedVendorIntegrity);
   expect(state.externalCached).toBe(true);
@@ -122,6 +130,7 @@ test('설치 시 검증된 자산만 캐시하고 이전 버전 캐시를 삭제
   expect(state.removedBeautifyCssCached).toBe(false);
   expect(state.removedBeautifyHtmlCached).toBe(false);
   expect(state.removedSqlFormatterCached).toBe(false);
+  expect(state.removedYamlCached).toBe(false);
 
   await context.setOffline(true);
   const externalStatus = await page.evaluate((url) => fetch(url).then((response) => response.status), EXTERNAL_URL);
@@ -135,6 +144,9 @@ test('설치 시 검증된 자산만 캐시하고 이전 버전 캐시를 삭제
   await io.getByLabel('출력 포맷').selectOption('json');
   await io.locator('textarea.mono:not(.out)').fill('name = "offline"');
   await expect(io.locator('textarea.out')).toHaveValue('{\n  "name": "offline"\n}');
+  await io.getByLabel('입력 포맷').selectOption('yaml');
+  await io.locator('textarea.mono:not(.out)').fill('base: &base\n  enabled: true\nitem:\n  <<: *base\n  name: offline');
+  await expect(io.locator('textarea.out')).toHaveValue('{\n  "base": {\n    "enabled": true\n  },\n  "item": {\n    "enabled": true,\n    "name": "offline"\n  }\n}');
 
   await page.evaluate(() => { location.hash = '#/tool/markdown-html'; });
   const markdown = page.locator('#content .io');
@@ -250,7 +262,7 @@ test('변조된 제3자 응답과 캐시를 폐기하고 한국어 오류를 반
   const result = await page.evaluate(async () => {
     await import('/js/sw-integrity.js');
     const { verifiedCached, fetchVerified, IntegrityError, integrityErrorResponse } = globalThis.WTOOLS_INTEGRITY;
-    const integrity = globalThis.WTOOLS_DEPENDENCIES.cdn.jsyaml.integrity;
+    const integrity = globalThis.WTOOLS_DEPENDENCIES.cdn.pako.integrity;
     const altered = () => new Response('globalThis.altered = true;', {
       headers: { 'Content-Type': 'application/javascript' },
     });

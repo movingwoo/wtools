@@ -557,21 +557,31 @@ test('markdown-html: 큰 입력을 누락 없이 변환', async ({ page }) => {
 test('markdown-html: 큰 입력 Worker를 취소', async ({ page }) => {
   await openTool(page, 'markdown-html');
   const io = ioSection(page);
-  await io.locator('textarea.mono:not(.out)').evaluate((textarea) => {
+  const state = await io.locator('textarea.mono:not(.out)').evaluate(async (textarea) => {
     textarea.value = '**굵게** '.repeat(150000);
     textarea.dispatchEvent(new Event('input', { bubbles: true }));
-  });
-  await expect.poll(() => io.evaluate((root) => !root.querySelector('.large-input-warning')?.hidden)).toBe(true);
-  await io.evaluate((root) => root.querySelector('.large-input-warning button').click());
-  await expect.poll(() => io.evaluate((root) => {
+    const root = textarea.closest('.io');
+    const warning = root.querySelector('.large-input-warning');
+    const warningShown = !warning.classList.contains('hidden');
+    warning.querySelector('button').click();
     const cancel = [...root.querySelectorAll('button')].find((button) => button.textContent === '취소');
-    return Boolean(cancel && !cancel.hidden && !cancel.disabled);
-  })).toBe(true);
-  await io.evaluate((root) => {
-    [...root.querySelectorAll('button')].find((button) => button.textContent === '취소').click();
+    const cancelShown = !cancel.classList.contains('hidden') && !cancel.disabled;
+    cancel.click();
+    for (let index = 0; index < 10 && root.getAttribute('aria-busy') !== 'false'; index++)
+      await Promise.resolve();
+    return {
+      warningShown,
+      cancelShown,
+      busy: root.getAttribute('aria-busy'),
+      output: root.querySelector('.out-html').textContent,
+    };
   });
-  await expect.poll(() => io.getAttribute('aria-busy')).toBe('false');
-  await expect(io.locator('.out-html')).toContainText('작업이 취소되었습니다.');
+  expect(state).toEqual({
+    warningShown: true,
+    cancelShown: true,
+    busy: 'false',
+    output: expect.stringContaining('작업이 취소되었습니다.'),
+  });
 });
 
 test('markdown-html: 공개 CommonMark·GFM 벡터', async ({ page }) => {
@@ -674,6 +684,17 @@ test('code-format: YAML 포맷 → 압축 → 포맷 왕복 보존', async ({ pa
   expect(min).toBe('{name: WTools, version: 1, tags: [web, tools]}');
   const back = await runIO(io, { inputs: min, action: '포맷' });
   expect(back).toBe(yaml);
+});
+
+test('code-format: 여러 줄 문자열을 flow YAML로 안전하게 압축한다', async ({ page }) => {
+  await openTool(page, 'code-format');
+  const io = ioSection(page);
+  const min = await runIO(io, {
+    options: { '언어': 'yaml' }, inputs: 'message: |-\n  첫 줄\n  둘째 줄\n', action: '압축',
+  });
+  expect(min).toBe('{message: "첫 줄\\n둘째 줄"}');
+  const back = await runIO(io, { inputs: min, action: '포맷' });
+  expect(back).toBe('message: |-\n  첫 줄\n  둘째 줄\n');
 });
 
 test('code-format: XML 압축 → 포맷 왕복 보존', async ({ page }) => {
@@ -1059,6 +1080,23 @@ test('code-format: 중간 크기 입력은 경고 없이 Worker에서 처리', a
   expect(workerRequests).toBe(1);
 });
 
+test('code-format: 중간 크기 YAML은 자체 Worker에서 포맷한다', async ({ page }) => {
+  let workerRequests = 0;
+  await page.route('**/js/workers/code-format.js', async (route) => {
+    workerRequests++;
+    await route.continue();
+  });
+  await openTool(page, 'code-format');
+  const io = ioSection(page);
+  await io.getByLabel('언어').selectOption('yaml');
+  await io.locator('textarea.mono:not(.out)').fill(Array.from(
+    { length: 180 }, (_, index) => `item_${index}: [one, two, three]`,
+  ).join('\n'));
+  await io.getByRole('button', { name: '포맷', exact: true }).click();
+  await expect(io.locator('textarea.out')).toHaveValue(/item_179:\n  - one\n  - two\n  - three/);
+  expect(workerRequests).toBe(1);
+});
+
 test('code-format: 언어와 SQL 종류에 맞는 옵션만 표시', async ({ page }) => {
   await openTool(page, 'code-format');
   const io = ioSection(page);
@@ -1093,10 +1131,11 @@ test('code-format: 큰 SQL 입력은 자체 Worker에서 포맷', async ({ page 
   expect(workerRequests).toBe(1);
 });
 
-test('code-format: SQL·JavaScript·CSS·HTML 처리 중 제거된 포맷터 외부 요청이 없다', async ({ page }) => {
+test('code-format: SQL·JavaScript·CSS·HTML·YAML 처리 중 제거된 포맷터 외부 요청이 없다', async ({ page }) => {
   const requests = [];
   page.on('request', (request) => {
-    if (request.url().includes('js-beautify') || request.url().includes('sql-formatter@'))
+    if (request.url().includes('js-beautify') || request.url().includes('sql-formatter@')
+      || request.url().includes('js-yaml@'))
       requests.push(request.url());
   });
   await openTool(page, 'code-format');
@@ -1106,6 +1145,7 @@ test('code-format: SQL·JavaScript·CSS·HTML 처리 중 제거된 포맷터 외
     ['js', 'const value={a:1};'],
     ['css', '.a{color:red}'],
     ['html', '<div><span>a</span></div>'],
+    ['yaml', 'name: WTools\nitems: [one, two]'],
   ]) {
     await io.getByLabel('언어').selectOption(lang);
     await io.locator('textarea.mono:not(.out)').fill(source);

@@ -528,5 +528,5 @@ if ('serviceWorker' in navigator) {
 }
 
 window.addEventListener('load', () => {
-  if (!globalThis.CryptoJS || !globalThis.jsyaml) externalWarning.classList.remove('hidden');
+  if (!globalThis.CryptoJS) externalWarning.classList.remove('hidden');
 });

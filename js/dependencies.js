@@ -11,15 +11,6 @@ globalThis.WTOOLS_DEPENDENCIES = {
       "kind": "script",
       "tools": ["js/main.js", "js/tools/cryptotools.js", "js/tools/encoding.js", "js/tools/hashing.js", "js/tools/pki.js"]
     },
-    "jsyaml": {
-      "package": "js-yaml",
-      "version": "4.3.1",
-      "url": "https://cdn.jsdelivr.net/npm/js-yaml@4.3.1/dist/js-yaml.min.js",
-      "integrity": "sha384-S9ICdlb+JXmKnf3zbM1G+PBNWbhB7ARTUpJyvroFrHHHR8JsKt4oO+kPyfzbT+TM",
-      "license": "MIT",
-      "kind": "script",
-      "tools": ["js/main.js", "js/tools/dataformat.js", "js/tools/devfmt-convert.js", "js/tools/devfmt-format.js"]
-    },
     "jsrsasign": {
       "package": "jsrsasign",
       "version": "11.1.5",
@@ -231,7 +222,7 @@ globalThis.WTOOLS_DEPENDENCIES = {
       "use": "WCAG 자동 접근성 검사"
     }
   },
-  "reviewed": "2026-08-25"
+  "reviewed": "2026-08-29"
 };
 
 Object.freeze(globalThis.WTOOLS_DEPENDENCIES.cdn);

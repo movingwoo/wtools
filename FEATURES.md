@@ -43,7 +43,7 @@
 
 ## 2. 데이터 포맷 변환
 
-- JSON ↔ YAML ↔ XML ↔ CSV ↔ TOML ↔ ENV(.env) 상호 변환 (CSV 구분자·헤더 옵션, 표준 따옴표 검증, 빈·중복 헤더 자동 보정)
+- JSON ↔ YAML ↔ XML ↔ CSV ↔ TOML ↔ ENV(.env) 상호 변환 (YAML 1.2 핵심 스키마 기반의 안전한 데이터 하위 범위, 안전한 표준 태그, 앵커·별칭·merge, literal/folded 블록 문자열과 단일 문서 변환, 16 KiB 이상 Worker·취소와 256 KiB 큰 입력 확인; CSV 구분자·헤더 옵션, 표준 따옴표 검증, 빈·중복 헤더 자동 보정)
 - JSON Lines/NDJSON ↔ JSON 배열/CSV/YAML 변환 (줄 번호 오류, BOM·CRLF, 텍스트·다운로드, NDJSON·JSON 배열·CSV 파일 512 KiB 청크 파싱, YAML 32 MiB 전체 파싱, 진행률·취소, 지원 브라우저 디스크 직접 저장과 128 MiB 호환 다운로드)
 - JSONPath / JMESPath 테스터
 - JSON Schema 검증(Draft 4/6/7/2019-09/2020-12 핵심 키워드) 및 샘플 생성 (공식 벡터 검증, 로컬 `$ref`, 조합·배열·패턴; 외부 `$ref`와 `$dynamicRef`, `unevaluated*`, `contentSchema`는 명시적으로 거부)
@@ -57,7 +57,7 @@
 ## 3. 코드 포맷팅 / 개발 유틸리티
 
 - JSON 포맷/압축/뷰어(트리)
-- XML / CSS / JavaScript / HTML / SQL / YAML 포맷/압축 (SQL:2023 공통 DML·DDL, CTE·조인·집합 연산·CASE·윈도 함수; PostgreSQL·MySQL·SQLite 종류 선택과 인용문·주석·연산자·파라미터 보존, MySQL 백슬래시 이스케이프·`ANSI_QUOTES` 설정; 제품별 전체 문법 검사는 제외; SQL·JavaScript·CSS·HTML 자체 엔진, 2천 자 이상 Worker·취소·4,194,304자 입력 및 16,777,216자 결과 상한)
+- XML / CSS / JavaScript / HTML / SQL / YAML 포맷/압축 (SQL:2023 공통 DML·DDL, CTE·조인·집합 연산·CASE·윈도 함수; PostgreSQL·MySQL·SQLite 종류 선택과 인용문·주석·연산자·파라미터 보존, MySQL 백슬래시 이스케이프·`ANSI_QUOTES` 설정; 제품별 전체 문법 검사는 제외; SQL·JavaScript·CSS·HTML·YAML 자체 엔진, 2천 자 이상 Worker·취소·4,194,304자 입력 및 16,777,216자 결과 상한)
 - 구문 강조 (JavaScript·TypeScript·Python·Java·C·C++·C#·Go·Rust·Kotlin·Swift·PHP·Ruby·SQL·HTML·XML·CSS·JSON·YAML·Bash·Shell·Markdown 자체 토크나이저, 저신뢰 일반 텍스트 처리와 선형 시간 보호를 포함한 자동 감지, 공식 언어 프로필 정기 점검, WCAG AA 밝은/어두운 내부 테마, 큰 입력 승인·취소 및 100만 자 상한)
 - JSON Diff (구조 비교)
 - 텍스트 Diff (자체 Myers 구현 기반 라인·단어·문자 비교, 공백 차이 무시, 수동 실행·Worker 계산·취소, 통합 diff 미리보기·다운로드)
@@ -66,7 +66,7 @@
 - Markdown → HTML 변환기 (자체 CommonMark/GFM 주요 문법 파서, 블록·인라인 문법, 표·작업 목록, raw HTML, 링크, 코드 펜스, 중첩 목록, 입력 4,194,304자·구조 10만 개·중첩 64단계 제한, 큰 입력 Worker·취소, sanitizer가 아닌 결과와 샌드박스 미리보기 안내)
 - Markdown 목차 생성기 (헤딩 분석, GitHub 스타일 앵커, 번호 매기기)
 - HTML 태그 렌더링 / 제거(Strip)
-- Docker run ↔ docker-compose 변환기
+- Docker run ↔ docker-compose 변환기 (Compose 사용자 값을 POSIX 안전 셸 인자로 인용, 구조 검증, 큰 YAML Worker 처리·취소)
 - SQL INSERT ↔ JSON/CSV 변환기
 - chmod 계산기
 - Git 치트시트

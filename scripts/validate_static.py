@@ -561,6 +561,10 @@ def validate_node_versions(validation: Validation) -> None:
     validation.error(f'tests/package.json Node.js version policy: {error}')
 
 
+def playwright_ci_images_match(images: list[str], expected_image: str) -> bool:
+  return bool(images) and all(image == expected_image for image in images)
+
+
 def validate_playwright_ci(validation: Validation) -> None:
   try:
     package = json.loads((ROOT / 'tests' / 'package.json').read_text(encoding='utf-8'))
@@ -596,9 +600,10 @@ def validate_playwright_ci(validation: Validation) -> None:
       validation.error(f'{relative_path}: {error}')
       continue
     images = re.findall(r'^\s*image:\s*(mcr\.microsoft\.com/playwright:\S+)\s*$', source, re.MULTILINE)
-    if images != [expected_image]:
+    if not playwright_ci_images_match(images, expected_image):
       validation.error(
-        f'{relative_path}: expected one Playwright CI image {expected_image!r}, got {images!r}'
+        f'{relative_path}: expected one or more identical Playwright CI images '
+        f'{expected_image!r}, got {images!r}'
       )
     if re.search(r'\bplaywright\s+install\b', source):
       validation.error(

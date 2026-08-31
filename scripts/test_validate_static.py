@@ -21,5 +21,18 @@ class WorkflowYamlValidationTests(unittest.TestCase):
     self.assertEqual(validate_static.ambiguous_workflow_plain_values(source), [])
 
 
+class PlaywrightCIImageValidationTests(unittest.TestCase):
+  def test_repeated_reviewed_image_is_allowed(self):
+    image = 'mcr.microsoft.com/playwright:v1.2.3@sha256:reviewed'
+    self.assertTrue(validate_static.playwright_ci_images_match([image, image], image))
+
+  def test_missing_or_mismatched_image_is_rejected(self):
+    image = 'mcr.microsoft.com/playwright:v1.2.3@sha256:reviewed'
+    self.assertFalse(validate_static.playwright_ci_images_match([], image))
+    self.assertFalse(validate_static.playwright_ci_images_match(
+      [image, 'mcr.microsoft.com/playwright:v1.2.3@sha256:different'], image
+    ))
+
+
 if __name__ == '__main__':
   unittest.main()

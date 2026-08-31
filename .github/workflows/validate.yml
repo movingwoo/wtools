@@ -72,7 +72,7 @@ jobs:
           trap 'kill "$server_pid"' EXIT
           python3 scripts/validate_static.py --base-url http://127.0.0.1:8000
 
-  browser-smoke:
+  chromium-smoke:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     container:
@@ -158,3 +158,21 @@ jobs:
         if: ${{ !cancelled() }}
         working-directory: tests
         run: npm test -- --project=webkit --workers=3
+
+  # main 브랜치 규칙이 요구하는 기존 체크 이름을 유지하면서 두 병렬 잡을 모두 게이트한다.
+  browser-smoke:
+    if: ${{ always() }}
+    needs:
+      - chromium-smoke
+      - cross-browser-smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 1
+
+    steps:
+      - name: Require all browser suites
+        env:
+          CHROMIUM_RESULT: ${{ needs.chromium-smoke.result }}
+          CROSS_BROWSER_RESULT: ${{ needs.cross-browser-smoke.result }}
+        run: |
+          test "$CHROMIUM_RESULT" = success
+          test "$CROSS_BROWSER_RESULT" = success

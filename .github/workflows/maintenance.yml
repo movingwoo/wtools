@@ -96,7 +96,7 @@ jobs:
         run: |
           echo '## 월간 품질·보안 점검' >> "$GITHUB_STEP_SUMMARY"
           echo '- npm·OSV·GitHub Advisory, 고정 자산 원본 해시, UA·IANA·CommonMark·GFM·YAML 1.2·구문 강조·코드 포매터 언어 프로필·브라우저 기준선, JSON Schema·IDN·ZIP/Tar·Markdown·포매터 대표 벡터를 확인했습니다.' >> "$GITHUB_STEP_SUMMARY"
-          echo '- 실제 CDN과 운영 헤더·PWA 검사는 nightly 워크플로 결과를 함께 확인하세요.' >> "$GITHUB_STEP_SUMMARY"
+          echo '- 실제 CDN 응답·CORS·SRI와 운영 헤더 검사는 nightly 워크플로 결과를 함께 확인하세요.' >> "$GITHUB_STEP_SUMMARY"
 
   emoji-update:
     runs-on: ubuntu-latest

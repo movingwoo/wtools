@@ -59,10 +59,12 @@ def validate_local(policy: dict) -> list[str]:
     errors.append('tests/package.json Playwright does not match current baseline policy')
 
   workflows = workflow_sources()
-  for name in ('validate.yml', 'nightly.yml'):
-    images = re.findall(r'^\s*image:\s*(mcr\.microsoft\.com/playwright:\S+)\s*$', workflows[name], re.MULTILINE)
-    if not workflow_images_match(images, current.get('image')):
-      errors.append(f'{name} does not use the current digest-pinned Playwright image')
+  images = re.findall(
+    r'^\s*image:\s*(mcr\.microsoft\.com/playwright:\S+)\s*$',
+    workflows['validate.yml'], re.MULTILINE,
+  )
+  if not workflow_images_match(images, current.get('image')):
+    errors.append('validate.yml does not use the current digest-pinned Playwright image')
   compatibility = workflows['compatibility.yml']
   images = re.findall(r'^\s*image:\s*(mcr\.microsoft\.com/playwright:\S+)\s*$', compatibility, re.MULTILINE)
   if not workflow_images_match(images, minimum.get('image')):

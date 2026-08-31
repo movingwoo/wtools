@@ -77,10 +77,10 @@ const blockServiceWorker = () => {
 export const cdnCache = {
   allowServiceWorker: [false, { option: true }],
   _cdnCache: [async ({ page, baseURL, allowServiceWorker }, use) => {
+    if (!allowServiceWorker) await page.addInitScript(blockServiceWorker);
     if (!LIVE) {
       const origin = new URL(baseURL).origin;
       const external = (url) => (url.protocol === 'http:' || url.protocol === 'https:') && !url.href.startsWith(origin);
-      if (!allowServiceWorker) await page.addInitScript(blockServiceWorker);
       await page.route(external, handle);
     }
     try {

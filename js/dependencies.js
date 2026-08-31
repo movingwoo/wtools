@@ -113,16 +113,6 @@ globalThis.WTOOLS_DEPENDENCIES = {
       "license": "MIT",
       "tools": ["js/tools/hashing.js", "js/workers/file-hash.js"]
     },
-    "smolToml": {
-      "package": "smol-toml",
-      "version": "1.6.1",
-      "path": "assets/vendor/smol-toml-1.6.1.mjs",
-      "integrity": "sha384-U586bkTVkTaBS4lNPCPzbqyQA8rIgwPE8OUJIjO+Dm4r0LokyMqm0NDYJNq+hhJr",
-      "source": "https://cdn.jsdelivr.net/npm/smol-toml@1.6.1/+esm",
-      "sourceIntegrity": "sha384-U586bkTVkTaBS4lNPCPzbqyQA8rIgwPE8OUJIjO+Dm4r0LokyMqm0NDYJNq+hhJr",
-      "license": "BSD-3-Clause",
-      "tools": ["js/tools/dataformat.js"]
-    },
     "brotliCompress": {
       "package": "brotli-compress",
       "version": "1.3.3",

@@ -1,9 +1,12 @@
 // 데이터 포맷 변환
-import { tool, makeIO, h, kvTable, formLabel, loadScript, loadModule, vendorUrl, LIB, download, createAsyncRunner, readFileChunks, throwIfAborted, formatBytes } from '../core.js';
+import { tool, makeIO, h, kvTable, formLabel, loadScript, LIB, download, createAsyncRunner, readFileChunks, throwIfAborted, formatBytes } from '../core.js';
 
 const CAT = '데이터 포맷 변환';
 export const YAML_WORKER_THRESHOLD = 16 * 1024;
 export const YAML_LARGE_INPUT_THRESHOLD = 256 * 1024;
+export const TOML_WORKER_THRESHOLD = 64 * 1024;
+const TOML_MAX_DEPTH = 256;
+const TOML_MAX_NODES = 200_000;
 
 let yamlMod = null;
 async function yaml() {
@@ -1047,7 +1050,86 @@ async function convertRecordFile(file, from, to, options, task) {
 
 let tomlMod = null;
 async function toml() {
-  return (tomlMod ??= await loadModule(vendorUrl('smolToml')));
+  return (tomlMod ??= import('../lib/data/toml.js').catch(() => {
+    tomlMod = null;
+    throw new Error('TOML 엔진을 불러오지 못했습니다. 잠시 후 다시 시도하세요.');
+  }));
+}
+
+function tomlDatePaths(value) {
+  const result = [], seen = new Set(), stack = [{ value, path: [], depth: 0 }];
+  let nodes = 0;
+  while (stack.length) {
+    const current = stack.pop();
+    if (!current.value || typeof current.value !== 'object' || seen.has(current.value)) continue;
+    if (++nodes > TOML_MAX_NODES) throw new TypeError(`TOML 출력 노드가 ${TOML_MAX_NODES}개를 넘었습니다.`);
+    if (current.value instanceof Date
+      && typeof current.value.tomlText === 'string' && typeof current.value.tomlType === 'string') {
+      result.push({ path: current.path, text: current.value.tomlText, type: current.value.tomlType });
+      continue;
+    }
+    if (current.depth > TOML_MAX_DEPTH) throw new TypeError(`TOML 출력 중첩이 ${TOML_MAX_DEPTH}단계를 넘었습니다.`);
+    seen.add(current.value);
+    const entries = Array.isArray(current.value)
+      ? Array.from(current.value, (child, index) => [index, child])
+      : Object.entries(current.value);
+    for (let index = entries.length - 1; index >= 0; index--) {
+      const [key, child] = entries[index];
+      stack.push({ value: child, path: [...current.path, key], depth: current.depth + 1 });
+    }
+  }
+  return result;
+}
+
+function tomlWorker(action, payload, signal) {
+  return new Promise((resolve, reject) => {
+    const worker = new Worker(new URL('../workers/toml.js', import.meta.url), { type: 'module' });
+    let settled = false;
+    const finish = (callback, value) => {
+      if (settled) return;
+      settled = true;
+      signal?.removeEventListener('abort', abort);
+      worker.terminate();
+      callback(value);
+    };
+    const abort = () => finish(reject, new DOMException('작업이 취소되었습니다.', 'AbortError'));
+    worker.addEventListener('message', ({ data }) => {
+      if (data.error) {
+        const error = new Error(data.error);
+        error.code = data.code;
+        finish(reject, error);
+      } else finish(resolve, data);
+    }, { once: true });
+    worker.addEventListener('error', () => finish(reject, new Error('TOML Worker를 실행하지 못했습니다.')), { once: true });
+    signal?.addEventListener('abort', abort, { once: true });
+    if (signal?.aborted) abort();
+    else {
+      try { worker.postMessage({ action, ...payload }); }
+      catch (error) { finish(reject, error); }
+    }
+  });
+}
+
+export async function parseToml(text, signal) {
+  if (text.length < TOML_WORKER_THRESHOLD) return (await toml()).parse(text);
+  const { result, dates } = await tomlWorker('parse', { text }, signal);
+  const { TomlDate } = await toml();
+  for (const { path, text: dateText, type } of dates) {
+    let parent = result;
+    for (let index = 0; index < path.length - 1; index++) parent = parent[path[index]];
+    const key = path[path.length - 1];
+    Object.defineProperty(parent, key, {
+      value: new TomlDate(parent[key].getTime(), dateText, type),
+      writable: true, configurable: true, enumerable: true,
+    });
+  }
+  return result;
+}
+
+export async function dumpToml(value, signal, sizeHint = 0) {
+  if (sizeHint < TOML_WORKER_THRESHOLD) return (await toml()).stringify(value);
+  const dates = tomlDatePaths(value);
+  return (await tomlWorker('stringify', { value, dates }, signal)).result;
 }
 
 tool({
@@ -1093,7 +1175,7 @@ tool({
           case 'yaml': data = await parseYaml(text, signal); break;
           case 'xml': data = parseXML(text); break;
           case 'csv': data = rowsToObjects(parseCSV(text, o.csvDelim), o.csvHeader); break;
-          case 'toml': data = (await toml()).parse(text); break;
+          case 'toml': data = await parseToml(text, signal); break;
           case 'env': data = parseEnv(text); break;
         }
         switch (o.to) {
@@ -1119,12 +1201,12 @@ tool({
           case 'toml': {
             if (typeof data !== 'object' || data === null || Array.isArray(data))
               throw new Error('TOML의 최상위는 객체(테이블)여야 합니다.');
-            return (await toml()).stringify(data).trimEnd();
+            return (await dumpToml(data, signal, text.length)).trimEnd();
           }
           case 'env': return toEnv(data);
         }
       },
-      note: 'YAML 입력은 YAML 1.2 핵심 스키마의 단일 문서와 안전한 표준 태그만 처리하며, 앵커·별칭·merge와 블록 문자열을 지원합니다. CSV 구분자·헤더 옵션은 입력 또는 출력 포맷이 CSV일 때 적용됩니다. 따옴표는 표준 CSV 방식(셀 전체를 감싸고 내부 따옴표는 ""로 이스케이프)으로 처리합니다. ENV 값은 숫자나 true/false처럼 보여도 문자열로 유지됩니다.',
+      note: 'YAML 입력은 YAML 1.2 핵심 스키마의 단일 문서와 안전한 표준 태그만 처리하며, 앵커·별칭·merge와 블록 문자열을 지원합니다. TOML은 1.0 문법의 날짜·시간, dotted key, 테이블 배열과 네 가지 문자열을 처리하고 64 KiB 이상은 취소 가능한 Worker에서 실행합니다. CSV 구분자·헤더 옵션은 입력 또는 출력 포맷이 CSV일 때 적용됩니다. 따옴표는 표준 CSV 방식(셀 전체를 감싸고 내부 따옴표는 ""로 이스케이프)으로 처리합니다. ENV 값은 숫자나 true/false처럼 보여도 문자열로 유지됩니다.',
     });
   },
 });

@@ -15,7 +15,7 @@ const REMOVED_BEAUTIFY_JS_URL = 'https://cdn.jsdelivr.net/npm/js-beautify@1.15.1
 const REMOVED_BEAUTIFY_CSS_URL = 'https://cdn.jsdelivr.net/npm/js-beautify@1.15.1/js/lib/beautify-css.min.js';
 const REMOVED_BEAUTIFY_HTML_URL = 'https://cdn.jsdelivr.net/npm/js-beautify@1.15.1/js/lib/beautify-html.min.js';
 const REMOVED_SQL_FORMATTER_URL = 'https://cdn.jsdelivr.net/npm/sql-formatter@15.3.2/dist/sql-formatter.min.js';
-const VENDORED_PATH = '/assets/vendor/smol-toml-1.6.1.mjs';
+const TOML_ENGINE_PATH = '/js/lib/data/toml.js';
 const emojiLock = JSON.parse(readFileSync(new URL('../scripts/emoji-data-lock.json', import.meta.url), 'utf8'));
 const emojiCount = Object.values(emojiLock.groupCounts).reduce((sum, count) => sum + count, 0);
 
@@ -73,20 +73,16 @@ test('설치 시 검증된 자산만 캐시하고 이전 버전 캐시를 삭제
   const state = await page.evaluate(async ({
     externalUrl, removedMarkedUrl, removedHighlightUrl, removedHighlightCssUrl,
     removedBeautifyJsUrl, removedBeautifyCssUrl, removedBeautifyHtmlUrl, removedSqlFormatterUrl,
-    removedYamlUrl, vendoredPath,
+    removedYamlUrl, tomlEnginePath,
   }) => {
     const keys = await caches.keys();
     const shellName = keys.find((key) => key.startsWith('wtools-shell-'));
     const shell = await caches.open(shellName);
-    const vendorResponse = await shell.match(vendoredPath);
-    const entry = globalThis.WTOOLS_DEPENDENCIES.vendored.smolToml;
-    const digest = await crypto.subtle.digest('SHA-384', await vendorResponse.clone().arrayBuffer());
-    const integrity = 'sha384-' + btoa(String.fromCharCode(...new Uint8Array(digest)));
+    const tomlEngine = await shell.match(tomlEnginePath);
     const external = await caches.open('wtools-external-v10');
     return {
       keys,
-      vendorIntegrity: integrity,
-      expectedVendorIntegrity: entry.integrity,
+      tomlEngineCached: !!tomlEngine,
       externalCached: !!await external.match(externalUrl),
       removedMarkedCached: !!await external.match(removedMarkedUrl),
       removedHighlightCached: !!await external.match(removedHighlightUrl),
@@ -108,7 +104,7 @@ test('설치 시 검증된 자산만 캐시하고 이전 버전 캐시를 삭제
     removedBeautifyHtmlUrl: REMOVED_BEAUTIFY_HTML_URL,
     removedSqlFormatterUrl: REMOVED_SQL_FORMATTER_URL,
     removedYamlUrl: REMOVED_YAML_URL,
-    vendoredPath: VENDORED_PATH,
+    tomlEnginePath: TOML_ENGINE_PATH,
   });
   expect(state.keys).not.toContain('wtools-shell-v0');
   expect(state.keys).not.toContain('wtools-external-v0');
@@ -121,7 +117,7 @@ test('설치 시 검증된 자산만 캐시하고 이전 버전 캐시를 삭제
   expect(state.keys).not.toContain('wtools-external-v8');
   expect(state.keys).not.toContain('wtools-external-v9');
   expect(state.shellName).toMatch(/^wtools-shell-[0-9a-f]{12}$/);
-  expect(state.vendorIntegrity).toBe(state.expectedVendorIntegrity);
+  expect(state.tomlEngineCached).toBe(true);
   expect(state.externalCached).toBe(true);
   expect(state.removedMarkedCached).toBe(false);
   expect(state.removedHighlightCached).toBe(false);

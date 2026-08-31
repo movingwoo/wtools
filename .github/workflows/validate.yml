@@ -73,7 +73,7 @@ jobs:
           trap 'kill "$server_pid"' EXIT
           python3 scripts/validate_static.py --base-url http://127.0.0.1:8000
 
-  browser-smoke:
+  chromium-smoke:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     container:
@@ -98,7 +98,7 @@ jobs:
       - name: Verify Playwright starts and collects tests
         working-directory: tests
         timeout-minutes: 1
-        run: npm run test:collect
+        run: npm run test:collect -- --project=chromium
 
       # 도구가 지연 로드하는 CDN 라이브러리를 실행 간에 재사용한다.
       # CDN이 잠깐 안 잡혀도 테스트가 죽지 않고, 캐시가 맞으면 네트워크를 아예 타지 않는다.
@@ -113,8 +113,45 @@ jobs:
         working-directory: tests
         run: npm test -- --project=chromium
 
+  cross-browser-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    container:
+      image: mcr.microsoft.com/playwright:v1.62.1-noble@sha256:dcc5531e97840b9b5e794f2814476b21571c5124a3fca2267d73041f56e7580e
+      options: --user 1001
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version-file: .node-version
+          cache: npm
+          cache-dependency-path: tests/package-lock.json
+
+      - name: Install test dependencies
+        working-directory: tests
+        run: npm ci --no-audit --no-fund
+
+      - name: Verify Playwright starts and collects tests
+        working-directory: tests
+        timeout-minutes: 1
+        run: npm run test:collect -- --project=firefox --project=webkit
+
+      # 병렬 잡이 같은 키를 동시에 저장하지 않도록 교차 브라우저 전용 키를 사용한다.
+      # 첫 실행에서는 기존 Chromium 캐시를 복원해 외부 CDN 요청을 최소화한다.
+      - name: Restore cross-browser CDN library cache
+        uses: actions/cache@v6
+        with:
+          path: tests/.lib-cache
+          key: cdn-libs-cross-browser-${{ hashFiles('js/**/*.js', 'index.html') }}
+          restore-keys: |
+            cdn-libs-cross-browser-
+            cdn-libs-
+
       - name: Run Firefox smoke suite
-        if: ${{ !cancelled() }}
         working-directory: tests
         run: npm test -- --project=firefox
 
@@ -122,3 +159,21 @@ jobs:
         if: ${{ !cancelled() }}
         working-directory: tests
         run: npm test -- --project=webkit
+
+  # main 브랜치 규칙이 요구하는 기존 체크 이름을 유지하면서 두 병렬 잡을 모두 게이트한다.
+  browser-smoke:
+    if: ${{ always() }}
+    needs:
+      - chromium-smoke
+      - cross-browser-smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 1
+
+    steps:
+      - name: Require all browser suites
+        env:
+          CHROMIUM_RESULT: ${{ needs.chromium-smoke.result }}
+          CROSS_BROWSER_RESULT: ${{ needs.cross-browser-smoke.result }}
+        run: |
+          test "$CHROMIUM_RESULT" = success
+          test "$CROSS_BROWSER_RESULT" = success

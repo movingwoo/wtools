@@ -561,6 +561,10 @@ def validate_node_versions(validation: Validation) -> None:
     validation.error(f'tests/package.json Node.js version policy: {error}')
 
 
+def playwright_ci_images_match(images: list[str], expected_image: str) -> bool:
+  return bool(images) and all(image == expected_image for image in images)
+
+
 def validate_playwright_ci(validation: Validation) -> None:
   try:
     package = json.loads((ROOT / 'tests' / 'package.json').read_text(encoding='utf-8'))
@@ -588,29 +592,39 @@ def validate_playwright_ci(validation: Validation) -> None:
     )
     return
 
-  for relative_path in ('.github/workflows/validate.yml', '.github/workflows/nightly.yml'):
-    path = ROOT / relative_path
-    try:
-      source = path.read_text(encoding='utf-8')
-    except OSError as error:
-      validation.error(f'{relative_path}: {error}')
-      continue
+  relative_path = '.github/workflows/validate.yml'
+  path = ROOT / relative_path
+  try:
+    source = path.read_text(encoding='utf-8')
+  except OSError as error:
+    validation.error(f'{relative_path}: {error}')
+  else:
     images = re.findall(r'^\s*image:\s*(mcr\.microsoft\.com/playwright:\S+)\s*$', source, re.MULTILINE)
-    if images != [expected_image]:
+    if not playwright_ci_images_match(images, expected_image):
       validation.error(
-        f'{relative_path}: expected one Playwright CI image {expected_image!r}, got {images!r}'
+        f'{relative_path}: expected one or more identical Playwright CI images '
+        f'{expected_image!r}, got {images!r}'
       )
     if re.search(r'\bplaywright\s+install\b', source):
       validation.error(
         f'{relative_path}: Playwright browsers must come from the pinned CI image, '
         'not a runtime install'
       )
-    if relative_path == '.github/workflows/validate.yml' and not re.search(
-      r'^  browser-smoke:\s*$', source, re.MULTILINE
-    ):
+    if not re.search(r'^  browser-smoke:\s*$', source, re.MULTILINE):
       validation.error(
         f'{relative_path}: browser-smoke job id is required by the main branch ruleset'
       )
+
+  nightly_path = '.github/workflows/nightly.yml'
+  try:
+    nightly = (ROOT / nightly_path).read_text(encoding='utf-8')
+  except OSError as error:
+    validation.error(f'{nightly_path}: {error}')
+  else:
+    if 'python3 scripts/check_cdn_dependencies.py' not in nightly:
+      validation.error(f'{nightly_path}: live CDN dependency check is required')
+    if re.search(r'\b(?:playwright|WTOOLS_LIVE_CDN)\b', nightly, re.IGNORECASE):
+      validation.error(f'{nightly_path}: browser regression tests do not belong in the nightly dependency check')
 
 
 def ambiguous_workflow_plain_values(source: str) -> list[int]:

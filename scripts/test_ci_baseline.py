@@ -9,6 +9,12 @@ class CiBaselineTests(unittest.TestCase):
   def test_current_policy_matches_local_workflows(self):
     self.assertEqual(baseline.validate_local(baseline.load_policy()), [])
 
+  def test_repeated_workflow_images_must_all_match(self):
+    image = 'mcr.microsoft.com/playwright:v1.2.3@sha256:reviewed'
+    self.assertTrue(baseline.workflow_images_match([image, image], image))
+    self.assertFalse(baseline.workflow_images_match([], image))
+    self.assertFalse(baseline.workflow_images_match([image, f'{image}-different'], image))
+
   def test_recent_successful_compatibility_run_passes(self):
     payload = {'workflow_runs': [{
       'conclusion': 'success',

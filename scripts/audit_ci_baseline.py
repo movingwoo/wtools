@@ -32,6 +32,10 @@ def workflow_sources() -> dict[str, str]:
   }
 
 
+def workflow_images_match(images: list[str], expected_image: str | None) -> bool:
+  return bool(images) and all(image == expected_image for image in images)
+
+
 def validate_local(policy: dict) -> list[str]:
   errors: list[str] = []
   if policy.get('schema') != 1:
@@ -55,13 +59,15 @@ def validate_local(policy: dict) -> list[str]:
     errors.append('tests/package.json Playwright does not match current baseline policy')
 
   workflows = workflow_sources()
-  for name in ('validate.yml', 'nightly.yml'):
-    images = re.findall(r'^\s*image:\s*(mcr\.microsoft\.com/playwright:\S+)\s*$', workflows[name], re.MULTILINE)
-    if images != [current.get('image')]:
-      errors.append(f'{name} does not use the current digest-pinned Playwright image')
+  images = re.findall(
+    r'^\s*image:\s*(mcr\.microsoft\.com/playwright:\S+)\s*$',
+    workflows['validate.yml'], re.MULTILINE,
+  )
+  if not workflow_images_match(images, current.get('image')):
+    errors.append('validate.yml does not use the current digest-pinned Playwright image')
   compatibility = workflows['compatibility.yml']
   images = re.findall(r'^\s*image:\s*(mcr\.microsoft\.com/playwright:\S+)\s*$', compatibility, re.MULTILINE)
-  if images != [minimum.get('image')]:
+  if not workflow_images_match(images, minimum.get('image')):
     errors.append('compatibility.yml does not use the minimum digest-pinned Playwright image')
   if f'@playwright/test@{minimum.get("version")}' not in compatibility:
     errors.append('compatibility.yml legacy driver does not match the minimum Playwright version')

@@ -7,16 +7,12 @@
 // 외부 classic script/CSS는 브라우저가 dependencies.js의 SRI 해시로 검증한다.
 // 동적 ESM/WASM은 검토한 로컬 자산이므로 이 픽스처를 거치지 않는다.
 //
-// WTOOLS_LIVE_CDN=1이면 가로채지 않고 실제 CDN을 그대로 쓴다. 핀이 죽었거나 패키지가
-// 내려간 경우를 잡기 위한 nightly 잡용.
 import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const CACHE_DIR = join(dirname(fileURLToPath(import.meta.url)), '.lib-cache');
-const LIVE = process.env.WTOOLS_LIVE_CDN === '1';
-
 const entryPath = (url) => join(CACHE_DIR, createHash('sha256').update(url).digest('hex').slice(0, 32));
 
 // 저장한 헤더로 그대로 응답하면 content-encoding·content-length가 실제 본문과 어긋난다.
@@ -77,18 +73,16 @@ const blockServiceWorker = () => {
 export const cdnCache = {
   allowServiceWorker: [false, { option: true }],
   _cdnCache: [async ({ page, baseURL, allowServiceWorker }, use) => {
-    if (!LIVE) {
-      const origin = new URL(baseURL).origin;
-      const external = (url) => (url.protocol === 'http:' || url.protocol === 'https:') && !url.href.startsWith(origin);
-      if (!allowServiceWorker) await page.addInitScript(blockServiceWorker);
-      await page.route(external, handle);
-    }
+    const origin = new URL(baseURL).origin;
+    const external = (url) => (url.protocol === 'http:' || url.protocol === 'https:') && !url.href.startsWith(origin);
+    if (!allowServiceWorker) await page.addInitScript(blockServiceWorker);
+    await page.route(external, handle);
     try {
       await use();
     } finally {
       // 테스트가 외부 라이브러리 로딩 중 끝나도 route.fetch()의 종료 오류가
       // 테스트 실패로 번지지 않게 진행 중인 라우트 콜백을 안전하게 정리한다.
-      if (!LIVE) await page.unrouteAll({ behavior: 'ignoreErrors' });
+      await page.unrouteAll({ behavior: 'ignoreErrors' });
     }
   }, { auto: true }],
 };

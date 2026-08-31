@@ -1,0 +1,24 @@
+{
+  "standard": "RFC 9535",
+  "standardUrl": "https://www.rfc-editor.org/rfc/rfc9535.html",
+  "suiteRepository": "jsonpath-standard/jsonpath-compliance-test-suite",
+  "suiteBranch": "main",
+  "suiteCommit": "7be7c1fc28057c91e8eefaf197060fba7ed43acd",
+  "suiteUrl": "https://raw.githubusercontent.com/jsonpath-standard/jsonpath-compliance-test-suite/7be7c1fc28057c91e8eefaf197060fba7ed43acd/cts.json",
+  "suiteSha384": "sha384-sgwmoKi7bzAjwfeH85RSYCk1tDplQ3rQxRgZLSkfWcLnNjNAkS70/d89T4XCSdP9",
+  "totalCases": 703,
+  "supportedCases": 647,
+  "excludedTags": ["match", "search"],
+  "supportedFunctions": ["count", "length", "value"],
+  "ianaRegistryUrl": "https://www.iana.org/assignments/jsonpath/function-extensions.csv",
+  "ianaFunctions": ["length", "count", "match", "search", "value"],
+  "errataUrl": "https://www.rfc-editor.org/errata_search.php?rfc=9535",
+  "errata": [
+    {"id": 8343, "status": "Held for Document Update"},
+    {"id": 8352, "status": "Held for Document Update"},
+    {"id": 8353, "status": "Held for Document Update"},
+    {"id": 8354, "status": "Held for Document Update"},
+    {"id": 8779, "status": "Held for Document Update"}
+  ],
+  "reviewed": "2026-08-31"
+}

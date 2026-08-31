@@ -158,6 +158,54 @@ const cases = [
     output: '[\n  "김민수"\n]',
   },
   {
+    name: 'json-query: RFC 9535 재귀 이름 선택', tool: 'json-query',
+    inputs: ['{"store":{"book":[{"title":"A"},{"title":"B"}],"bicycle":{"title":"C"}}}', '$..title'],
+    output: '[\n  "A",\n  "B",\n  "C"\n]',
+  },
+  {
+    name: 'json-query: RFC 9535 합집합·음수 인덱스·슬라이스 순서 보존', tool: 'json-query',
+    inputs: ['{"items":[0,1,2,3,4]}', '$.items[4,0,-1,1:4:2]'],
+    output: '[\n  4,\n  0,\n  4,\n  1,\n  3\n]',
+  },
+  {
+    name: 'json-query: RFC 9535 필터 존재·논리·null 동등 경계', tool: 'json-query',
+    inputs: ['[{"id":1,"active":true,"value":null},{"id":2,"active":false,"value":null},{"id":3}]',
+      '$[?@.active == true && @.value <= null].id'],
+    output: '[\n  1\n]',
+  },
+  {
+    name: 'json-query: RFC 9535 length·count·value 함수', tool: 'json-query',
+    inputs: ['{"groups":[{"name":"가나","items":[1,2],"score":2},{"name":"다","items":[1],"score":1}]}',
+      '$.groups[?length(@.name)==2 && count(@.items[*])==2 && value(@.score)==2].name'],
+    output: '[\n  "가나"\n]',
+  },
+  {
+    name: 'json-query: 임의 JavaScript 필터는 실행하지 않고 거부', tool: 'json-query',
+    inputs: ['{"users":[{"age":31}]}', '$.users[?(@.age > globalThis.alert(1))]'],
+    output: /^⚠ JSONPath 오류: 알 수 없는 필터 식별자 globalThis입니다\./,
+  },
+  {
+    name: 'json-query: 미지원 정규식 함수는 명확히 안내', tool: 'json-query',
+    inputs: ['[{"name":"Kim"}]', '$[?match(@.name, "K.*")]'],
+    output: /^⚠ JSONPath 오류: match\(\) 함수는 지원하지 않습니다\./,
+  },
+  {
+    name: 'json-query: 빈 JSON 입력은 빈 결과', tool: 'json-query',
+    inputs: ['', '$.a'], output: '',
+  },
+  {
+    name: 'json-query: 닫히지 않은 선택자는 위치와 함께 에러', tool: 'json-query',
+    inputs: ['{"a":1}', '$['], output: /^⚠ JSONPath 오류: 대괄호 선택자가 닫히지 않았습니다\. \(2번째 문자\)$/,
+  },
+  {
+    name: 'json-query: 질의 앞 공백은 RFC 문법 오류', tool: 'json-query',
+    inputs: ['{"a":1}', ' $.a'], output: /^⚠ JSONPath 오류: 질의는 루트 식별자 \$로 시작해야 합니다\./,
+  },
+  {
+    name: 'json-query: 비유한 JSON 숫자는 null로 바꾸지 않고 거부', tool: 'json-query',
+    inputs: ['1e400', '$'], output: /^⚠ JSON 데이터 오류: 값이 유한한 숫자 범위를 벗어났습니다\./,
+  },
+  {
     name: 'json-query: JMESPath 필터', tool: 'json-query', options: { '문법': 'jmespath' },
     inputs: ['{"users":[{"name":"김민수","age":31},{"name":"이서연","age":27}]}', 'users[?age > `30`].name'],
     output: '[\n  "김민수"\n]',
@@ -327,6 +375,126 @@ const cases = [
 ];
 
 toolCases('dataformat', cases);
+
+test('JSONPath: RFC 9535 핵심 벡터와 복잡도·프로토타입 안전 경계를 지킨다', async ({ page }) => {
+  await page.goto('/');
+  const result = await page.evaluate(async () => {
+    const {
+      parseJsonPathJson, queryJsonPath, stringifyJsonPathResult,
+    } = await import('/js/lib/data/jsonpath.js');
+    const source = JSON.parse('{"__proto__":{"safe":true},"constructor":"data","items":[0,1,2,3]}');
+    const sharedValue = { x: 1 };
+    const vectors = {
+      root: queryJsonPath(['first', 'second'], '$'),
+      unicode: queryJsonPath({ '☺': 'ok' }, '$.☺'),
+      reverse: queryJsonPath(source, '$.items[::-1]'),
+      duplicate: queryJsonPath(source, '$.items[0,0]'),
+      specialKeys: queryJsonPath(source, '$["__proto__","constructor"]'),
+      sharedReferences: queryJsonPath({ a: sharedValue, b: sharedValue }, '$..x'),
+      unicodeOrder: queryJsonPath(['\u{10000}', '\uE000'], '$[?@ < "\uE000"]'),
+      formatted: stringifyJsonPathResult(queryJsonPath({ a: [1, true, null] }, '$')),
+    };
+    const errors = {};
+    for (const [name, value, path, options] of [
+      ['queryLength', {}, '$.abcd', { limits: { queryLength: 3 } }],
+      ['selectors', {}, '$["a","b"]', { limits: { selectors: 1 } }],
+      ['visits', { a: { b: 1 } }, '$..*', { limits: { visits: 2 } }],
+      ['results', [1, 2], '$[*]', { limits: { results: 1 } }],
+      ['surrogate', {}, '$["\\uD800"]', {}],
+      ['dotSurrogate', { '\uD800': 1 }, '$.\uD800', {}],
+      ['nonRfcWhitespace', { a: 1 }, "$[\f'a']", {}],
+      ['filterDepth', [{ a: 1 }], `$[?${'!'.repeat(20)}@.a]`, { limits: { depth: 10 } }],
+      ['expandedResults', Array(100_001).fill(0), '$[*]', {}],
+    ]) {
+      try { queryJsonPath(value, path, options); }
+      catch (error) { errors[name] = error.code; }
+    }
+    const cyclic = {};
+    cyclic.self = cyclic;
+    try { queryJsonPath(cyclic, '$..*'); }
+    catch (error) { errors.cycle = error.code; }
+    try {
+      stringifyJsonPathResult(queryJsonPath(['0123456789'], '$[*]'), { bytes: 10 });
+    } catch (error) { errors.outputBytes = error.code; }
+    try { parseJsonPathJson('9007199254740993'); }
+    catch (error) { errors.unsafeInteger = error.code; }
+    try { parseJsonPathJson('"\\uD800"'); }
+    catch (error) { errors.jsonSurrogate = error.code; }
+    const originalFunction = globalThis.Function;
+    const originalEval = globalThis.eval;
+    let noDynamicCode = false;
+    try {
+      globalThis.Function = () => { throw new Error('Function called'); };
+      globalThis.eval = () => { throw new Error('eval called'); };
+      noDynamicCode = queryJsonPath([{ n: 1 }, { n: 2 }], '$[?@.n>=2].n')[0] === 2;
+    } finally {
+      globalThis.Function = originalFunction;
+      globalThis.eval = originalEval;
+    }
+    return { vectors, errors, noDynamicCode, prototypeSafe: ({}).safe === undefined };
+  });
+  expect(result).toEqual({
+    vectors: {
+      root: [['first', 'second']], unicode: ['ok'], reverse: [3, 2, 1, 0], duplicate: [0, 0],
+      specialKeys: [{ safe: true }, 'data'],
+      sharedReferences: [1, 1],
+      unicodeOrder: [],
+      formatted: '[\n  {\n    "a": [\n      1,\n      true,\n      null\n    ]\n  }\n]',
+    },
+    errors: {
+      queryLength: 'JSONPATH_QUERY_LENGTH', selectors: 'JSONPATH_SELECTORS',
+      visits: 'JSONPATH_VISITS', results: 'JSONPATH_RESULTS',
+      surrogate: 'JSONPATH_UNICODE', dotSurrogate: 'JSONPATH_UNICODE',
+      nonRfcWhitespace: 'JSONPATH_SYNTAX', filterDepth: 'JSONPATH_DEPTH',
+      expandedResults: 'JSONPATH_RESULTS', cycle: 'JSONPATH_CYCLE',
+      outputBytes: 'JSONPATH_OUTPUT_BYTES', unsafeInteger: 'JSONPATH_JSON_NUMBER',
+      jsonSurrogate: 'JSONPATH_JSON_UNICODE',
+    },
+    noDynamicCode: true,
+    prototypeSafe: true,
+  });
+});
+
+test('json-query: 큰 JSONPath 입력은 Worker에서 처리한다', async ({ page }) => {
+  let workerRequests = 0;
+  await page.route('**/js/workers/jsonpath.js', async (route) => {
+    workerRequests++;
+    await route.continue();
+  });
+  await openTool(page, 'json-query');
+  const io = ioSection(page);
+  const inputs = io.locator('textarea.mono:not(.out)');
+  await inputs.nth(1).fill('$.items[-1]');
+  // UTF-16 길이는 문턱보다 작지만 UTF-8로는 256 KiB를 넘는 입력이다.
+  const source = JSON.stringify({ padding: '가'.repeat(90_000), items: [0, 1] });
+  await inputs.nth(0).evaluate((element, value) => {
+    element.value = value;
+    element.dispatchEvent(new Event('input', { bubbles: true }));
+  }, source);
+  await expect(io.locator('textarea.out')).toHaveValue('[\n  1\n]');
+  expect(workerRequests).toBeGreaterThan(0);
+});
+
+test('json-query: 대용량 JSONPath Worker 작업을 취소하면 상태를 정리한다', async ({ page }) => {
+  await page.route('**/js/workers/jsonpath.js', (route) => route.fulfill({
+    contentType: 'text/javascript',
+    body: 'self.addEventListener("message", () => {});',
+  }));
+  await openTool(page, 'json-query');
+  const io = ioSection(page);
+  const inputs = io.locator('textarea.mono:not(.out)');
+  await inputs.nth(1).fill('$..*');
+  const source = JSON.stringify({ items: Array.from({ length: 70_000 }, (_, index) => index) });
+  await inputs.nth(0).evaluate((element, value) => {
+    element.value = value;
+    element.dispatchEvent(new Event('input', { bubbles: true }));
+  }, source);
+  const cancel = io.getByRole('button', { name: '취소', exact: true });
+  await expect(cancel).toBeVisible();
+  await cancel.click();
+  await expect(io.locator('.io-status')).toHaveText('작업이 취소되었습니다.');
+  await expect(io).toHaveAttribute('aria-busy', 'false');
+});
 
 test('json-lines: 텍스트 결과를 선택한 포맷 파일로 다운로드한다', async ({ page }) => {
   await openTool(page, 'json-lines');

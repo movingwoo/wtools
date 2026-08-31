@@ -232,7 +232,7 @@ export const TOOL_MANIFESTS = Object.freeze([
     "id": "json-query",
     "cat": "데이터 포맷 변환",
     "name": "JSONPath / JMESPath 테스터",
-    "desc": "JSONPath 또는 JMESPath 표현식으로 JSON 데이터의 원하는 값을 조회합니다.",
+    "desc": "RFC 9535 JSONPath 또는 JMESPath 표현식으로 JSON 데이터의 원하는 값을 조회합니다.",
     "keywords": "jsonpath jmespath json query path filter 조회 경로",
     "module": "./tools/dataformat.js",
     "externalLibrary": true

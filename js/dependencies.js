@@ -47,15 +47,6 @@ globalThis.WTOOLS_DEPENDENCIES = {
       "kind": "script",
       "tools": ["js/tools/archive.js"]
     },
-    "jsonpath": {
-      "package": "jsonpath-plus",
-      "version": "10.3.0",
-      "url": "https://unpkg.com/jsonpath-plus@10.3.0/dist/index-browser-umd.min.cjs",
-      "integrity": "sha384-hGQPqOxTPM4foQNgrQgUmEiH4XmDBHG/JM6hBfraI4LJ9LA9V/tDGADiGRXeC9/c",
-      "license": "MIT",
-      "kind": "script",
-      "tools": ["js/tools/dataformat.js"]
-    },
     "jmespath": {
       "package": "jmespath",
       "version": "0.16.0",

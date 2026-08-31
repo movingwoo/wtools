@@ -7,6 +7,8 @@ export const YAML_LARGE_INPUT_THRESHOLD = 256 * 1024;
 export const TOML_WORKER_THRESHOLD = 64 * 1024;
 const TOML_MAX_DEPTH = 256;
 const TOML_MAX_NODES = 200_000;
+export const JSONPATH_WORKER_THRESHOLD = 256 * 1024;
+const JSONPATH_MAX_INPUT_BYTES = 16 * 1024 * 1024;
 
 let yamlMod = null;
 async function yaml() {
@@ -56,9 +58,59 @@ export async function dumpYaml(value, options = {}, signal, sizeHint = 0) {
   return engine.dump(value, options);
 }
 
+let jsonPathMod = null;
+async function jsonPath() {
+  return (jsonPathMod ??= import('../lib/data/jsonpath.js').catch(() => {
+    jsonPathMod = null;
+    throw new Error('JSONPath 엔진을 불러오지 못했습니다. 잠시 후 다시 시도하세요.');
+  }));
+}
+
+function parseQueryJson(text) {
+  try { return JSON.parse(text); }
+  catch { throw new Error('JSON 데이터의 문법이 올바르지 않습니다.'); }
+}
+
+function utf8ByteLength(text) {
+  let bytes = 0;
+  for (let index = 0; index < text.length; index++) {
+    const point = text.codePointAt(index);
+    if (point > 0xffff) index++;
+    bytes += point <= 0x7f ? 1 : point <= 0x7ff ? 2 : point <= 0xffff ? 3 : 4;
+  }
+  return bytes;
+}
+
+function jsonPathWorker(text, path, signal) {
+  return new Promise((resolve, reject) => {
+    const worker = new Worker(new URL('../workers/jsonpath.js', import.meta.url), { type: 'module' });
+    let settled = false;
+    const finish = (callback, value) => {
+      if (settled) return;
+      settled = true;
+      signal?.removeEventListener('abort', abort);
+      worker.terminate();
+      callback(value);
+    };
+    const abort = () => finish(reject, new DOMException('작업이 취소되었습니다.', 'AbortError'));
+    worker.addEventListener('message', ({ data }) => {
+      if (data.error) {
+        const error = new Error(data.error);
+        error.code = data.code;
+        finish(reject, error);
+      } else finish(resolve, data.result);
+    }, { once: true });
+    worker.addEventListener('error', () =>
+      finish(reject, new Error('JSONPath Worker를 실행하지 못했습니다.')), { once: true });
+    signal?.addEventListener('abort', abort, { once: true });
+    if (signal?.aborted) abort();
+    else worker.postMessage({ action: 'query', text, path });
+  });
+}
+
 tool({
   id: 'json-query', cat: CAT, name: 'JSONPath / JMESPath 테스터',
-  desc: 'JSONPath 또는 JMESPath 표현식으로 JSON 데이터의 원하는 값을 조회합니다.',
+  desc: 'RFC 9535 JSONPath 또는 JMESPath 표현식으로 JSON 데이터의 원하는 값을 조회합니다.',
   keywords: 'jsonpath jmespath json query path filter 조회 경로',
   render(root) {
     makeIO(root, {
@@ -68,20 +120,28 @@ tool({
       ],
       options: [{ id: 'engine', label: '문법', type: 'select', values: [['jsonpath', 'JSONPath'], ['jmespath', 'JMESPath']] }],
       outputRows: 10,
-      async process(v, o) {
+      cancelable: true,
+      async process(v, o, _action, signal) {
         if (!v.json.trim() || !v.query.trim()) return '';
-        const data = JSON.parse(v.json);
-        let result;
         if (o.engine === 'jsonpath') {
-          await loadScript(LIB.jsonpath);
-          result = JSONPath.JSONPath({ path: v.query.trim(), json: data });
-        } else {
-          await loadScript(LIB.jmespath);
-          result = jmespath.search(data, v.query.trim());
+          const jsonBytes = utf8ByteLength(v.json);
+          if (jsonBytes > JSONPATH_MAX_INPUT_BYTES)
+            throw new Error('JSONPath 입력은 최대 16 MiB까지 처리할 수 있습니다.');
+          const path = v.query;
+          if (jsonBytes + utf8ByteLength(path) >= JSONPATH_WORKER_THRESHOLD)
+            return await jsonPathWorker(v.json, path, signal);
+          const engine = await jsonPath();
+          if (signal?.aborted) throw new DOMException('작업이 취소되었습니다.', 'AbortError');
+          return engine.stringifyJsonPathResult(
+            engine.queryJsonPath(engine.parseJsonPathJson(v.json), path),
+          );
         }
-        return JSON.stringify(result, null, 2);
+        const data = parseQueryJson(v.json);
+        await loadScript(LIB.jmespath);
+        if (signal?.aborted) throw new DOMException('작업이 취소되었습니다.', 'AbortError');
+        return JSON.stringify(jmespath.search(data, v.query.trim()), null, 2);
       },
-      note: 'JMESPath를 선택하면 예: users[*].name 형식으로 입력하세요.',
+      note: 'JSONPath는 RFC 9535의 이름·와일드카드·재귀·인덱스·슬라이스·필터와 length/count/value 함수를 지원합니다. 입력과 출력은 각각 UTF-8 16 MiB까지이며 비유한 숫자와 안전 정수 범위 밖의 정수는 거부합니다. match/search 정규식 함수와 임의 JavaScript 평가는 지원하지 않습니다. JMESPath는 예: users[*].name 형식으로 입력하세요.',
     });
   },
 });

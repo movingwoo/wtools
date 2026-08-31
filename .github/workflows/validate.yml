@@ -110,7 +110,7 @@ jobs:
 
       - name: Run Chromium full suite
         working-directory: tests
-        run: npm test -- --project=chromium --workers=3
+        run: npm test -- --project=chromium
 
   cross-browser-smoke:
     runs-on: ubuntu-latest
@@ -152,12 +152,12 @@ jobs:
 
       - name: Run Firefox smoke suite
         working-directory: tests
-        run: npm test -- --project=firefox --workers=3
+        run: npm test -- --project=firefox
 
       - name: Run WebKit smoke suite
         if: ${{ !cancelled() }}
         working-directory: tests
-        run: npm test -- --project=webkit --workers=3
+        run: npm test -- --project=webkit
 
   # main 브랜치 규칙이 요구하는 기존 체크 이름을 유지하면서 두 병렬 잡을 모두 게이트한다.
   browser-smoke:

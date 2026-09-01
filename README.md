@@ -25,7 +25,7 @@ PEM·JWK처럼 키가 포함될 수 있는 값은 매번 추가 동의를 받아
 | 카테고리 | 예시 |
 |---|---|
 | 인코딩 / 디코딩 | Base64, URL, JWT 생성·검증, 모스 부호, 진법 변환 |
-| 데이터 포맷 변환 | JSON↔YAML↔XML↔CSV↔TOML↔ENV, JSON Lines/NDJSON 파일 청크 변환·직접 저장, JSONPath/JMESPath, JSON Schema, 색상, 단위 |
+| 데이터 포맷 변환 | JSON↔YAML↔XML↔CSV↔TOML↔ENV, JSON Lines/NDJSON 파일 청크 변환·직접 저장, RFC 9535 JSONPath/JMESPath, JSON Schema, 색상, 단위 |
 | 코드 포맷팅 / 개발 유틸 | JSON/SQL/JS 포맷터, 통합 Diff, 정규식, 시간대별 Crontab, Docker, cURL↔fetch |
 | 문자열 / 텍스트 | 대소문자, Slugify, 통계, 이모지, ASCII 텍스트 배너 |
 | 해싱 | MD/SHA/SHA3, HMAC, 파일 체크섬 |
@@ -137,7 +137,7 @@ DEVELOPMENT_GUIDE.md 구현 구조, 크기 예산, 의존성 교체 및 릴리�
 ```
 
 jsrsasign, pako 같은 classic script는 SRI로 검증하면서 해당 도구를 열 때 CDN에서 **지연 로드**합니다.  
-OpenPGP, GIF, Brotli·Zstandard·Bzip2·LZ4의 동적 ESM/WASM은 하위 import까지 검토한 로컬 사본을 사용합니다. crypto-js만 페이지를 열 때 불러오며, YAML과 TOML은 자체 엔진을 필요한 순간에 불러옵니다.
+OpenPGP, GIF, Brotli·Zstandard·Bzip2·LZ4의 동적 ESM/WASM은 하위 import까지 검토한 로컬 사본을 사용합니다. crypto-js만 페이지를 열 때 불러오며, YAML·TOML·JSONPath는 자체 엔진을 필요한 순간에 불러옵니다.
 
 ## 새 도구 추가
 

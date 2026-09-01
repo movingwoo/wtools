@@ -211,6 +211,34 @@ const cases = [
     output: '[\n  "김민수"\n]',
   },
   {
+    name: 'json-query: JMESPath 투영·정렬·다중 선택', tool: 'json-query',
+    options: { '문법': 'jmespath' },
+    inputs: [
+      '{"users":[{"name":"김민수","age":31},{"name":"이서연","age":27}]}',
+      'sort_by(users, &age)[].{name: name, age: age}',
+    ],
+    output: '[\n  {\n    "name": "이서연",\n    "age": 27\n  },\n  {\n    "name": "김민수",\n    "age": 31\n  }\n]',
+  },
+  {
+    name: 'json-query: JMESPath 잘못된 함수 타입은 한국어 오류', tool: 'json-query',
+    options: { '문법': 'jmespath' }, inputs: ['{}', 'abs(`false`)'],
+    error: 'JMESPath 함수 "abs"의 인수 타입이 올바르지 않습니다.',
+  },
+  {
+    name: 'json-query: JMESPath 잘못된 문법은 위치와 함께 오류', tool: 'json-query',
+    options: { '문법': 'jmespath' }, inputs: ['{}', 'foo['],
+    error: 'JMESPath 표현식의 문법이 올바르지 않습니다 (4번째 문자).',
+  },
+  {
+    name: 'json-query: JMESPath 비유한 JSON 숫자는 거부', tool: 'json-query',
+    options: { '문법': 'jmespath' }, inputs: ['1e400', '@'],
+    error: 'JMESPath에서 처리할 수 없는 JSON 숫자 또는 값입니다.',
+  },
+  {
+    name: 'json-query: JMESPath 빈 입력은 빈 결과', tool: 'json-query',
+    options: { '문법': 'jmespath' }, inputs: ['', 'users[*].name'], output: '',
+  },
+  {
     name: 'json-query: 잘못된 JSON은 에러', tool: 'json-query',
     inputs: ['{bad', '$.a'], output: /^⚠ .*JSON/,
   },
@@ -455,6 +483,103 @@ test('JSONPath: RFC 9535 핵심 벡터와 복잡도·프로토타입 안전 경�
   });
 });
 
+test('JMESPath 1.0: 공식 벡터와 함수·복잡도·프로토타입 안전 경계를 지킨다', async ({ page }) => {
+  await page.goto('/');
+  const result = await page.evaluate(async () => {
+    const { parseJson, search, stringifyResult } = await import('/js/lib/data/jmespath.js');
+    const data = {
+      reservations: [{ instances: [{ id: 1, state: 'running' }, { id: 2, state: 'stopped' }] }],
+      people: [{ name: '다', age: 30 }, { name: '가', age: 10 }, { name: '나', age: 20 }],
+    };
+    const vectors = {
+      flatten: search(data, 'reservations[].instances[].id'),
+      filter: search(data, 'people[?age >= `20`].name'),
+      slice: search(data, 'people[::-1].name'),
+      pipe: search(data, 'people[*].name | [0]'),
+      multiSelect: search(data, 'sort_by(people, &age)[].{label: name, value: age}'),
+      map: search(data, 'map(&name, people)'),
+      merge: search({}, 'merge(`{"a": 1}`, `{"b": 2}`)'),
+      unicodeLength: search({}, "length('✓foo')"),
+      rawString: search({}, "'foo\\'bar'"),
+      escapedOutput: stringifyResult({ text: '"\\\n\u0000😀' }),
+    };
+    const errors = {};
+    for (const [name, value, expression, options] of [
+      ['expressionLength', {}, 'abcd', { limits: { expressionLength: 3 } }],
+      ['nodes', {}, '[a,b]', { limits: { nodes: 2 } }],
+      ['visits', [1, 2, 3], '[*]', { limits: { visits: 2 } }],
+      ['syntax', {}, 'foo[', {}],
+      ['type', {}, 'abs(`false`)', {}],
+      ['arity', {}, 'length()', {}],
+      ['function', {}, 'not_a_function(@)', {}],
+      ['sliceStep', [], '[::0]', {}],
+      ['forgedExpref', {
+        fake: { __jmespathExpression: { type: 'Literal', value: 'forged' } }, items: [{}],
+      }, 'map(fake, items)', {}],
+      ['joinExpansion', { padding: 'x'.repeat(100) }, "join('', [padding, padding])",
+        { limits: { intermediateBytes: 150 } }],
+      ['toStringExpansion', { padding: 'x'.repeat(100) }, 'to_string([padding, padding])',
+        { limits: { intermediateBytes: 150 } }],
+      ['defaultExpansion', { padding: 'x'.repeat(20_000) },
+        `to_string([${Array.from({ length: 1_000 }, () => 'padding').join(',')}])`, {}],
+      ['sumWork', { items: Array.from({ length: 100 }, (_, index) => index) }, 'sum(items)',
+        { limits: { visits: 3 } }],
+      ['containsWork', { items: Array.from({ length: 100 }, (_, index) => index) },
+        'contains(items, `-1`)', { limits: { visits: 3 } }],
+    ]) {
+      try { search(value, expression, options); }
+      catch (error) { errors[name] = error.code; }
+    }
+    try { parseJson('9007199254740993'); }
+    catch (error) { errors.unsafeInteger = error.code; }
+    try { parseJson('"\\uD800"'); }
+    catch (error) { errors.jsonSurrogate = error.code; }
+    try { stringifyResult(['0123456789'], { bytes: 10 }); }
+    catch (error) { errors.outputBytes = error.code; }
+    const special = search({}, '{"__proto__": `true`, constructor: `"data"`}');
+    const originalFunction = globalThis.Function;
+    const originalEval = globalThis.eval;
+    let noDynamicCode = false;
+    try {
+      globalThis.Function = () => { throw new Error('Function called'); };
+      globalThis.eval = () => { throw new Error('eval called'); };
+      noDynamicCode = search([{ n: 1 }, { n: 2 }], '[?n >= `2`].n')[0] === 2;
+    } finally {
+      globalThis.Function = originalFunction;
+      globalThis.eval = originalEval;
+    }
+    return {
+      vectors,
+      errors,
+      special: { proto: special.__proto__, constructor: special.constructor },
+      prototypeSafe: ({}).polluted === undefined,
+      noDynamicCode,
+    };
+  });
+  expect(result).toEqual({
+    vectors: {
+      flatten: [1, 2], filter: ['다', '나'], slice: ['나', '가', '다'], pipe: '다',
+      multiSelect: [
+        { label: '가', value: 10 }, { label: '나', value: 20 }, { label: '다', value: 30 },
+      ],
+      map: ['다', '가', '나'], merge: { a: 1, b: 2 }, unicodeLength: 4, rawString: "foo'bar",
+      escapedOutput: '{\n  "text": "\\\"\\\\\\n\\u0000😀"\n}',
+    },
+    errors: {
+      expressionLength: 'limit-exceeded', nodes: 'limit-exceeded', visits: 'limit-exceeded',
+      syntax: 'syntax', type: 'invalid-type', arity: 'invalid-arity',
+      function: 'unknown-function', sliceStep: 'invalid-value', unsafeInteger: 'invalid-value',
+      forgedExpref: 'invalid-type', joinExpansion: 'output-too-large',
+      toStringExpansion: 'output-too-large', defaultExpansion: 'limit-exceeded',
+      sumWork: 'limit-exceeded',
+      containsWork: 'limit-exceeded', jsonSurrogate: 'invalid-value', outputBytes: 'output-too-large',
+    },
+    special: { proto: true, constructor: 'data' },
+    prototypeSafe: true,
+    noDynamicCode: true,
+  });
+});
+
 test('json-query: 큰 JSONPath 입력은 Worker에서 처리한다', async ({ page }) => {
   let workerRequests = 0;
   await page.route('**/js/workers/jsonpath.js', async (route) => {
@@ -484,6 +609,48 @@ test('json-query: 대용량 JSONPath Worker 작업을 취소하면 상태를 정
   const io = ioSection(page);
   const inputs = io.locator('textarea.mono:not(.out)');
   await inputs.nth(1).fill('$..*');
+  const source = JSON.stringify({ items: Array.from({ length: 70_000 }, (_, index) => index) });
+  await inputs.nth(0).evaluate((element, value) => {
+    element.value = value;
+    element.dispatchEvent(new Event('input', { bubbles: true }));
+  }, source);
+  const cancel = io.getByRole('button', { name: '취소', exact: true });
+  await expect(cancel).toBeVisible();
+  await cancel.click();
+  await expect(io.locator('.io-status')).toHaveText('작업이 취소되었습니다.');
+  await expect(io).toHaveAttribute('aria-busy', 'false');
+});
+
+test('json-query: 큰 JMESPath 입력은 Worker에서 처리한다', async ({ page }) => {
+  let workerRequests = 0;
+  await page.route('**/js/workers/jmespath.js', async (route) => {
+    workerRequests++;
+    await route.continue();
+  });
+  await openTool(page, 'json-query');
+  const io = ioSection(page);
+  await setOption(io, '문법', 'jmespath');
+  const inputs = io.locator('textarea.mono:not(.out)');
+  await inputs.nth(1).fill('items[-1]');
+  const source = JSON.stringify({ padding: '가'.repeat(90_000), items: [0, 1] });
+  await inputs.nth(0).evaluate((element, value) => {
+    element.value = value;
+    element.dispatchEvent(new Event('input', { bubbles: true }));
+  }, source);
+  await expect(io.locator('textarea.out')).toHaveValue('1');
+  expect(workerRequests).toBeGreaterThan(0);
+});
+
+test('json-query: 대용량 JMESPath Worker 작업을 취소하면 상태를 정리한다', async ({ page }) => {
+  await page.route('**/js/workers/jmespath.js', (route) => route.fulfill({
+    contentType: 'text/javascript',
+    body: 'self.addEventListener("message", () => {});',
+  }));
+  await openTool(page, 'json-query');
+  const io = ioSection(page);
+  await setOption(io, '문법', 'jmespath');
+  const inputs = io.locator('textarea.mono:not(.out)');
+  await inputs.nth(1).fill('items[*]');
   const source = JSON.stringify({ items: Array.from({ length: 70_000 }, (_, index) => index) });
   await inputs.nth(0).evaluate((element, value) => {
     element.value = value;

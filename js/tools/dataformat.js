@@ -66,11 +66,6 @@ async function jsonPath() {
   }));
 }
 
-function parseQueryJson(text) {
-  try { return JSON.parse(text); }
-  catch { throw new Error('JSON 데이터의 문법이 올바르지 않습니다.'); }
-}
-
 function utf8ByteLength(text) {
   let bytes = 0;
   for (let index = 0; index < text.length; index++) {
@@ -79,6 +74,42 @@ function utf8ByteLength(text) {
     bytes += point <= 0x7f ? 1 : point <= 0x7ff ? 2 : point <= 0xffff ? 3 : 4;
   }
   return bytes;
+}
+
+let jmesPathMod = null;
+async function jmesPath() {
+  return (jmesPathMod ??= import('../lib/data/jmespath.js').catch(() => {
+    jmesPathMod = null;
+    throw new Error('JMESPath 엔진을 불러오지 못했습니다. 잠시 후 다시 시도하세요.');
+  }));
+}
+
+function jmesPathWorker(text, expression, signal) {
+  return new Promise((resolve, reject) => {
+    const worker = new Worker(new URL('../workers/jmespath.js', import.meta.url), { type: 'module' });
+    let settled = false;
+    const finish = (callback, value) => {
+      if (settled) return;
+      settled = true;
+      signal?.removeEventListener('abort', abort);
+      worker.terminate();
+      callback(value);
+    };
+    const abort = () => finish(reject, new DOMException('작업이 취소되었습니다.', 'AbortError'));
+    worker.addEventListener('message', ({ data }) => {
+      if (data.error) {
+        const error = new Error(data.error);
+        error.code = data.code;
+        error.index = data.index;
+        finish(reject, error);
+      } else finish(resolve, data.result);
+    }, { once: true });
+    worker.addEventListener('error', () =>
+      finish(reject, new Error('JMESPath Worker를 실행하지 못했습니다.')), { once: true });
+    signal?.addEventListener('abort', abort, { once: true });
+    if (signal?.aborted) abort();
+    else worker.postMessage({ action: 'query', text, expression });
+  });
 }
 
 function jsonPathWorker(text, path, signal) {
@@ -136,12 +167,21 @@ tool({
             engine.queryJsonPath(engine.parseJsonPathJson(v.json), path),
           );
         }
-        const data = parseQueryJson(v.json);
-        await loadScript(LIB.jmespath);
+        const jsonBytes = utf8ByteLength(v.json);
+        if (jsonBytes > JSONPATH_MAX_INPUT_BYTES)
+          throw new Error('JMESPath 입력은 최대 16 MiB까지 처리할 수 있습니다.');
+        const expression = v.query.trim();
+        if (jsonBytes + utf8ByteLength(expression) >= JSONPATH_WORKER_THRESHOLD)
+          return await jmesPathWorker(v.json, expression, signal);
+        const engine = await jmesPath();
         if (signal?.aborted) throw new DOMException('작업이 취소되었습니다.', 'AbortError');
-        return JSON.stringify(jmespath.search(data, v.query.trim()), null, 2);
+        try {
+          return engine.stringifyResult(engine.search(engine.parseJson(v.json), expression));
+        } catch (error) {
+          throw new Error(engine.formatError(error));
+        }
       },
-      note: 'JSONPath는 RFC 9535의 이름·와일드카드·재귀·인덱스·슬라이스·필터와 length/count/value 함수를 지원합니다. 입력과 출력은 각각 UTF-8 16 MiB까지이며 비유한 숫자와 안전 정수 범위 밖의 정수는 거부합니다. match/search 정규식 함수와 임의 JavaScript 평가는 지원하지 않습니다. JMESPath는 예: users[*].name 형식으로 입력하세요.',
+      note: 'JSONPath는 RFC 9535의 이름·와일드카드·재귀·인덱스·슬라이스·필터와 length/count/value 함수를 지원하며 match/search 정규식 함수와 임의 JavaScript 평가는 지원하지 않습니다. JMESPath는 투영·필터·슬라이스·파이프·다중 선택과 표준 내장 함수를 지원합니다. 두 문법 모두 입력과 출력은 각각 UTF-8 16 MiB까지이며, JMESPath 중간 문자열에도 같은 상한을 적용합니다. 비유한 숫자와 안전 정수 범위 밖의 정수를 거부하고 256 KiB 이상 입력은 취소 가능한 Worker에서 처리합니다.',
     });
   },
 });

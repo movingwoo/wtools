@@ -47,15 +47,6 @@ globalThis.WTOOLS_DEPENDENCIES = {
       "kind": "script",
       "tools": ["js/tools/archive.js"]
     },
-    "jmespath": {
-      "package": "jmespath",
-      "version": "0.16.0",
-      "url": "https://cdn.jsdelivr.net/npm/jmespath@0.16.0/jmespath.min.js",
-      "integrity": "sha384-gWcKrbXrrv/Qu9WrcJK8aDvaUwv8LMxpzdBtpRCNn3eoq7D6uOySOdo2YFvhaYrx",
-      "license": "Apache-2.0",
-      "kind": "script",
-      "tools": ["js/tools/dataformat.js"]
-    },
     "zSchema": {
       "package": "z-schema",
       "version": "12.4.0",

@@ -33,6 +33,9 @@ class PlaywrightCIImageValidationTests(unittest.TestCase):
       [image, 'mcr.microsoft.com/playwright:v1.2.3@sha256:different'], image
     ))
 
+  def test_browser_workflows_are_reviewed(self):
+    self.assertEqual(validate_static.unreviewed_browser_workflows(), [])
+
 
 if __name__ == '__main__':
   unittest.main()

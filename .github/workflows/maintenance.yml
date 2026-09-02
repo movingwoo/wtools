@@ -84,6 +84,13 @@ jobs:
         shell: bash
         run: python3 scripts/check_jmespath_specs.py --check-latest | tee -a "$GITHUB_STEP_SUMMARY"
 
+      - name: Verify JSON Schema official corpus
+        if: ${{ always() }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: python3 scripts/check_json_schema_specs.py --check-latest | tee -a "$GITHUB_STEP_SUMMARY"
+
       - name: Compare syntax language profiles with official releases
         if: ${{ always() }}
         shell: bash
@@ -116,7 +123,7 @@ jobs:
         shell: bash
         run: |
           echo '## 월간 품질·보안 점검' >> "$GITHUB_STEP_SUMMARY"
-          echo '- npm·OSV·GitHub Advisory, 고정 자산 원본 해시, UA·IANA·CommonMark·GFM·YAML 1.2·TOML 1.0·RFC 9535 JSONPath·JMESPath 1.0·구문 강조·코드 포매터 언어 프로필·브라우저 기준선, JSON Schema·IDN·ZIP/Tar·Markdown·포매터 대표 벡터를 확인했습니다.' >> "$GITHUB_STEP_SUMMARY"
+          echo '- npm·OSV·GitHub Advisory, 고정 자산 원본 해시, UA·IANA·CommonMark·GFM·YAML 1.2·TOML 1.0·RFC 9535 JSONPath·JMESPath 1.0·JSON Schema 공식 suite·구문 강조·코드 포매터 언어 프로필·브라우저 기준선, IDN·ZIP/Tar·Markdown·포매터 대표 벡터를 확인했습니다.' >> "$GITHUB_STEP_SUMMARY"
           echo '- 실제 CDN 응답·CORS·SRI와 운영 헤더 검사는 nightly 워크플로 결과를 함께 확인하세요.' >> "$GITHUB_STEP_SUMMARY"
 
   emoji-update:

@@ -47,15 +47,6 @@ globalThis.WTOOLS_DEPENDENCIES = {
       "kind": "script",
       "tools": ["js/tools/archive.js"]
     },
-    "zSchema": {
-      "package": "z-schema",
-      "version": "12.4.0",
-      "url": "https://cdn.jsdelivr.net/npm/z-schema@12.4.0/umd/ZSchema.min.js",
-      "integrity": "sha384-uwH59hDi0evUZU9ySSP5KjCl0MAXZiFlA4eWOswSbiuGdLZKBmE7iztFuOFv42Gt",
-      "license": "MIT",
-      "kind": "script",
-      "tools": ["js/tools/dataformat.js"]
-    },
     "bcrypt": {
       "package": "bcryptjs",
       "version": "2.4.3",
@@ -194,7 +185,7 @@ globalThis.WTOOLS_DEPENDENCIES = {
       "use": "WCAG 자동 접근성 검사"
     }
   },
-  "reviewed": "2026-08-29"
+  "reviewed": "2026-09-02"
 };
 
 Object.freeze(globalThis.WTOOLS_DEPENDENCIES.cdn);

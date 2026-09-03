@@ -17,9 +17,11 @@ const REMOVED_BEAUTIFY_HTML_URL = 'https://cdn.jsdelivr.net/npm/js-beautify@1.15
 const REMOVED_SQL_FORMATTER_URL = 'https://cdn.jsdelivr.net/npm/sql-formatter@15.3.2/dist/sql-formatter.min.js';
 const REMOVED_JSONPATH_URL = 'https://unpkg.com/jsonpath-plus@10.3.0/dist/index-browser-umd.min.cjs';
 const REMOVED_JMESPATH_URL = 'https://cdn.jsdelivr.net/npm/jmespath@0.16.0/jmespath.min.js';
+const REMOVED_Z_SCHEMA_URL = 'https://cdn.jsdelivr.net/npm/z-schema@12.4.0/umd/ZSchema.min.js';
 const TOML_ENGINE_PATH = '/js/lib/data/toml.js';
 const JSONPATH_ENGINE_PATH = '/js/lib/data/jsonpath.js';
 const JMESPATH_ENGINE_PATH = '/js/lib/data/jmespath.js';
+const JSON_SCHEMA_ENGINE_PATH = '/js/lib/data/json-schema.js';
 const emojiLock = JSON.parse(readFileSync(new URL('../scripts/emoji-data-lock.json', import.meta.url), 'utf8'));
 const emojiCount = Object.values(emojiLock.groupCounts).reduce((sum, count) => sum + count, 0);
 
@@ -36,7 +38,9 @@ async function waitForControl(page) {
 
 test('설치 시 검증된 자산만 캐시하고 이전 버전 캐시를 삭제한다', async ({ page, context }) => {
   await page.goto('/404.html');
-  await page.evaluate(async ({ externalUrl, removedYamlUrl, removedJsonPathUrl, removedJmesPathUrl }) => {
+  await page.evaluate(async ({
+    externalUrl, removedYamlUrl, removedJsonPathUrl, removedJmesPathUrl, removedZSchemaUrl,
+  }) => {
     await caches.open('wtools-shell-v0');
     await caches.open('wtools-external-v0');
     const response = await fetch(externalUrl);
@@ -76,11 +80,15 @@ test('설치 시 검증된 자산만 캐시하고 이전 버전 캐시를 삭제
     const jmesPathCache = await caches.open('wtools-external-v11');
     await jmesPathCache.put(externalUrl, response.clone());
     await jmesPathCache.put(removedJmesPathUrl, new Response('stale JMESPath parser', { status: 200 }));
+    const jsonSchemaCache = await caches.open('wtools-external-v12');
+    await jsonSchemaCache.put(externalUrl, response.clone());
+    await jsonSchemaCache.put(removedZSchemaUrl, new Response('stale JSON Schema validator', { status: 200 }));
   }, {
     externalUrl: EXTERNAL_URL,
     removedYamlUrl: REMOVED_YAML_URL,
     removedJsonPathUrl: REMOVED_JSONPATH_URL,
     removedJmesPathUrl: REMOVED_JMESPATH_URL,
+    removedZSchemaUrl: REMOVED_Z_SCHEMA_URL,
   });
 
   await page.goto('/');
@@ -88,8 +96,8 @@ test('설치 시 검증된 자산만 캐시하고 이전 버전 캐시를 삭제
   const state = await page.evaluate(async ({
     externalUrl, removedMarkedUrl, removedHighlightUrl, removedHighlightCssUrl,
     removedBeautifyJsUrl, removedBeautifyCssUrl, removedBeautifyHtmlUrl, removedSqlFormatterUrl,
-    removedYamlUrl, removedJsonPathUrl, removedJmesPathUrl, tomlEnginePath, jsonPathEnginePath,
-    jmesPathEnginePath,
+    removedYamlUrl, removedJsonPathUrl, removedJmesPathUrl, removedZSchemaUrl,
+    tomlEnginePath, jsonPathEnginePath, jmesPathEnginePath, jsonSchemaEnginePath,
   }) => {
     const keys = await caches.keys();
     const shellName = keys.find((key) => key.startsWith('wtools-shell-'));
@@ -97,12 +105,14 @@ test('설치 시 검증된 자산만 캐시하고 이전 버전 캐시를 삭제
     const tomlEngine = await shell.match(tomlEnginePath);
     const jsonPathEngine = await shell.match(jsonPathEnginePath);
     const jmesPathEngine = await shell.match(jmesPathEnginePath);
-    const external = await caches.open('wtools-external-v12');
+    const jsonSchemaEngine = await shell.match(jsonSchemaEnginePath);
+    const external = await caches.open('wtools-external-v13');
     return {
       keys,
       tomlEngineCached: !!tomlEngine,
       jsonPathEngineCached: !!jsonPathEngine,
       jmesPathEngineCached: !!jmesPathEngine,
+      jsonSchemaEngineCached: !!jsonSchemaEngine,
       externalCached: !!await external.match(externalUrl),
       removedMarkedCached: !!await external.match(removedMarkedUrl),
       removedHighlightCached: !!await external.match(removedHighlightUrl),
@@ -114,6 +124,7 @@ test('설치 시 검증된 자산만 캐시하고 이전 버전 캐시를 삭제
       removedYamlCached: !!await external.match(removedYamlUrl),
       removedJsonPathCached: !!await external.match(removedJsonPathUrl),
       removedJmesPathCached: !!await external.match(removedJmesPathUrl),
+      removedZSchemaCached: !!await external.match(removedZSchemaUrl),
       shellName,
     };
   }, {
@@ -128,9 +139,11 @@ test('설치 시 검증된 자산만 캐시하고 이전 버전 캐시를 삭제
     removedYamlUrl: REMOVED_YAML_URL,
     removedJsonPathUrl: REMOVED_JSONPATH_URL,
     removedJmesPathUrl: REMOVED_JMESPATH_URL,
+    removedZSchemaUrl: REMOVED_Z_SCHEMA_URL,
     tomlEnginePath: TOML_ENGINE_PATH,
     jsonPathEnginePath: JSONPATH_ENGINE_PATH,
     jmesPathEnginePath: JMESPATH_ENGINE_PATH,
+    jsonSchemaEnginePath: JSON_SCHEMA_ENGINE_PATH,
   });
   expect(state.keys).not.toContain('wtools-shell-v0');
   expect(state.keys).not.toContain('wtools-external-v0');
@@ -144,10 +157,12 @@ test('설치 시 검증된 자산만 캐시하고 이전 버전 캐시를 삭제
   expect(state.keys).not.toContain('wtools-external-v9');
   expect(state.keys).not.toContain('wtools-external-v10');
   expect(state.keys).not.toContain('wtools-external-v11');
+  expect(state.keys).not.toContain('wtools-external-v12');
   expect(state.shellName).toMatch(/^wtools-shell-[0-9a-f]{12}$/);
   expect(state.tomlEngineCached).toBe(true);
   expect(state.jsonPathEngineCached).toBe(true);
   expect(state.jmesPathEngineCached).toBe(true);
+  expect(state.jsonSchemaEngineCached).toBe(true);
   expect(state.externalCached).toBe(true);
   expect(state.removedMarkedCached).toBe(false);
   expect(state.removedHighlightCached).toBe(false);
@@ -159,6 +174,7 @@ test('설치 시 검증된 자산만 캐시하고 이전 버전 캐시를 삭제
   expect(state.removedYamlCached).toBe(false);
   expect(state.removedJsonPathCached).toBe(false);
   expect(state.removedJmesPathCached).toBe(false);
+  expect(state.removedZSchemaCached).toBe(false);
 
   await context.setOffline(true);
   const externalStatus = await page.evaluate((url) => fetch(url).then((response) => response.status), EXTERNAL_URL);
@@ -182,9 +198,18 @@ test('설치 시 검증된 자산만 캐시하고 이전 버전 캐시를 삭제
   await jsonQueryInputs.nth(0).fill('{"items":[{"name":"offline","ok":true},{"name":"skip","ok":false}]}');
   await jsonQueryInputs.nth(1).fill('$.items[?@.ok==true].name');
   await expect(jsonQuery.locator('textarea.out')).toHaveValue('[\n  "offline"\n]');
+
   await jsonQuery.getByLabel('문법').selectOption('jmespath');
   await jsonQueryInputs.nth(1).fill('items[?ok].name');
   await expect(jsonQuery.locator('textarea.out')).toHaveValue('[\n  "offline"\n]');
+
+  await page.evaluate(() => { location.hash = '#/tool/json-schema'; });
+  const jsonSchema = page.locator('#content .io');
+  const jsonSchemaInputs = jsonSchema.locator('textarea.mono:not(.out)');
+  await jsonSchemaInputs.nth(0).fill('{"name":"offline"}');
+  await jsonSchemaInputs.nth(1).fill('{"type":"object","required":["name"],"properties":{"name":{"const":"offline"}}}');
+  await jsonSchema.getByRole('button', { name: '검증', exact: true }).click();
+  await expect(jsonSchema.locator('textarea.out')).toHaveValue('✔ JSON 데이터가 스키마에 맞습니다.');
 
   await page.evaluate(() => { location.hash = '#/tool/markdown-html'; });
   const markdown = page.locator('#content .io');

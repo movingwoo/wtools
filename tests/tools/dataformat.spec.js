@@ -272,6 +272,11 @@ const cases = [
     output: '1. /: 필수 속성 "name"이(가) 없습니다.\n2. /age: 값 -1은(는) 최솟값 0보다 작습니다.',
   },
   {
+    name: 'json-schema: 큰 몫의 multipleOf를 오차로 허용하지 않음', tool: 'json-schema',
+    inputs: ['100000000000000.05', '{"type":"number","multipleOf":0.1}'],
+    action: '검증', output: '1. /: 값 100000000000000.05은(는) 0.1의 배수가 아닙니다.',
+  },
+  {
     name: 'json-schema: Draft 2019-09 dependentRequired 검증', tool: 'json-schema',
     inputs: [
       '{"creditCard":"1234"}',
@@ -286,6 +291,56 @@ const cases = [
       '{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"array","prefixItems":[{"type":"string"}],"items":false}',
     ],
     action: '검증', output: '1. /1: 허용되지 않은 값입니다.',
+  },
+  {
+    name: 'json-schema 공식 벡터: Draft 4 exclusiveMinimum 불리언 의미', tool: 'json-schema',
+    inputs: ['1', '{"$schema":"http://json-schema.org/draft-04/schema#","minimum":1,"exclusiveMinimum":true}'],
+    action: '검증', output: '1. /: 값 1은(는) 1보다 커야 합니다.',
+  },
+  {
+    name: 'json-schema 공식 벡터: Draft 2020-12 minContains/maxContains', tool: 'json-schema',
+    inputs: ['[1,"둘",3]', '{"contains":{"type":"number"},"minContains":2,"maxContains":2}'],
+    action: '검증', output: '✔ JSON 데이터가 스키마에 맞습니다.',
+  },
+  {
+    name: 'json-schema: Draft 7 $ref 형제 키워드는 무시', tool: 'json-schema',
+    inputs: ['1', '{"$schema":"http://json-schema.org/draft-07/schema#","$ref":"#/definitions/value","type":"string","definitions":{"value":{"type":"integer"}}}'],
+    action: '검증', output: '✔ JSON 데이터가 스키마에 맞습니다.',
+  },
+  {
+    name: 'json-schema: Draft 2020-12 $ref 형제 키워드는 함께 검증', tool: 'json-schema',
+    inputs: ['1', '{"$ref":"#/$defs/value","type":"string","$defs":{"value":{"type":"integer"}}}'],
+    action: '검증', output: '1. /: 예상 타입은 string이지만 실제 타입은 integer입니다.',
+  },
+  {
+    name: 'json-schema: 로컬 $anchor 참조', tool: 'json-schema',
+    inputs: ['"고정"', '{"$defs":{"value":{"$anchor":"fixed","const":"고정"}},"$ref":"#fixed"}'],
+    action: '검증', output: '✔ JSON 데이터가 스키마에 맞습니다.',
+  },
+  {
+    name: 'json-schema: Draft 2020-12 밑줄 $anchor 참조', tool: 'json-schema',
+    inputs: ['"고정"', '{"$defs":{"value":{"$anchor":"_fixed","const":"고정"}},"$ref":"#_fixed"}'],
+    action: '검증', output: '✔ JSON 데이터가 스키마에 맞습니다.',
+  },
+  {
+    name: 'json-schema: Draft 2020-12 콜론 $anchor는 거부', tool: 'json-schema',
+    inputs: ['null', '{"$anchor":"a:b"}'], action: '검증',
+    error: 'JSON Schema 오류: 올바르지 않은 로컬 앵커입니다: a:b',
+  },
+  {
+    name: 'json-schema: patternProperties와 additionalProperties', tool: 'json-schema',
+    inputs: ['{"S_name":"ok","extra":1}', '{"type":"object","patternProperties":{"^S_":{"type":"string"}},"additionalProperties":false}'],
+    action: '검증', output: '1. /: 허용되지 않은 속성 "extra"이(가) 있습니다.',
+  },
+  {
+    name: 'json-schema: dependentSchemas', tool: 'json-schema',
+    inputs: ['{"creditCard":"1234"}', '{"dependentSchemas":{"creditCard":{"required":["billingAddress"]}}}'],
+    action: '검증', output: '1. /: 필수 속성 "billingAddress"이(가) 없습니다.',
+  },
+  {
+    name: 'json-schema: format은 주석으로 처리', tool: 'json-schema',
+    inputs: ['"not-an-email"', '{"type":"string","format":"email"}'],
+    action: '검증', output: '✔ JSON 데이터가 스키마에 맞습니다.',
   },
   {
     name: 'json-schema: 스키마 기반 샘플 생성', tool: 'json-schema',
@@ -317,9 +372,45 @@ const cases = [
     error: '외부 $ref는 네트워크로 가져오지 않습니다: https://example.com/schema.json',
   },
   {
+    name: 'json-schema: 검증에서도 외부 $ref를 거부', tool: 'json-schema',
+    inputs: ['{}', '{"$ref":"other.json"}'], action: '검증',
+    error: '외부 $ref는 네트워크로 가져오지 않습니다: other.json',
+  },
+  {
+    name: 'json-schema: 중첩 $id 리소스는 잘못 해석하지 않고 거부', tool: 'json-schema',
+    inputs: ['1', '{"$defs":{"nested":{"$id":"nested.json","type":"integer"}},"$ref":"#/$defs/nested"}'],
+    action: '검증', error: 'JSON Schema 오류: 중첩 스키마 리소스는 지원하지 않습니다: nested.json',
+  },
+  {
     name: 'json-schema: 미지원 최신 키워드는 묵살하지 않고 거부', tool: 'json-schema',
     inputs: ['{}', '{"$schema":"https://json-schema.org/draft/2020-12/schema","unevaluatedProperties":false}'],
     action: '검증', error: '현재 검증기가 지원하지 않는 키워드입니다: unevaluatedProperties',
+  },
+  {
+    name: 'json-schema: 필수 vocabulary 선언은 묵살하지 않고 거부', tool: 'json-schema',
+    inputs: ['{}', '{"$vocabulary":{"https://example.test/custom":true}}'],
+    action: '검증', error: '현재 검증기가 지원하지 않는 키워드입니다: $vocabulary',
+  },
+  {
+    name: 'json-schema: Draft 4 boolean 하위 스키마는 거부', tool: 'json-schema',
+    inputs: ['{}', '{"$schema":"http://json-schema.org/draft-04/schema#","properties":{"value":true}}'],
+    action: '검증', error: 'JSON Schema 오류: 이 위치에는 JSON Schema 객체가 필요합니다.',
+  },
+  {
+    name: 'json-schema: Draft 4 enum 값은 고유해야 함', tool: 'json-schema',
+    inputs: ['1', '{"$schema":"http://json-schema.org/draft-04/schema#","enum":[1,1]}'],
+    action: '검증',
+    error: 'JSON Schema 오류: 키워드 "enum"에 올바른 형식의 값이 필요합니다: non-empty array of unique JSON values',
+  },
+  {
+    name: 'json-schema: contentEncoding은 문자열이어야 함', tool: 'json-schema',
+    inputs: ['"value"', '{"contentEncoding":7}'], action: '검증',
+    error: 'JSON Schema 오류: 키워드 "contentEncoding"에 올바른 형식의 값이 필요합니다: string',
+  },
+  {
+    name: 'json-schema: 잘못된 $id URI는 거부', tool: 'json-schema',
+    inputs: ['null', '{"$id":"%%%"}'], action: '검증',
+    error: 'JSON Schema 오류: 올바르지 않은 스키마 식별자입니다: %%%',
   },
   {
     name: 'json-schema: 스키마가 비면 에러', tool: 'json-schema',
@@ -329,6 +420,21 @@ const cases = [
     name: 'json-schema: 잘못된 스키마는 에러', tool: 'json-schema',
     inputs: ['{}', '{"type":"unknown"}'], action: '검증',
     error: 'JSON Schema 오류: 키워드 "type"에 올바른 형식의 값이 필요합니다: array,boolean,integer,number,null,object,string',
+  },
+  {
+    name: 'json-schema: 잘못된 pattern은 스키마 오류', tool: 'json-schema',
+    inputs: ['"x"', '{"pattern":"["}'], action: '검증',
+    error: 'JSON Schema 오류: 올바르지 않은 pattern 정규식입니다: [',
+  },
+  {
+    name: 'json-schema: 지원하지 않는 버전은 에러', tool: 'json-schema',
+    inputs: ['{}', '{"$schema":"https://json-schema.org/draft/next/schema"}'], action: '검증',
+    error: '지원하지 않는 JSON Schema 버전입니다. Draft 4, 6, 7, 2019-09 또는 2020-12를 사용하세요.',
+  },
+  {
+    name: 'json-schema: 이름에 draft가 들어간 임의 dialect는 거부', tool: 'json-schema',
+    inputs: ['{}', '{"$schema":"https://example.test/custom-draft-07-dialect"}'], action: '검증',
+    error: '지원하지 않는 JSON Schema 버전입니다. Draft 4, 6, 7, 2019-09 또는 2020-12를 사용하세요.',
   },
 
   /* ---------- table-convert ---------- */
@@ -403,6 +509,112 @@ const cases = [
 ];
 
 toolCases('dataformat', cases);
+
+test('json-schema: 256 KiB 이상 입력은 로컬 모듈 Worker에서 검증한다', async ({ page }) => {
+  await page.addInitScript(() => {
+    const NativeWorker = window.Worker;
+    window.__jsonSchemaWorkers = [];
+    window.Worker = class extends NativeWorker {
+      constructor(url, options) {
+        window.__jsonSchemaWorkers.push(new URL(url, location.href).pathname);
+        super(url, options);
+      }
+    };
+  });
+  const externalRequests = [];
+  page.on('request', (request) => {
+    if (!request.url().startsWith(new URL(page.url() || 'http://localhost').origin))
+      externalRequests.push(request.url());
+  });
+  await openTool(page, 'json-schema');
+  const io = ioSection(page);
+  const value = JSON.stringify({ payload: '가'.repeat(140_000) });
+  await fillInputs(io, [value, '{"type":"object","required":["payload"],"properties":{"payload":{"type":"string","minLength":140000}}}']);
+  await clickAction(io, '검증');
+  await expect(io.locator('textarea.out')).toHaveValue('✔ JSON 데이터가 스키마에 맞습니다.');
+  await expect.poll(() => page.evaluate(() => window.__jsonSchemaWorkers)).toContain('/js/workers/json-schema.js');
+  expect(externalRequests.filter((url) => url.includes('z-schema'))).toEqual([]);
+});
+
+test('json-schema: Worker 검증을 취소하면 상태와 Worker를 정리한다', async ({ page }) => {
+  await page.route('**/js/workers/json-schema.js', (route) => route.fulfill({
+    contentType: 'text/javascript',
+    body: 'self.addEventListener("message", () => {});',
+  }));
+  await openTool(page, 'json-schema');
+  const io = ioSection(page);
+  await fillInputs(io, ['{"value":1}', '{"type":"object"}']);
+  await clickAction(io, '검증');
+  const cancel = io.getByRole('button', { name: '취소', exact: true });
+  await expect(cancel).toBeVisible();
+  await cancel.click();
+  await expect(io.locator('.io-status')).toHaveText('작업이 취소되었습니다.');
+  await expect(io).toHaveAttribute('aria-busy', 'false');
+});
+
+test('json-schema: 안전 제한 시간을 넘긴 Worker를 자동 종료한다', async ({ page }) => {
+  await page.addInitScript(() => {
+    const nativeSetTimeout = window.setTimeout.bind(window);
+    window.setTimeout = (handler, delay, ...args) =>
+      nativeSetTimeout(handler, delay === 10_000 ? 20 : delay, ...args);
+  });
+  await page.route('**/js/workers/json-schema.js', (route) => route.fulfill({
+    contentType: 'text/javascript',
+    body: 'self.addEventListener("message", () => {});',
+  }));
+  await openTool(page, 'json-schema');
+  const io = ioSection(page);
+  await fillInputs(io, ['{"value":1}', '{"type":"object"}']);
+  await clickAction(io, '검증');
+  await expect(io.locator('textarea.out')).toHaveValue(
+    '⚠ JSON Schema 작업이 안전 제한 시간 10초를 넘었습니다.',
+  );
+  await expect(io).toHaveAttribute('aria-busy', 'false');
+});
+
+test('json-schema: 스키마 입력 크기와 검증 복잡도 상한을 적용한다', async ({ page }) => {
+  await openTool(page, 'json-schema');
+  const io = ioSection(page);
+  const oversizedSchema = JSON.stringify({ description: '가'.repeat(350_000) });
+  await fillInputs(io, ['{}', oversizedSchema]);
+  await clickAction(io, '검증');
+  await expect(io.locator('textarea.out')).toHaveValue('⚠ JSON Schema는 UTF-8 1 MiB까지 입력할 수 있습니다.');
+
+  const limits = await page.evaluate(async () => {
+    const engine = await import('/js/lib/data/json-schema.js');
+    const evaluation = engine.validateJsonSchema(
+      Array(2_000).fill(0),
+      { items: { allOf: Array(501).fill(true) } },
+    );
+    const cyclic = {};
+    cyclic.self = cyclic;
+    const cycle = engine.validateJsonSchema(cyclic, true);
+    const sampleErrors = [];
+    for (const schema of [
+      { type: 'string', minLength: 2_000_000 },
+      { type: 'string', pattern: '^a{2000000}$' },
+      { type: 'array', minItems: 200_000 },
+    ]) {
+      try { engine.generateSchemaSample(schema); }
+      catch (error) { sampleErrors.push(error.code); }
+    }
+    const prototypeSample = engine.generateSchemaSample({
+      type: 'object', required: ['__proto__'], properties: { ['__proto__']: { const: '안전' } },
+    });
+    return [
+      evaluation.errors[0]?.code,
+      cycle.errors[0]?.code,
+      sampleErrors,
+      Object.prototype.hasOwnProperty.call(prototypeSample, '__proto__'),
+      prototypeSample.__proto__,
+      Object.prototype.safe,
+    ];
+  });
+  expect(limits).toEqual([
+    'EVALUATION_LIMIT', 'INSTANCE_CYCLE', ['SAMPLE_LIMIT', 'SAMPLE_LIMIT', 'SAMPLE_LIMIT'],
+    true, '안전', undefined,
+  ]);
+});
 
 test('JSONPath: RFC 9535 핵심 벡터와 복잡도·프로토타입 안전 경계를 지킨다', async ({ page }) => {
   await page.goto('/');

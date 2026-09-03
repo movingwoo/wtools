@@ -235,7 +235,7 @@ export const TOOL_MANIFESTS = Object.freeze([
     "desc": "RFC 9535 JSONPath 또는 JMESPath 표현식으로 JSON 데이터의 원하는 값을 조회합니다.",
     "keywords": "jsonpath jmespath json query path filter 조회 경로",
     "module": "./tools/dataformat.js",
-    "externalLibrary": true
+    "externalLibrary": false
   },
   {
     "id": "json-schema",
@@ -262,7 +262,7 @@ export const TOOL_MANIFESTS = Object.freeze([
       ]
     },
     "module": "./tools/dataformat.js",
-    "externalLibrary": true
+    "externalLibrary": false
   },
   {
     "id": "data-convert",
@@ -351,7 +351,7 @@ export const TOOL_MANIFESTS = Object.freeze([
       ]
     },
     "module": "./tools/dataformat.js",
-    "externalLibrary": true
+    "externalLibrary": false
   },
   {
     "id": "json-lines",
@@ -418,7 +418,7 @@ export const TOOL_MANIFESTS = Object.freeze([
       ]
     },
     "module": "./tools/dataformat.js",
-    "externalLibrary": true
+    "externalLibrary": false
   },
   {
     "id": "list-convert",
@@ -427,7 +427,7 @@ export const TOOL_MANIFESTS = Object.freeze([
     "desc": "리스트의 구분자 변경, 정렬, 중복 제거, 감싸기(quote) 등을 수행합니다.",
     "keywords": "list sort unique dedupe join split",
     "module": "./tools/dataformat.js",
-    "externalLibrary": true
+    "externalLibrary": false
   },
   {
     "id": "table-convert",
@@ -436,7 +436,7 @@ export const TOOL_MANIFESTS = Object.freeze([
     "desc": "CSV/TSV 데이터를 Markdown, HTML, ASCII 표로 변환하거나 Markdown 표를 CSV로 되돌립니다.",
     "keywords": "markdown table html ascii",
     "module": "./tools/dataformat.js",
-    "externalLibrary": true
+    "externalLibrary": false
   },
   {
     "id": "color-convert",
@@ -445,7 +445,7 @@ export const TOOL_MANIFESTS = Object.freeze([
     "desc": "HEX, RGB, HSL, CMYK 형식 간 색상을 변환하고 미리보기를 제공합니다.",
     "keywords": "color hex rgb hsl cmyk",
     "module": "./tools/dataformat.js",
-    "externalLibrary": true
+    "externalLibrary": false
   },
   {
     "id": "data-unit",
@@ -454,7 +454,7 @@ export const TOOL_MANIFESTS = Object.freeze([
     "desc": "바이트, KB/KiB, MB/MiB 등 데이터 크기 단위를 변환합니다.",
     "keywords": "byte kb mb gb kib mib size",
     "module": "./tools/dataformat.js",
-    "externalLibrary": true
+    "externalLibrary": false
   },
   {
     "id": "ip-format",
@@ -463,7 +463,7 @@ export const TOOL_MANIFESTS = Object.freeze([
     "desc": "IPv4 주소를 10진수, 16진수, 2진수, IPv6 매핑, 6to4 등 다양한 형식으로 변환합니다.",
     "keywords": "ip decimal hex 6to4 mapped",
     "module": "./tools/dataformat.js",
-    "externalLibrary": true
+    "externalLibrary": false
   },
   {
     "id": "color-contrast",
@@ -472,7 +472,7 @@ export const TOOL_MANIFESTS = Object.freeze([
     "desc": "글자색과 배경색의 명암 대비율을 계산하고 WCAG 접근성 기준 통과 여부를 확인합니다.",
     "keywords": "contrast wcag accessibility a11y color ratio 접근성 대비",
     "module": "./tools/dataformat.js",
-    "externalLibrary": true
+    "externalLibrary": false
   },
   {
     "id": "json-format",

@@ -1,0 +1,87 @@
+{
+  "standard": "JSON Schema Draft 4/6/7/2019-09/2020-12",
+  "standardUrls": {
+    "draft4": "https://json-schema.org/draft-04/json-schema-validation",
+    "draft6": "https://json-schema.org/draft-06/json-schema-validation",
+    "draft7": "https://json-schema.org/draft-07/json-schema-validation",
+    "draft2019-09": "https://json-schema.org/draft/2019-09/json-schema-validation",
+    "draft2020-12": "https://json-schema.org/draft/2020-12/json-schema-validation"
+  },
+  "specificationUrl": "https://json-schema.org/specification",
+  "currentDialect": "2020-12",
+  "metaSchemas": {
+    "https://json-schema.org/draft-04/schema": "sha384-Wz575Y5BOdHNonRf1zKu8v+oVOBaDCsiPuUfyOmHeB5B7kkym72tGkDNOGDl747S",
+    "https://json-schema.org/draft-06/schema": "sha384-lnuhL8BndpLnE9/Tw+XfqtIX0KGQg0nVvmikf/prBw/6uypqkVk0jy/2dVv+IaED",
+    "https://json-schema.org/draft-07/schema": "sha384-u07iKpmf5T+KdAvZDRcZ60cWkpyozkHoJ4ScjLgZGDahLuQln8+J9dxqGmdeZs6I",
+    "https://json-schema.org/draft/2019-09/schema": "sha384-/gw60V8lWdAmD0mwh+5DLU4aFiUOQ5ovBAWx4Q5ozuNb5uhzs3SvJG5HKOEQNVuv",
+    "https://json-schema.org/draft/2019-09/meta/core": "sha384-XLv09tTQdmLcKgS5OpgQd84NFml6rm8hmxU7MxaWxfP72pZ504nukcyf5+VvTov0",
+    "https://json-schema.org/draft/2019-09/meta/applicator": "sha384-vdXkOFjj5qjR0yZ1Os7eUiKT1Nd7pMWAx21Wjwi9Eg2x0aArWN4FWLrzRQv+BEyC",
+    "https://json-schema.org/draft/2019-09/meta/validation": "sha384-dF969dgPrDjBbPRPziJ9GGE43nv1DeFErP7eSxVdqoAzKspmpoFa8FLxLjfG1Kmw",
+    "https://json-schema.org/draft/2019-09/meta/meta-data": "sha384-uupLBgFUm4d69ILqSzXjgezhA3aRkcLcnCCo5/d0lsavfuL8hRo9gZqkBooYTOQe",
+    "https://json-schema.org/draft/2019-09/meta/format": "sha384-h/hW2zL+9Gt2XwtwELXikCh3PGSsio1QV8BtbEaDO/6zIE/XsVE97M6JamvlsDVk",
+    "https://json-schema.org/draft/2019-09/meta/content": "sha384-xi9b5zOY9JZngMACq/f9oNmadkQTA0cenq+ofEHFPqOQE4gX455T5RgOI8VRA07V",
+    "https://json-schema.org/draft/2020-12/schema": "sha384-OxlzSznS0lq6wx90Yqv6jUp3qecKyh938dFtjFPAUZk3koVQJAX3Xl7FdcShdeqr",
+    "https://json-schema.org/draft/2020-12/meta/core": "sha384-1ODD6LMfxmY8Sf/AWO9qFf+e7Df+/1q8gGoQ8sL7bliuR9blV+AhYFxzuBdkKdUz",
+    "https://json-schema.org/draft/2020-12/meta/applicator": "sha384-nNI8aKPy0FUjdmF7BsKCHk2p4nuaiSESlDiRdMJ6Nd4E/6FkuSDsq8aihVisGMF2",
+    "https://json-schema.org/draft/2020-12/meta/unevaluated": "sha384-OnXq3Ujia2HuheFONQw7S7q4nrPBPw9b3xXJmjT+yP2tdi2zkvF+5ITSob40wsWu",
+    "https://json-schema.org/draft/2020-12/meta/validation": "sha384-FHxjxLYlKUjqM+WUZoNO4TH4G2V7eqSk3VH9Ox1HhqJId2APreVxMvjnfrOtaIcU",
+    "https://json-schema.org/draft/2020-12/meta/meta-data": "sha384-bADcNTA3knYpugtvv0k/9EGb/UxkVitkHlD251CTqG+HHqMgVqjqfWwPfQczvOyP",
+    "https://json-schema.org/draft/2020-12/meta/format-annotation": "sha384-FVUWQkZsJjRgiJogdMF81wodS/VJ2ve9QgfaCyldYo4JgE4KS7M0/I1CaZMvHJBt",
+    "https://json-schema.org/draft/2020-12/meta/content": "sha384-jjeJh+fUy60EiV+CVax3aUOEOzb4TvhlfrVBRAo4p6TlVn4Twmbr8gwb/Of6G/IZ"
+  },
+  "ietfDraft": {
+    "name": "draft-ietf-jsonschema-json-schema",
+    "revision": "03",
+    "updated": "2026-08-26",
+    "url": "https://datatracker.ietf.org/doc/draft-ietf-jsonschema-json-schema/",
+    "apiUrl": "https://datatracker.ietf.org/api/v1/doc/document/draft-ietf-jsonschema-json-schema/"
+  },
+  "suiteRepository": "json-schema-org/JSON-Schema-Test-Suite",
+  "suiteBranch": "main",
+  "suiteCommit": "55e23729473f4b629fd9266614280f355cd1b4fc",
+  "suiteUrl": "https://codeload.github.com/json-schema-org/JSON-Schema-Test-Suite/tar.gz/55e23729473f4b629fd9266614280f355cd1b4fc",
+  "suiteSha384": "sha384-Bf6wz7hogkJ60c+HVR879mX9PSe7fzVN0N0fCEnjK8ao210IenaHWP6D0Z04YgdY",
+  "excludedFiles": [
+    "dynamicRef.json",
+    "recursiveRef.json",
+    "refRemote.json",
+    "unevaluatedItems.json",
+    "unevaluatedProperties.json",
+    "vocabulary.json"
+  ],
+  "excludedSchemaFeatures": [
+    "$dynamicAnchor",
+    "$dynamicRef",
+    "$recursiveAnchor",
+    "$recursiveRef",
+    "$vocabulary",
+    "contentSchema",
+    "external-or-relative-$ref",
+    "nested-$id-resource",
+    "unevaluatedItems",
+    "unevaluatedProperties"
+  ],
+  "drafts": {
+    "draft4": { "rootFiles": 30, "totalGroups": 160, "totalCases": 618, "groups": 146, "cases": 589, "skippedGroups": 14, "skippedCases": 29 },
+    "draft6": { "rootFiles": 36, "totalGroups": 232, "totalCases": 839, "groups": 209, "cases": 790, "skippedGroups": 23, "skippedCases": 49 },
+    "draft7": { "rootFiles": 37, "totalGroups": 257, "totalCases": 927, "groups": 230, "cases": 870, "skippedGroups": 27, "skippedCases": 57 },
+    "draft2019-09": { "rootFiles": 46, "totalGroups": 372, "totalCases": 1259, "groups": 252, "cases": 949, "skippedGroups": 120, "skippedCases": 310 },
+    "draft2020-12": { "rootFiles": 46, "totalGroups": 383, "totalCases": 1299, "groups": 249, "cases": 966, "skippedGroups": 134, "skippedCases": 333 }
+  },
+  "skippedReasons": {
+    "$recursiveAnchor": { "groups": 1, "cases": 2 },
+    "contentSchema": { "groups": 2, "cases": 16 },
+    "external-or-relative-$ref": { "groups": 56, "cases": 116 },
+    "file:dynamicRef.json": { "groups": 21, "cases": 44 },
+    "file:recursiveRef.json": { "groups": 9, "cases": 34 },
+    "file:refRemote.json": { "groups": 60, "cases": 125 },
+    "file:unevaluatedItems.json": { "groups": 55, "cases": 127 },
+    "file:unevaluatedProperties.json": { "groups": 88, "cases": 258 },
+    "file:vocabulary.json": { "groups": 4, "cases": 10 },
+    "nested-$id-resource": { "groups": 18, "cases": 40 },
+    "unevaluatedProperties": { "groups": 4, "cases": 6 }
+  },
+  "supportedGroups": 1086,
+  "supportedCases": 4164,
+  "reviewed": "2026-09-02"
+}

@@ -4,10 +4,10 @@ importScripts('./js/sw-integrity.js');
 
 const CACHE_PREFIX = 'wtools-';
 // scripts/update_cache_version.py가 앱 셸 내용의 SHA-256 앞 12자리와 일치시킨다.
-const CACHE_REVISION = '8675bd06e3f3';
+const CACHE_REVISION = 'a5a512a1e4b8';
 const CACHE_NAME = CACHE_PREFIX + 'shell-' + CACHE_REVISION;
 const EXTERNAL_CACHE_PREFIX = CACHE_PREFIX + 'external-';
-const EXTERNAL_CACHE_NAME = EXTERNAL_CACHE_PREFIX + 'v12';
+const EXTERNAL_CACHE_NAME = EXTERNAL_CACHE_PREFIX + 'v13';
 const dependencies = self.WTOOLS_DEPENDENCIES;
 const externalIntegrity = new Map(Object.values(dependencies.cdn)
   .map(({ url, integrity }) => [url, integrity]));
@@ -62,6 +62,7 @@ const APP_SHELL = [
   './js/lib/data/toml.js',
   './js/lib/data/jsonpath.js',
   './js/lib/data/jmespath.js',
+  './js/lib/data/json-schema.js',
   './js/lib/crypto/md4.js',
   './js/lib/diff/myers.js',
   './js/lib/media/image-data.js',
@@ -96,6 +97,7 @@ const APP_SHELL = [
   './js/workers/gif-encode.js',
   './js/workers/jsonpath.js',
   './js/workers/jmespath.js',
+  './js/workers/json-schema.js',
   './js/workers/markdown-render.js',
   './js/workers/qr-decode.js',
   './js/workers/text-diff.js',

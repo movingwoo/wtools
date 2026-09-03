@@ -53,7 +53,6 @@ DEPENDENCY_GLOBALS = {
   'pako': ('pako',),
   'fflate': ('fflate',),
   'lzma': ('LZMA',),
-  'zSchema': ('ZSchema',),
   'bcrypt': ('bcrypt',),
   'hashWasm': ('hashwasm',),
   'tweetnacl': ('nacl',),

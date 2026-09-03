@@ -1,5 +1,5 @@
 // 데이터 포맷 변환
-import { tool, makeIO, h, kvTable, formLabel, loadScript, LIB, download, createAsyncRunner, readFileChunks, throwIfAborted, formatBytes } from '../core.js';
+import { tool, makeIO, h, kvTable, formLabel, download, createAsyncRunner, readFileChunks, throwIfAborted, formatBytes } from '../core.js';
 
 const CAT = '데이터 포맷 변환';
 export const YAML_WORKER_THRESHOLD = 16 * 1024;
@@ -186,259 +186,30 @@ tool({
   },
 });
 
-const SAMPLE_MISSING = Symbol('sample-missing');
+export const JSON_SCHEMA_WORKER_TIMEOUT_MS = 10_000;
 
-function requireLocalSampleRefs(value, seen = new Set()) {
-  if (!value || typeof value !== 'object' || seen.has(value)) return;
-  seen.add(value);
-  if (typeof value.$ref === 'string' && !value.$ref.startsWith('#'))
-    throw new Error(`외부 $ref는 네트워크로 가져오지 않습니다: ${value.$ref}`);
-  for (const child of Object.values(value)) requireLocalSampleRefs(child, seen);
-}
-
-function schemaPointer(root, ref) {
-  if (ref === '#') return root;
-  if (!ref.startsWith('#/'))
-    throw new Error(`외부 $ref는 샘플 생성에서 지원하지 않습니다: ${ref}`);
-  let value = root;
-  for (const raw of ref.slice(2).split('/')) {
-    const key = decodeURIComponent(raw.replace(/~1/g, '/').replace(/~0/g, '~'));
-    if (!value || typeof value !== 'object' || !(key in value))
-      throw new Error(`$ref 대상을 찾을 수 없습니다: ${ref}`);
-    value = value[key];
-  }
-  return value;
-}
-
-function mergeSchemas(left, right) {
-  if (left === false || right === false) return false;
-  if (left === true || left == null) return right;
-  if (right === true || right == null) return left;
-  const merged = { ...left, ...right };
-  if (left.properties || right.properties) {
-    merged.properties = { ...left.properties };
-    for (const [key, value] of Object.entries(right.properties || {}))
-      merged.properties[key] = key in merged.properties ? mergeSchemas(merged.properties[key], value) : value;
-  }
-  if (left.required || right.required)
-    merged.required = [...new Set([...(left.required || []), ...(right.required || [])])];
-  for (const key of ['minimum', 'exclusiveMinimum', 'minLength', 'minItems']) {
-    if (key in left && key in right) merged[key] = Math.max(left[key], right[key]);
-  }
-  for (const key of ['maximum', 'exclusiveMaximum', 'maxLength', 'maxItems']) {
-    if (key in left && key in right) merged[key] = Math.min(left[key], right[key]);
-  }
-  return merged;
-}
-
-function materializeAllOf(schema, root, refs = new Set()) {
-  if (!schema || typeof schema !== 'object' || Array.isArray(schema)) return schema;
-  let resolved = schema;
-  if (typeof schema.$ref === 'string') {
-    if (refs.has(schema.$ref)) return {};
-    refs.add(schema.$ref);
-    const { $ref, ...siblings } = schema;
-    resolved = mergeSchemas(materializeAllOf(schemaPointer(root, $ref), root, refs), siblings);
-    refs.delete(schema.$ref);
-  }
-  if (!resolved?.allOf) return resolved;
-  const { allOf, ...base } = resolved;
-  return allOf.reduce((merged, child) =>
-    mergeSchemas(merged, materializeAllOf(child, root, refs)), base);
-}
-
-function firstPatternAlternative(source) {
-  let depth = 0, bracket = false, escaped = false;
-  for (let i = 0; i < source.length; i++) {
-    const char = source[i];
-    if (escaped) { escaped = false; continue; }
-    if (char === '\\') { escaped = true; continue; }
-    if (char === '[') bracket = true;
-    else if (char === ']') bracket = false;
-    else if (!bracket && char === '(') depth++;
-    else if (!bracket && char === ')') depth--;
-    else if (!bracket && depth === 0 && char === '|') return source.slice(0, i);
-  }
-  return source;
-}
-
-function patternClassExample(content) {
-  if (content.startsWith('^')) {
-    const expression = new RegExp(`[${content}]`, 'u');
-    return ['a', 'A', '0', '_', '-', '가'].find((value) => !expression.test(value)) || 'a';
-  }
-  if (/^\\d/.test(content) || /0-9/.test(content)) return '0';
-  if (/^\\w/.test(content)) return 'a';
-  if (/^\\s/.test(content)) return ' ';
-  const match = content.match(/\\([nrt])|\\(.)|([^\\])/);
-  if (!match) return 'a';
-  if (match[1]) return { n: '\n', r: '\r', t: '\t' }[match[1]];
-  return match[2] || match[3];
-}
-
-function patternExample(pattern, minLength = 0) {
-  let source = firstPatternAlternative(pattern.replace(/^\^/, '').replace(/\$$/, ''));
-  let output = '';
-  for (let i = 0; i < source.length;) {
-    let token = '', next = i + 1;
-    const char = source[i];
-    if (char === '\\') {
-      const escaped = source[i + 1];
-      if (escaped === 'd') token = '0';
-      else if (escaped === 'w') token = 'a';
-      else if (escaped === 's') token = ' ';
-      else if (escaped === 'n') token = '\n';
-      else if (escaped === 'r') token = '\r';
-      else if (escaped === 't') token = '\t';
-      else token = escaped || '';
-      next = i + 2;
-    } else if (char === '[') {
-      let end = i + 1, escaped = false;
-      for (; end < source.length; end++) {
-        if (!escaped && source[end] === ']') break;
-        escaped = !escaped && source[end] === '\\';
-        if (source[end] !== '\\') escaped = false;
-      }
-      if (end >= source.length) throw new Error(`pattern을 해석할 수 없습니다: ${pattern}`);
-      token = patternClassExample(source.slice(i + 1, end));
-      next = end + 1;
-    } else if (char === '(') {
-      let end = i + 1, depth = 1, escaped = false, bracket = false;
-      for (; end < source.length && depth; end++) {
-        const current = source[end];
-        if (escaped) { escaped = false; continue; }
-        if (current === '\\') { escaped = true; continue; }
-        if (current === '[') bracket = true;
-        else if (current === ']') bracket = false;
-        else if (!bracket && current === '(') depth++;
-        else if (!bracket && current === ')') depth--;
-      }
-      if (depth) throw new Error(`pattern을 해석할 수 없습니다: ${pattern}`);
-      let inner = source.slice(i + 1, end - 1).replace(/^\?:/, '');
-      token = patternExample(firstPatternAlternative(inner));
-      next = end;
-    } else {
-      token = char === '.' ? 'a' : char;
-    }
-
-    let count = 1;
-    if (source[next] === '{') {
-      const quantifier = source.slice(next).match(/^\{(\d+)(?:,\d*)?\}/);
-      if (quantifier) { count = Number(quantifier[1]); next += quantifier[0].length; }
-    } else if (source[next] === '+') { next++; }
-    else if (source[next] === '*' || source[next] === '?') { count = 0; next++; }
-    output += token.repeat(count);
-    i = next;
-  }
-  let expression;
-  try { expression = new RegExp(pattern, 'u'); }
-  catch { throw new Error(`올바르지 않은 pattern 정규식입니다: ${pattern}`); }
-  const padding = Math.max(0, minLength - output.length);
-  for (const candidate of [output, output + 'a'.repeat(padding), 'a'.repeat(Math.max(1, minLength)), '0'.repeat(Math.max(1, minLength))])
-    if (candidate.length >= minLength && expression.test(candidate)) return candidate;
-  throw new Error(`pattern에 맞는 샘플 문자열을 생성하지 못했습니다: ${pattern}`);
-}
-
-function schemaExample(schema, root = schema, state = { refs: new Set(), depth: 0 }) {
-  if (schema === false) return SAMPLE_MISSING;
-  if (schema === true || schema == null) return null;
-  if (typeof schema !== 'object') return null;
-  if (state.depth > 32) return SAMPLE_MISSING;
-  if (typeof schema.$ref === 'string') {
-    if (state.refs.has(schema.$ref)) return SAMPLE_MISSING;
-    state.refs.add(schema.$ref);
-    const { $ref, ...siblings } = schema;
-    const value = schemaExample(mergeSchemas(schemaPointer(root, $ref), siblings), root,
-      { refs: state.refs, depth: state.depth + 1 });
-    state.refs.delete(schema.$ref);
-    return value;
-  }
-  schema = materializeAllOf(schema, root);
-  if (schema === false) return SAMPLE_MISSING;
-  if ('example' in schema) return schema.example;
-  if ('default' in schema) return schema.default;
-  if ('const' in schema) return schema.const;
-  if (schema.enum?.length) return schema.enum[0];
-  const alternatives = schema.oneOf || schema.anyOf;
-  if (alternatives?.length) return schemaExample(mergeSchemas({ ...schema, oneOf: undefined, anyOf: undefined }, alternatives[0]), root,
-    { refs: state.refs, depth: state.depth + 1 });
-  let type = Array.isArray(schema.type) ? schema.type.find((value) => value !== 'null') : schema.type;
-  if (!type) {
-    if (schema.properties || schema.required) type = 'object';
-    else if (schema.prefixItems || schema.items || schema.minItems != null) type = 'array';
-    else if (schema.pattern || schema.minLength != null || schema.format) type = 'string';
-    else if (schema.minimum != null || schema.maximum != null || schema.multipleOf != null) type = 'number';
-  }
-  if (type === 'object') {
-    const value = {};
-    const required = new Set(schema.required || []);
-    for (const [key, child] of Object.entries(schema.properties || {})) {
-      const sample = schemaExample(child, root, { refs: state.refs, depth: state.depth + 1 });
-      if (sample !== SAMPLE_MISSING) value[key] = sample;
-      else if (required.has(key)) throw new Error(`필수 속성 "${key}"의 재귀 참조를 샘플로 만들 수 없습니다.`);
-    }
-    for (const key of required) {
-      if (key in value) continue;
-      const child = typeof schema.additionalProperties === 'object' ? schema.additionalProperties : true;
-      const sample = schemaExample(child, root, { refs: state.refs, depth: state.depth + 1 });
-      value[key] = sample === SAMPLE_MISSING ? null : sample;
-    }
-    return value;
-  }
-  if (type === 'array') {
-    const prefix = schema.prefixItems || (Array.isArray(schema.items) ? schema.items : []);
-    const maxItems = Number.isInteger(schema.maxItems) ? schema.maxItems : Infinity;
-    const defaultItems = schema.items === false ? 0 : prefix.length ? 0 : 1;
-    const target = Math.min(maxItems, Math.max(prefix.length, Number.isInteger(schema.minItems) ? schema.minItems : defaultItems));
-    const value = [];
-    for (let index = 0; index < target; index++) {
-      const child = prefix[index] ?? (Array.isArray(schema.items) ? schema.additionalItems : schema.items) ?? {};
-      const sample = schemaExample(child, root, { refs: state.refs, depth: state.depth + 1 });
-      if (sample === SAMPLE_MISSING)
-        throw new Error(`배열 ${index + 1}번째 항목의 샘플을 생성할 수 없습니다.`);
-      value.push(sample);
-    }
-    return value;
-  }
-  if (type === 'string') {
-    if (schema.pattern) return patternExample(schema.pattern, schema.minLength || 0);
-    const value = schema.format === 'date-time' ? new Date().toISOString()
-      : schema.format === 'date' ? new Date().toISOString().slice(0, 10) : '';
-    return value.padEnd(schema.minLength || 0, 'a').slice(0, schema.maxLength ?? undefined);
-  }
-  if (type === 'integer' || type === 'number') {
-    let value = schema.minimum ?? (schema.exclusiveMinimum != null ? schema.exclusiveMinimum + (type === 'integer' ? 1 : 0.1) : 0);
-    if (schema.multipleOf) value = Math.ceil(value / schema.multipleOf) * schema.multipleOf;
-    return type === 'integer' ? Math.ceil(value) : value;
-  }
-  if (type === 'boolean') return false;
-  if (type === 'null') return null;
-  return null;
-}
-
-function schemaDraft(schema) {
-  if (typeof schema.$schema !== 'string') return 'draft2020-12';
-  const uri = schema.$schema.toLowerCase();
-  if (uri.includes('draft-04')) return 'draft-04';
-  if (uri.includes('draft-06')) return 'draft-06';
-  if (uri.includes('draft-07')) return 'draft-07';
-  if (uri.includes('2019-09')) return 'draft2019-09';
-  if (uri.includes('2020-12')) return 'draft2020-12';
-  throw new Error('지원하지 않는 JSON Schema 버전입니다. Draft 4, 6, 7, 2019-09 또는 2020-12를 사용하세요.');
-}
-
-const UNSUPPORTED_SCHEMA_KEYWORDS = new Set([
-  '$dynamicAnchor', '$dynamicRef', 'unevaluatedItems', 'unevaluatedProperties', 'contentSchema',
-]);
-
-function unsupportedSchemaKeywords(value, found = new Set(), seen = new Set()) {
-  if (!value || typeof value !== 'object' || seen.has(value)) return found;
-  seen.add(value);
-  for (const [key, child] of Object.entries(value)) {
-    if (UNSUPPORTED_SCHEMA_KEYWORDS.has(key)) found.add(key);
-    unsupportedSchemaKeywords(child, found, seen);
-  }
-  return found;
+function jsonSchemaWorker(action, values, signal) {
+  return new Promise((resolve, reject) => {
+    const worker = new Worker(new URL('../workers/json-schema.js', import.meta.url), { type: 'module' });
+    let settled = false;
+    const finish = (callback, value) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      signal?.removeEventListener('abort', abort);
+      worker.terminate();
+      callback(value);
+    };
+    const abort = () => finish(reject, new DOMException('작업이 취소되었습니다.', 'AbortError'));
+    const timeout = setTimeout(() => finish(reject,
+      new Error('JSON Schema 작업이 안전 제한 시간 10초를 넘었습니다.')), JSON_SCHEMA_WORKER_TIMEOUT_MS);
+    worker.addEventListener('message', ({ data }) => finish(resolve, data), { once: true });
+    worker.addEventListener('error', () =>
+      finish(reject, new Error('JSON Schema Worker를 실행하지 못했습니다.')), { once: true });
+    signal?.addEventListener('abort', abort, { once: true });
+    if (signal?.aborted) abort();
+    else worker.postMessage({ action, schemaText: values.schema, jsonText: values.json });
+  });
 }
 
 function schemaErrorMessage(error) {
@@ -456,6 +227,8 @@ function schemaErrorMessage(error) {
     case 'ARRAY_LENGTH_SHORT': return `배열 항목은 최소 ${p[1]}개여야 합니다.`;
     case 'ARRAY_LENGTH_LONG': return `배열 항목은 최대 ${p[1]}개여야 합니다.`;
     case 'ARRAY_UNIQUE': return '배열 항목은 서로 달라야 합니다.';
+    case 'OBJECT_PROPERTIES_SHORT': return `객체 속성은 최소 ${p[1]}개여야 합니다.`;
+    case 'OBJECT_PROPERTIES_LONG': return `객체 속성은 최대 ${p[1]}개여야 합니다.`;
     case 'ENUM_MISMATCH': return '허용된 enum 값과 일치하지 않습니다.';
     case 'CONST': return 'const에 지정된 값과 일치하지 않습니다.';
     case 'PATTERN': return `문자열이 지정된 패턴과 일치하지 않습니다: ${p[0]}`;
@@ -468,8 +241,61 @@ function schemaErrorMessage(error) {
     case 'CONTAINS': return 'contains 스키마와 일치하는 배열 항목이 없습니다.';
     case 'SCHEMA_IS_FALSE': return '허용되지 않은 값입니다.';
     case 'KEYWORD_TYPE_EXPECTED': return `키워드 "${p[0]}"에 올바른 형식의 값이 필요합니다: ${p[1]}`;
+    case 'INVALID_PATTERN': return `올바르지 않은 pattern 정규식입니다: ${p[0]}`;
+    case 'PATTERN_LENGTH_LIMIT': return `pattern은 최대 ${p[0]}자까지 허용됩니다.`;
+    case 'REF_NOT_FOUND': return `$ref 대상을 찾을 수 없습니다: ${p[0]}`;
+    case 'INVALID_REF': return `올바르지 않은 $ref입니다: ${p[0]}`;
+    case 'INVALID_REF_TARGET': return `$ref 대상이 JSON Schema가 아닙니다: ${p[0]}`;
+    case 'INVALID_ID': return `올바르지 않은 스키마 식별자입니다: ${p[0]}`;
+    case 'DRAFT_MISMATCH': return `선언한 버전 ${p[0]}과 요청한 버전 ${p[1]}이(가) 다릅니다.`;
+    case 'UNSUPPORTED_NESTED_ID': return `중첩 스키마 리소스는 지원하지 않습니다: ${p[0]}`;
+    case 'INVALID_ANCHOR': return `올바르지 않은 로컬 앵커입니다: ${p[0]}`;
+    case 'DUPLICATE_ANCHOR': return `같은 로컬 앵커가 두 번 선언되었습니다: ${p[0]}`;
+    case 'SCHEMA_DEPTH_LIMIT': return `스키마 중첩은 최대 ${p[0]}단계까지 허용됩니다.`;
+    case 'SCHEMA_NODE_LIMIT': return `스키마 노드는 최대 ${p[0]}개까지 허용됩니다.`;
+    case 'INSTANCE_DEPTH_LIMIT': return `JSON 중첩은 최대 ${p[0]}단계까지 검증할 수 있습니다.`;
+    case 'INSTANCE_NODE_LIMIT': return `JSON 값은 최대 ${p[0]}개까지 검증할 수 있습니다.`;
+    case 'INSTANCE_CYCLE': return '순환 참조가 있는 값은 JSON Schema로 검증할 수 없습니다.';
+    case 'EVALUATION_LIMIT': return `검증 횟수가 최대 ${p[0]}회를 넘었습니다.`;
+    case 'INVALID_SCHEMA': return '이 위치에는 JSON Schema 객체가 필요합니다.';
     default: return `검증에 실패했습니다 (${error?.keyword || error?.code || '알 수 없는 오류'}).`;
   }
+}
+
+function throwSchemaDefinitionError(result) {
+  const unsupported = result.errors
+    .filter((error) => error.code === 'UNSUPPORTED_KEYWORD')
+    .map((error) => error.params[0]);
+  if (unsupported.length)
+    throw new Error(`현재 검증기가 지원하지 않는 키워드입니다: ${[...new Set(unsupported)].join(', ')}`);
+  const detail = result.errors[0];
+  if (detail?.code === 'EXTERNAL_REF')
+    throw new Error(`외부 $ref는 네트워크로 가져오지 않습니다: ${detail.params[0]}`);
+  if (detail?.code === 'UNSUPPORTED_DRAFT')
+    throw new Error('지원하지 않는 JSON Schema 버전입니다. Draft 4, 6, 7, 2019-09 또는 2020-12를 사용하세요.');
+  throw new Error(`JSON Schema 오류: ${schemaErrorMessage(detail)}`);
+}
+
+function throwSchemaSampleError(error) {
+  if (error?.code === 'SAMPLE_INVALID')
+    throw new Error(`스키마에 맞는 샘플을 생성하지 못했습니다: ${schemaErrorMessage(error.params[0])}`);
+  if (error?.code === 'SAMPLE_PATTERN')
+    throw new Error(`pattern에 맞는 샘플 문자열을 생성하지 못했습니다: ${error.params[0]}`);
+  if (error?.code === 'SAMPLE_RECURSIVE_PROPERTY')
+    throw new Error(`필수 속성 "${error.params[0]}"의 재귀 참조를 샘플로 만들 수 없습니다.`);
+  if (error?.code === 'SAMPLE_ARRAY_ITEM')
+    throw new Error(`배열 ${error.params[0] + 1}번째 항목의 샘플을 생성할 수 없습니다.`);
+  if (error?.code === 'SAMPLE_LIMIT')
+    throw new Error('샘플이 안전 한도(노드 10만 개, UTF-8 1 MiB)를 넘습니다.');
+  throw new Error('이 스키마에서는 샘플을 생성할 수 없습니다.');
+}
+
+function schemaValidationOutput(result) {
+  if (result.valid) return '✔ JSON 데이터가 스키마에 맞습니다.';
+  return result.errors.map((error, index) => {
+    const path = error.path?.replace(/^#/, '') || '/';
+    return `${index + 1}. ${path}: ${schemaErrorMessage(error)}`;
+  }).join('\n');
 }
 
 tool({
@@ -489,41 +315,27 @@ tool({
         { id: 'schema', label: 'JSON Schema', rows: 12, value: '{\n  "$schema": "https://json-schema.org/draft/2020-12/schema",\n  "type": "object",\n  "required": ["name", "age"],\n  "properties": {\n    "name": {"type": "string", "example": "홍길동"},\n    "age": {"type": "integer", "minimum": 0}\n  }\n}' },
       ],
       actions: [{ id: 'validate', label: '검증' }, { id: 'sample', label: '샘플 생성' }],
-      autorun: false, outputRows: 12,
-      async process(v, o, action) {
+      autorun: false, outputRows: 12, cancelable: true,
+      async process(v, o, action, signal) {
         if (!v.schema.trim()) throw new Error('JSON Schema를 입력하세요.');
-        const schema = JSON.parse(v.schema);
-        const unsupported = [...unsupportedSchemaKeywords(schema)];
-        if (unsupported.length)
-          throw new Error(`현재 검증기가 지원하지 않는 키워드입니다: ${unsupported.join(', ')}`);
-        requireLocalSampleRefs(schema);
-        await loadScript(LIB.zSchema);
-        const validator = ZSchema.ZSchema.create({ version: schemaDraft(schema), safe: true });
-        const schemaResult = validator.validateSchema(schema);
-        if (!schemaResult.valid) {
-          const details = schemaResult.err?.details || [];
-          const detail = details[details.length - 1];
-          throw new Error(`JSON Schema 오류: ${schemaErrorMessage(detail)}`);
-        }
-        if (action === 'sample') {
-          const sample = schemaExample(schema);
-          if (sample === SAMPLE_MISSING) throw new Error('이 스키마에서는 샘플을 생성할 수 없습니다.');
-          const sampleResult = validator.validate(sample, schema);
-          if (!sampleResult.valid) {
-            const detail = sampleResult.err?.details?.[0];
-            throw new Error(`스키마에 맞는 샘플을 생성하지 못했습니다: ${schemaErrorMessage(detail)}`);
-          }
-          return JSON.stringify(sample, null, 2);
-        }
-        if (!v.json.trim()) throw new Error('검증할 JSON을 입력하세요.');
-        const result = validator.validate(JSON.parse(v.json), schema);
-        if (result.valid) return '✔ JSON 데이터가 스키마에 맞습니다.';
-        return result.err.details.map((e, i) => {
-          const path = e.path?.replace(/^#/, '') || '/';
-          return `${i + 1}. ${path}: ${schemaErrorMessage(e)}`;
-        }).join('\n');
+        const schemaBytes = utf8ByteLength(v.schema);
+        const jsonBytes = action === 'validate' ? utf8ByteLength(v.json) : 0;
+        if (schemaBytes > 1024 * 1024)
+          throw new Error('JSON Schema는 UTF-8 1 MiB까지 입력할 수 있습니다.');
+        if (jsonBytes > 16 * 1024 * 1024)
+          throw new Error('검증할 JSON은 UTF-8 16 MiB까지 입력할 수 있습니다.');
+        if (action === 'validate' && !v.json.trim()) throw new Error('검증할 JSON을 입력하세요.');
+        const response = await jsonSchemaWorker(action, v, signal);
+        if (response.parseError === 'schema')
+          throw new Error(`JSON Schema JSON을 해석할 수 없습니다: ${response.message}`);
+        if (response.parseError === 'json')
+          throw new Error(`검증할 JSON을 해석할 수 없습니다: ${response.message}`);
+        if (response.schemaErrors) throwSchemaDefinitionError({ errors: response.schemaErrors });
+        if (response.engineError) throwSchemaSampleError(response.engineError);
+        if (action === 'sample') return response.sample;
+        return schemaValidationOutput(response.result);
       },
-      note: '공식 테스트 벡터로 확인한 JSON Schema Draft 4/6/7과 2019-09/2020-12의 핵심 검증 키워드를 지원합니다. $dynamicRef/$dynamicAnchor, unevaluatedItems/unevaluatedProperties, contentSchema는 지원하지 않아 명시적으로 거부합니다. $schema를 생략하면 2020-12로 처리합니다. 샘플은 로컬 $ref, required, allOf/oneOf, prefixItems/minItems, pattern과 example/default/enum 등을 반영하고 생성 직후 다시 검증하며 외부 $ref를 가져오지 않습니다.',
+      note: 'JSON Schema 공식 Test Suite의 Draft 4/6/7과 2019-09/2020-12 핵심 검증 벡터 4,164건을 통과한 자체 엔진입니다. type/enum/const, 숫자·문자열·배열·객체 제약, properties/patternProperties/additionalProperties, dependencies/dependent*, allOf/anyOf/oneOf/not/if-then-else, contains/minContains/maxContains, 로컬 JSON Pointer·앵커 $ref를 지원합니다. format/content*는 주석으로만 처리하며 외부 $ref, 중첩 `$id` 리소스, $vocabulary, $dynamic*/$recursive*, unevaluated*, contentSchema는 명시적으로 거부합니다. $schema를 생략하면 2020-12로 처리합니다. 스키마는 UTF-8 1 MiB, 검증 JSON은 16 MiB, 샘플은 노드 10만 개·UTF-8 1 MiB까지이며 모든 작업을 취소 가능한 Worker에서 처리하고 10초 시간·중첩·노드·평가 횟수 상한을 적용합니다.',
     });
   },
 });

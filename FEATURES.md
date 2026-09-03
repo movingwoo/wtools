@@ -55,7 +55,14 @@
   지원하고 공식 compliance 결과·오류 벡터 892건 통과, 표현식 65,536자·토큰/AST 각 2만 개·
   중첩 256단계·내장 함수 순회를 포함한 평가 100만 회·UTF-8 입출력과 중간 문자열 각각
   16 MiB 상한, 제한 선검사·점진적 문자열 이스케이프와 256 KiB 이상 Worker·취소)
-- JSON Schema 검증(Draft 4/6/7/2019-09/2020-12 핵심 키워드) 및 샘플 생성 (공식 벡터 검증, 로컬 `$ref`, 조합·배열·패턴; 외부 `$ref`와 `$dynamicRef`, `unevaluated*`, `contentSchema`는 명시적으로 거부)
+- JSON Schema 검증 및 샘플 생성 (Draft 4/6/7/2019-09/2020-12 자체 엔진; 공식 Test Suite
+  핵심 검증 벡터 4,164건; 타입·enum·const, 숫자·문자열·배열·객체 제약,
+  properties/patternProperties/additionalProperties, dependencies/dependent*, 조합·조건,
+  contains/minContains/maxContains, 로컬 JSON Pointer·앵커 `$ref`; `format`·`content*`는 주석;
+  외부 `$ref`, 중첩 `$id` 리소스, `$vocabulary`, `$dynamic*`/`$recursive*`, `unevaluated*`,
+  `contentSchema`는 명시적으로 거부;
+  스키마 UTF-8 1 MiB·데이터 16 MiB·샘플 노드 10만 개/UTF-8 1 MiB, 모든 작업 Worker·취소·
+  10초 자동 종료, 중첩·노드·평가 상한)
 - 리스트 변환기 (구분자 변경, 정렬, 중복 제거 등)
 - To/From 테이블 (구분자 기반 표 변환)
 - 색상 변환기 (RGB / HSL / HEX / CMYK)

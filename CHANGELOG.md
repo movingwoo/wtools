@@ -7,6 +7,12 @@
 
 ### 변경됨
 
+- JSON Schema Draft 4/6/7/2019-09/2020-12의 타입·수치·문자열·배열·객체·조합·조건·
+  의존성·contains와 로컬 JSON Pointer/앵커 `$ref` 검증을 자체 엔진으로 교체해
+  `z-schema 12.4.0` 런타임 CDN 의존성을 제거하고 모든 검증·샘플 생성을 취소 가능한
+  모듈 Worker에서 처리
+- `format`·`content*`는 표준 주석으로 처리하고 외부 `$ref`, `$dynamic*`/`$recursive*`,
+  `unevaluated*`, `contentSchema`는 지원 범위에서 명시적으로 제외
 - JMESPath 조회를 1.0 문법의 식별자·인덱스·슬라이스·투영·필터·파이프·논리/비교·
   다중 선택과 표준 내장 함수 26개를 제공하는 자체 토크나이저·AST 평가기로 교체해
   `jmespath 0.16.0` 런타임 CDN 의존성을 제거하고 256 KiB 이상 입력은 취소 가능한
@@ -50,6 +56,8 @@
 
 ### 보안
 
+- JSON Schema 입력을 스키마 UTF-8 1 MiB·검증 데이터 16 MiB로 제한하고 스키마 중첩·노드,
+  검증 중첩·평가·오류 수 상한과 순환 로컬 참조 감지를 적용하며 외부 참조를 요청 전에 거부
 - JMESPath를 `eval`·`Function` 없이 AST로만 평가하고 표현식 길이·토큰·AST·중첩·평가 횟수·
   UTF-8 JSON 입출력에 상한을 적용하며, 결과를 점진적으로 직렬화해 다중 선택·투영의 출력
   증폭을 제한하고 비유한 숫자·안전 정수 범위 밖 정수·잘못된 Unicode와 프로토타입 키를
@@ -85,6 +93,15 @@
 
 ### 품질 및 운영
 
+- 공식 JSON Schema Test Suite의 commit·SHA-384와 전체·지원·제외 범위 및 제외 사유를
+  고정하고 Draft 4 589건, Draft 6 790건, Draft 7 870건, 2019-09 949건,
+  2020-12 966건 등 총 4,164건을 모든 PR에서 실행
+- 월간 작업에서 현재 JSON Schema dialect, 공식 메타 스키마 18개, IETF 작업 초안 revision,
+  최신 suite commit을 확인하고 고정 corpus를 다시 실행하도록 보강
+- Draft별 `$ref` 형제 의미, 로컬 앵커, pattern/additionalProperties, dependentSchemas,
+  minContains/maxContains, 정확한 `multipleOf`, 잘못된 dialect·스키마·앵커·식별자·외부 참조,
+  중첩 `$id` 거부, 입출력·시간 상한·Worker 정리·외부 요청 없음·오프라인 실행 회귀를
+  추가하고 제거된 z-schema 외부 캐시를 정리
 - 공식 JMESPath 1.0 명세와 `jmespath.test` suite의 commit·SHA-384를 고정하고 결과 742건·
   오류 150건과 benchmark 표현식 16건을 모두 검증하며, 함수·복잡도·출력 상한·대용량
   Worker·취소·오프라인 회귀를 추가하고 월간 유지보수 작업에서 명세·suite·JEP 변경을 확인

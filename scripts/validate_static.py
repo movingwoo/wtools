@@ -29,6 +29,10 @@ PLAYWRIGHT_CI_IMAGES = {
   '1.62.1': 'mcr.microsoft.com/playwright:v1.62.1-noble@sha256:'
             'dcc5531e97840b9b5e794f2814476b21571c5124a3fca2267d73041f56e7580e',
 }
+# 현재 고정 이미지를 쓰는 브라우저 워크플로. compatibility.yml은 최소 기준선 이미지를
+# 의도적으로 쓰며 scripts/audit_ci_baseline.py가 따로 검증한다.
+CURRENT_IMAGE_BROWSER_WORKFLOWS = ('validate.yml', 'maintenance.yml')
+REVIEWED_BROWSER_WORKFLOWS = frozenset(CURRENT_IMAGE_BROWSER_WORKFLOWS) | {'compatibility.yml'}
 DEPENDENCY_REGISTRY_PATTERN = re.compile(
   r'globalThis\.WTOOLS_DEPENDENCIES = (\{.*?\});\n\nObject\.freeze',
   re.DOTALL,
@@ -562,6 +566,20 @@ def playwright_ci_images_match(images: list[str], expected_image: str) -> bool:
   return bool(images) and all(image == expected_image for image in images)
 
 
+def unreviewed_browser_workflows() -> list[str]:
+  names = []
+  for path in sorted((ROOT / '.github' / 'workflows').glob('*.yml')):
+    if path.name in REVIEWED_BROWSER_WORKFLOWS:
+      continue
+    try:
+      source = path.read_text(encoding='utf-8')
+    except OSError:
+      continue
+    if re.search(r'\bplaywright\s+test\b', source):
+      names.append(path.name)
+  return names
+
+
 def validate_playwright_ci(validation: Validation) -> None:
   try:
     package = json.loads((ROOT / 'tests' / 'package.json').read_text(encoding='utf-8'))
@@ -589,13 +607,14 @@ def validate_playwright_ci(validation: Validation) -> None:
     )
     return
 
-  relative_path = '.github/workflows/validate.yml'
-  path = ROOT / relative_path
-  try:
-    source = path.read_text(encoding='utf-8')
-  except OSError as error:
-    validation.error(f'{relative_path}: {error}')
-  else:
+  for name in CURRENT_IMAGE_BROWSER_WORKFLOWS:
+    relative_path = f'.github/workflows/{name}'
+    path = ROOT / relative_path
+    try:
+      source = path.read_text(encoding='utf-8')
+    except OSError as error:
+      validation.error(f'{relative_path}: {error}')
+      continue
     images = re.findall(r'^\s*image:\s*(mcr\.microsoft\.com/playwright:\S+)\s*$', source, re.MULTILINE)
     if not playwright_ci_images_match(images, expected_image):
       validation.error(
@@ -607,10 +626,18 @@ def validate_playwright_ci(validation: Validation) -> None:
         f'{relative_path}: Playwright browsers must come from the pinned CI image, '
         'not a runtime install'
       )
-    if not re.search(r'^  browser-smoke:\s*$', source, re.MULTILINE):
+    if name == 'validate.yml' and not re.search(r'^  browser-smoke:\s*$', source, re.MULTILINE):
       validation.error(
         f'{relative_path}: browser-smoke job id is required by the main branch ruleset'
       )
+
+  # 브라우저를 띄우는 워크플로가 늘어나면 러너에 브라우저가 없어 반드시 실패한다.
+  # 검토한 워크플로 밖에서 새 실행이 생기지 않도록 막는다.
+  for name in unreviewed_browser_workflows():
+    validation.error(
+      f'.github/workflows/{name}: browser tests must run in a reviewed, '
+      'digest-pinned Playwright workflow'
+    )
 
   nightly_path = '.github/workflows/nightly.yml'
   try:

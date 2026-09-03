@@ -112,19 +112,60 @@ jobs:
           python3 -m unittest discover -s scripts -p 'test_*.py'
           node scripts/check_browser_compat.mjs
 
-      - name: Run representative public vectors
-        if: ${{ always() }}
-        working-directory: tests
-        run: |
-          npx playwright test --project=chromium -g 'JSON Schema|YAML 1.2|TOML 1.0|punycode|zip:|tar:|markdown-html: 공개|markdown-html: 닫는 괄호|code-format: SQL 포맷·압축 결과|code-format: JavaScript 결과|code-format: CSS 결과|code-format: HTML 결과|code-format: 중첩 템플릿'
-
       - name: Write review summary
         if: ${{ always() }}
         shell: bash
         run: |
           echo '## 월간 품질·보안 점검' >> "$GITHUB_STEP_SUMMARY"
-          echo '- npm·OSV·GitHub Advisory, 고정 자산 원본 해시, UA·IANA·CommonMark·GFM·YAML 1.2·TOML 1.0·RFC 9535 JSONPath·JMESPath 1.0·JSON Schema 공식 suite·구문 강조·코드 포매터 언어 프로필·브라우저 기준선, IDN·ZIP/Tar·Markdown·포매터 대표 벡터를 확인했습니다.' >> "$GITHUB_STEP_SUMMARY"
+          echo '- npm·OSV·GitHub Advisory, 고정 자산 원본 해시, UA·IANA·CommonMark·GFM·YAML 1.2·TOML 1.0·RFC 9535 JSONPath·JMESPath 1.0·JSON Schema 공식 suite·구문 강조·코드 포매터 언어 프로필·브라우저 기준선을 확인했습니다.' >> "$GITHUB_STEP_SUMMARY"
+          echo '- 브라우저에서 실행하는 공개 대표 벡터는 public-vectors 잡 결과를 확인하세요.' >> "$GITHUB_STEP_SUMMARY"
           echo '- 실제 CDN 응답·CORS·SRI와 운영 헤더 검사는 nightly 워크플로 결과를 함께 확인하세요.' >> "$GITHUB_STEP_SUMMARY"
+
+  # 브라우저 바이너리는 validate 워크플로와 같은 digest 고정 Playwright 이미지에서만 온다.
+  # 러너에 직접 설치하지 않으므로 이 잡은 컨테이너 안에서 돌아야 한다.
+  public-vectors:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    container:
+      image: mcr.microsoft.com/playwright:v1.62.1-noble@sha256:dcc5531e97840b9b5e794f2814476b21571c5124a3fca2267d73041f56e7580e
+      options: --user 1001
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version-file: .node-version
+          cache: npm
+          cache-dependency-path: tests/package-lock.json
+
+      - name: Install test dependencies
+        working-directory: tests
+        run: npm ci --no-audit --no-fund
+
+      # 월간 전용 키로 저장하고, 없으면 PR CI가 남긴 캐시를 복원해 외부 CDN 요청을 줄인다.
+      - name: Restore CDN library cache
+        uses: actions/cache@v6
+        with:
+          path: tests/.lib-cache
+          key: cdn-libs-monthly-${{ hashFiles('js/**/*.js', 'index.html') }}
+          restore-keys: |
+            cdn-libs-monthly-
+            cdn-libs-
+
+      - name: Run representative public vectors
+        working-directory: tests
+        run: |
+          npx playwright test --project=chromium -g 'JSON Schema|YAML 1.2|TOML 1.0|punycode|zip:|tar:|markdown-html: 공개|markdown-html: 닫는 괄호|code-format: SQL 포맷·압축 결과|code-format: JavaScript 결과|code-format: CSS 결과|code-format: HTML 결과|code-format: 중첩 템플릿'
+
+      - name: Write public vector summary
+        if: ${{ always() }}
+        shell: bash
+        run: |
+          echo '## 공개 대표 벡터' >> "$GITHUB_STEP_SUMMARY"
+          echo '- JSON Schema·YAML 1.2·TOML 1.0·IDN·ZIP/Tar·Markdown·코드 포매터 대표 벡터를 Chromium에서 실행했습니다.' >> "$GITHUB_STEP_SUMMARY"
 
   emoji-update:
     runs-on: ubuntu-latest

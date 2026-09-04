@@ -56,36 +56,42 @@ function ratio(orig, comp) {
   return `원본 ${orig}B → ${comp}B (${orig ? ((1 - comp / orig) * 100).toFixed(1) : 0}% 감소)`;
 }
 
-/* ---------- pako: gzip / deflate ---------- */
-function pakoTool({ id, name, deflate, inflate, desc, keywords, fileExt }) {
+/* ---------- First-party gzip / zlib / raw DEFLATE ---------- */
+function deflateOutputLimit(compressedBytes, ceiling = ARCHIVE_LIMITS.maxEntryBytes) {
+  return Math.min(ceiling, compressedBytes * ARCHIVE_LIMITS.maxRatio);
+}
+
+function deflateTool({ id, name, desc, keywords, fileExt }) {
   tool({
     id, cat: CAT, name, desc, keywords,
     render(root) {
+      const tasks = new Set();
       if (fileExt) root.append(h('h3', null, '텍스트 / Base64 / Hex'));
-      makeIO(root, {
+      const io = makeIO(root, {
         inputs: [{ id: 'input', label: '입력', rows: 6, value: 'The quick brown fox jumps over the lazy dog. '.repeat(3) }],
         options: [
           { id: 'ifmt', label: '입력 형식', type: 'select', values: [['text', '텍스트'], ['base64', 'Base64'], ['hex', 'Hex']] },
           { id: 'ofmt', label: '출력 형식', type: 'select', values: [['base64', 'Base64'], ['hex', 'Hex'], ['text', '텍스트']] },
-          { id: 'level', label: '압축 레벨', type: 'select', values: [['6', '6 (기본)'], ['9', '9 (최대)'], ['1', '1 (빠름)']] },
+          { id: 'level', label: '압축 레벨', type: 'select', values: [['6', '6 (기본)'], ['9', '9 (깊은 탐색)'], ['1', '1 (빠른 탐색)']] },
         ],
         actions: [{ id: 'comp', label: '압축' }, { id: 'decomp', label: '해제' }],
-        autorun: false,
-        async process(text, o, action) {
-          await loadScript(LIB.pako);
+        autorun: false, cancelable: true,
+        async process(text, o, action, signal) {
           const input = decodeInput(text, o.ifmt);
+          const inputLength = input.length;
+          const result = await runCodecWorker(id, action, input, +o.level, signal, tasks,
+            action === 'decomp' ? deflateOutputLimit(inputLength) : undefined);
           if (action === 'decomp') {
-            const res = inflate(input);
-            enforceArchiveBudget([{ name: '해제 결과', size: res.length }], input.length);
-            return outBytes(res, o.ofmt);
+            enforceArchiveBudget([{ name: '해제 결과', size: result.length }], inputLength);
+            return outBytes(result, o.ofmt);
           }
-          const res = deflate(input, { level: +o.level });
-          const note = ratio(input.length, res.length);
-          return outBytes(res, o.ofmt) + `\n\n// ${note}`;
+          return outBytes(result, o.ofmt) + `\n\n// ${ratio(inputLength, result.length)}`;
         },
+        note: '레벨 6은 지원 브라우저의 Compression Streams API를 우선 사용합니다. 레벨 1·9는 자체 코덱의 일치 탐색 깊이를 조절하며, 높은 값이 항상 더 작은 결과를 보장하지는 않습니다.',
       });
 
       // 파일 압축/해제
+      let runner;
       if (fileExt) {
         root.append(h('h3', { style: { marginTop: '26px' } }, '파일 압축/해제'));
         const fileOut = h('div');
@@ -97,41 +103,42 @@ function pakoTool({ id, name, deflate, inflate, desc, keywords, fileExt }) {
         const decompressButton = h('button', { class: 'btn', type: 'button' }, '해제');
         const section = h('section', { class: 'io archive-section' }, picker,
           h('div', { class: 'btn-row' }, compressButton, decompressButton), fileOut);
-        const runner = createAsyncRunner(section, {
+        runner = createAsyncRunner(section, {
           controls: () => [picker, compressButton, decompressButton], errorOut: fileOut,
         });
         const handle = (mode) => runner.run(async (task) => {
             const f = picker.files[0];
             if (!f) throw new Error('파일을 먼저 선택하세요.');
-            await loadScript(LIB.pako);
             const buf = new Uint8Array(await f.arrayBuffer());
-            throwIfAborted(task.signal);
-            let res, outName;
-            if (mode === 'comp') {
-              res = deflate(buf, { level: 6 });
-              outName = f.name + fileExt;
-            } else {
-              res = inflate(buf);
-              outName = f.name.toLowerCase().endsWith(fileExt) ? f.name.slice(0, -fileExt.length) : f.name + '.out';
-            }
-            if (mode === 'decomp') enforceArchiveBudget([{ name: outName, size: res.length }], buf.length);
+            const inputLength = buf.length;
+            const res = await runCodecWorker(id, mode, buf, +io.optEls.level.value, task.signal, tasks,
+              mode === 'decomp' ? deflateOutputLimit(inputLength) : undefined);
+            const outName = mode === 'comp'
+              ? f.name + fileExt
+              : f.name.toLowerCase().endsWith(fileExt) ? f.name.slice(0, -fileExt.length) : f.name + '.out';
+            if (mode === 'decomp') enforceArchiveBudget([{ name: outName, size: res.length }], inputLength);
             throwIfAborted(task.signal);
             task.download(outName, new Blob([res]));
             fileOut.replaceChildren(h('p', { tabindex: -1 },
-              `${f.name} (${buf.length.toLocaleString()} B) → ${outName} (${res.length.toLocaleString()} B)`,
-              mode === 'comp' ? ` — ${((1 - res.length / (buf.length || 1)) * 100).toFixed(1)}% 감소` : ''));
+              `${f.name} (${inputLength.toLocaleString()} B) → ${outName} (${res.length.toLocaleString()} B)`,
+              mode === 'comp' ? ` — ${((1 - res.length / (inputLength || 1)) * 100).toFixed(1)}% 감소` : ''));
             fileOut.querySelector('[tabindex]')?.focus();
           });
         compressButton.addEventListener('click', () => handle('comp'));
         decompressButton.addEventListener('click', () => handle('decomp'));
         root.append(section);
       }
+      return () => {
+        runner?.cleanup();
+        io.cancel();
+        for (const cancel of [...tasks]) cancel();
+      };
     },
   });
 }
-pakoTool({ id: 'gzip', name: 'Gzip 압축/해제', deflate: (d, o) => pako.gzip(d, o), inflate: (d) => pako.ungzip(d), desc: 'Gzip으로 데이터나 파일을 압축하거나 해제합니다.', keywords: 'gzip gz compress file', fileExt: '.gz' });
-pakoTool({ id: 'raw-deflate', name: 'Raw Deflate/Inflate', deflate: (d, o) => pako.deflateRaw(d, o), inflate: (d) => pako.inflateRaw(d), desc: 'zlib 헤더 없는 raw deflate/inflate를 수행합니다.', keywords: 'deflate inflate raw zlib' });
-pakoTool({ id: 'zlib', name: 'Zlib 압축/해제', deflate: (d, o) => pako.deflate(d, o), inflate: (d) => pako.inflate(d), desc: 'zlib(deflate) 형식으로 압축하거나 해제합니다.', keywords: 'zlib deflate compress' });
+deflateTool({ id: 'gzip', name: 'Gzip 압축/해제', desc: 'Gzip으로 데이터나 파일을 압축하거나 해제합니다.', keywords: 'gzip gz compress file', fileExt: '.gz' });
+deflateTool({ id: 'raw-deflate', name: 'Raw Deflate/Inflate', desc: 'zlib 헤더 없는 raw deflate/inflate를 수행합니다.', keywords: 'deflate inflate raw zlib' });
+deflateTool({ id: 'zlib', name: 'Zlib 압축/해제', desc: 'zlib(deflate) 형식으로 압축하거나 해제합니다.', keywords: 'zlib deflate compress' });
 
 /* ---------- LZMA ---------- */
 tool({
@@ -183,7 +190,7 @@ const CODEC_URLS = {
 };
 const CODEC_WORKER_URL = new URL('../workers/archive-codec.js', import.meta.url);
 
-function runCodecWorker(codec, action, bytes, level, signal, tasks) {
+function runCodecWorker(codec, action, bytes, level, signal, tasks, maxOutputLength) {
   if (typeof Worker === 'undefined') return Promise.reject(new Error('이 브라우저는 Web Worker를 지원하지 않습니다.'));
   const input = bytes.byteOffset === 0 && bytes.byteLength === bytes.buffer.byteLength ? bytes : bytes.slice();
   return new Promise((resolve, reject) => {
@@ -209,7 +216,7 @@ function runCodecWorker(codec, action, bytes, level, signal, tasks) {
       event.preventDefault();
       finish(new Error(event.message || '압축 Worker를 실행하지 못했습니다.'));
     });
-    worker.postMessage({ codec, action, bytes: input, level, urls: CODEC_URLS }, [input.buffer]);
+    worker.postMessage({ codec, action, bytes: input, level, maxOutputLength, urls: CODEC_URLS }, [input.buffer]);
   });
 }
 
@@ -383,98 +390,13 @@ tool({
   },
 });
 
-/* ---------- ZIP (fflate) ---------- */
-const ZIP_CRC_TABLE = (() => {
-  const table = new Uint32Array(256);
-  for (let n = 0; n < 256; n++) {
-    let value = n;
-    for (let k = 0; k < 8; k++) value = value & 1 ? 0xedb88320 ^ (value >>> 1) : value >>> 1;
-    table[n] = value >>> 0;
-  }
-  return table;
-})();
-
-function zipCrc32(bytes) {
-  let crc = 0xffffffff;
-  for (const byte of bytes) crc = ZIP_CRC_TABLE[(crc ^ byte) & 0xff] ^ (crc >>> 8);
-  return (crc ^ 0xffffffff) >>> 0;
-}
-
-function readZipDirectory(bytes) {
-  if (bytes.length < 22) throw new Error('올바른 ZIP 파일이 아니거나 파일이 잘렸습니다.');
-  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-  let eocd = -1;
-  const start = Math.max(0, bytes.length - 65_557);
-  for (let offset = bytes.length - 22; offset >= start; offset--) {
-    if (view.getUint32(offset, true) === 0x06054b50) { eocd = offset; break; }
-  }
-  if (eocd < 0) throw new Error('ZIP 중앙 디렉터리를 찾지 못했습니다. 파일이 손상되었을 수 있습니다.');
-  const disk = view.getUint16(eocd + 4, true);
-  const directoryDisk = view.getUint16(eocd + 6, true);
-  const count = view.getUint16(eocd + 10, true);
-  const directorySize = view.getUint32(eocd + 12, true);
-  const directoryOffset = view.getUint32(eocd + 16, true);
-  if (disk || directoryDisk) throw new Error('여러 디스크로 나뉜 ZIP은 지원하지 않습니다.');
-  if (count === 0xffff || directorySize === 0xffffffff || directoryOffset === 0xffffffff)
-    throw new Error('ZIP64 형식은 이 도구의 안전 해제 범위에서 지원하지 않습니다.');
-  if (directoryOffset + directorySize > eocd) throw new Error('ZIP 중앙 디렉터리 범위가 올바르지 않습니다.');
-  if (count > ARCHIVE_LIMITS.maxEntries)
-    throw new Error(`아카이브 항목 수가 안전 한도 ${ARCHIVE_LIMITS.maxEntries.toLocaleString()}개를 넘습니다.`);
-
-  const decoder = new TextDecoder('utf-8', { fatal: false });
-  const entries = [];
-  const names = new Set();
-  let offset = directoryOffset;
-  for (let index = 0; index < count; index++) {
-    if (offset + 46 > bytes.length || view.getUint32(offset, true) !== 0x02014b50)
-      throw new Error(`ZIP ${index + 1}번째 중앙 디렉터리 항목이 손상되었습니다.`);
-    const flags = view.getUint16(offset + 8, true);
-    const compression = view.getUint16(offset + 10, true);
-    const crc = view.getUint32(offset + 16, true);
-    const compressedSize = view.getUint32(offset + 20, true);
-    const size = view.getUint32(offset + 24, true);
-    const nameLength = view.getUint16(offset + 28, true);
-    const extraLength = view.getUint16(offset + 30, true);
-    const commentLength = view.getUint16(offset + 32, true);
-    const next = offset + 46 + nameLength + extraLength + commentLength;
-    if (next > bytes.length) throw new Error(`ZIP ${index + 1}번째 파일명이 잘렸습니다.`);
-    if (flags & 1) throw new Error('암호화된 ZIP 항목은 안전하게 해제할 수 없습니다.');
-    if (![0, 8].includes(compression)) throw new Error(`지원하지 않는 ZIP 압축 방식입니다: ${compression}`);
-    const rawName = decoder.decode(bytes.subarray(offset + 46, offset + 46 + nameLength));
-    const name = safeArchivePath(rawName);
-    if (names.has(name)) throw new Error(`중복된 ZIP 항목 이름은 덮어쓰기 위험 때문에 해제하지 않습니다: ${name}`);
-    names.add(name);
-    entries.push({ name, size, compressedSize, crc, directory: name.endsWith('/'), utf8: !!(flags & 0x800) });
-    offset = next;
-  }
-  enforceArchiveBudget(entries, bytes.length);
-  return entries;
-}
-
-function unzipSafely(bytes, signal) {
-  const entries = readZipDirectory(bytes);
-  throwIfAborted(signal);
-  return new Promise((resolve, reject) => {
-    fflate.unzip(bytes, (error, unpacked) => {
-      if (error) { reject(new Error('해제 실패: ' + error.message)); return; }
-      try {
-        throwIfAborted(signal);
-        let total = 0;
-        const result = entries.map((entry) => {
-          const data = unpacked[entry.name];
-          if (!data) throw new Error(`ZIP 항목 데이터를 찾지 못했습니다: ${entry.name}`);
-          if (data.length !== entry.size) throw new Error(`ZIP 항목 크기가 중앙 디렉터리와 다릅니다: ${entry.name}`);
-          total += data.length;
-          if (!entry.directory && zipCrc32(data) !== entry.crc)
-            throw new Error(`ZIP CRC-32 검증에 실패했습니다: ${entry.name}`);
-          return { ...entry, data };
-        });
-        enforceArchiveBudget(result, bytes.length);
-        if (total > ARCHIVE_LIMITS.maxTotalBytes) throw new Error('총 해제 크기 안전 한도를 넘습니다.');
-        resolve(result);
-      } catch (caught) { reject(caught); }
-    });
-  });
+/* ---------- First-party ZIP ---------- */
+let zipWorkerClientPromise;
+function loadZipWorkerClient() {
+  return (zipWorkerClientPromise ??= import('../lib/archive/zip-worker-client.js').catch((error) => {
+    zipWorkerClientPromise = null;
+    throw new Error(`ZIP 엔진을 불러오지 못했습니다: ${error?.message || error}`);
+  }));
 }
 
 tool({
@@ -517,17 +439,23 @@ tool({
       if (!files.length) throw new Error('ZIP에 추가할 파일을 먼저 선택하세요.');
       const total = files.reduce((sum, item) => sum + item.file.size, 0);
       enforceArchiveBudget(files.map((item) => ({ name: item.name, size: item.file.size })), total);
-      await loadScript(LIB.fflate);
-      const object = {};
+      const { runZipWorker } = await loadZipWorkerClient();
+      const entries = [];
       for (let index = 0; index < files.length; index++) {
         throwIfAborted(task.signal);
         task.progress(`파일을 읽는 중… (${index + 1}/${files.length})`);
         const item = files[index];
-        object[item.name] = new Uint8Array(await item.file.arrayBuffer());
+        entries.push({
+          name: item.name,
+          data: new Uint8Array(await item.file.arrayBuffer()),
+          mtime: item.file.lastModified,
+        });
       }
       task.progress('ZIP을 만드는 중…');
-      const data = await new Promise((resolve, reject) => fflate.zip(object, { level: 6 },
-        (error, output) => error ? reject(new Error('압축 실패: ' + error.message)) : resolve(output)));
+      const data = await runZipWorker('create', { entries, level: 6, limits: ARCHIVE_LIMITS }, {
+        signal: task.signal,
+        onProgress: ({ completed, total: count }) => task.progress(`ZIP을 만드는 중… (${completed}/${count})`),
+      });
       throwIfAborted(task.signal);
       task.download('wtools.zip', new Blob([data], { type: 'application/zip' }));
       createResult.replaceChildren(h('p', { class: 'note', tabindex: -1 },
@@ -551,10 +479,13 @@ tool({
     unzipPicker.addEventListener('change', () => extractRunner.run(async (task) => {
       const f = unzipPicker.files[0];
       if (!f) throw new Error('해제할 ZIP 파일을 선택하세요.');
-      await loadScript(LIB.fflate);
+      const { runZipWorker } = await loadZipWorkerClient();
       const buf = new Uint8Array(await f.arrayBuffer());
       task.progress('ZIP 구조와 해제 크기를 검사하는 중…');
-      const rows = await unzipSafely(buf, task.signal);
+      const rows = await runZipWorker('extract', { bytes: buf, limits: ARCHIVE_LIMITS }, {
+        signal: task.signal,
+        onProgress: ({ completed, total }) => task.progress(`ZIP 항목을 해제하는 중… (${completed}/${total})`),
+      });
       if (!task.active()) return;
       const tableBody = h('tbody', null, rows.map((entry) => h('tr', null,
         h('td', { class: 'mono' }, entry.name),
@@ -571,15 +502,20 @@ tool({
       unzipOut.querySelector('[tabindex]')?.focus();
     }));
     root.append(createSection, extractSection);
+    return () => {
+      createRunner.cleanup();
+      extractRunner.cleanup();
+    };
   },
 });
 
-/* ---------- TAR (fflate) ---------- */
+/* ---------- TAR ---------- */
 tool({
   id: 'tar', cat: CAT, name: 'Tar 아카이브/해제',
   desc: '여러 파일을 tar로 묶거나 tar/tar.gz의 내용을 나열합니다.',
   keywords: 'tar archive gzip tgz',
   render(root) {
+    const tasks = new Set();
     const createSection = h('section', { class: 'io archive-section' }, h('h3', null, 'Tar 만들기'));
     let files = [];
     const fileList = h('div', { style: { margin: '8px 0' } });
@@ -627,8 +563,7 @@ tool({
       let name = 'wtools.tar';
       if (gzChk.checked) {
         task.progress('Tar를 gzip으로 압축하는 중…');
-        await loadScript(LIB.pako);
-        data = pako.gzip(data);
+        data = await runCodecWorker('gzip', 'comp', data, 6, task.signal, tasks);
         name += '.gz';
       }
       throwIfAborted(task.signal);
@@ -656,9 +591,9 @@ tool({
       if (!f) throw new Error('해제할 Tar 파일을 선택하세요.');
       let buf = new Uint8Array(await f.arrayBuffer());
       if (f.name.endsWith('.gz') || f.name.endsWith('.tgz') || (buf[0] === 0x1f && buf[1] === 0x8b)) {
-        await loadScript(LIB.pako);
         task.progress('gzip 해제 크기를 검사하는 중…');
-        buf = gunzipSafely(buf, task.signal);
+        buf = await runCodecWorker('gzip', 'decomp', buf, 6, task.signal, tasks,
+          deflateOutputLimit(f.size, ARCHIVE_LIMITS.maxTotalBytes));
       }
       throwIfAborted(task.signal);
       const entries = parseTar(buf, f.size);
@@ -677,6 +612,11 @@ tool({
       out.querySelector('[tabindex]')?.focus();
     }));
     root.append(createSection, extractSection);
+    return () => {
+      createRunner.cleanup();
+      extractRunner.cleanup();
+      for (const cancel of [...tasks]) cancel();
+    };
   },
 });
 
@@ -734,27 +674,6 @@ function tarOctal(buf, start, length, label) {
   const value = tarString(buf, start, length).trim();
   if (!/^[0-7]*$/.test(value)) throw new Error(`Tar ${label} 필드가 올바른 8진수가 아닙니다.`);
   return parseInt(value || '0', 8);
-}
-
-function gunzipSafely(bytes, signal) {
-  const chunks = [];
-  let total = 0;
-  const inflator = new pako.Inflate({ chunkSize: 64 * 1024 });
-  inflator.onData = (chunk) => {
-    throwIfAborted(signal);
-    total += chunk.length;
-    if (total > ARCHIVE_LIMITS.maxTotalBytes)
-      throw new Error(`gzip 해제 결과가 안전 한도 ${formatBytes(ARCHIVE_LIMITS.maxTotalBytes)}를 넘습니다.`);
-    if (total / Math.max(1, bytes.length) > ARCHIVE_LIMITS.maxRatio)
-      throw new Error(`gzip 압축률이 안전 한도 ${ARCHIVE_LIMITS.maxRatio}:1을 넘습니다. 압축 폭탄 가능성이 있어 중단했습니다.`);
-    chunks.push(chunk);
-  };
-  inflator.push(bytes, true);
-  if (inflator.err) throw new Error('gzip 해제 실패: ' + inflator.msg);
-  const result = new Uint8Array(total);
-  let offset = 0;
-  for (const chunk of chunks) { result.set(chunk, offset); offset += chunk.length; }
-  return result;
 }
 
 function parseTar(buf, compressedBytes = buf.length) {

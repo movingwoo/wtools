@@ -1,6 +1,7 @@
 // 이미지 / 미디어 / QR 도구 정밀 테스트.
 // 이미지는 tests/fixtures.js에서 만들어 업로드하고, 결과는 다운로드 바이트나 캔버스 픽셀로 확인한다.
 import { createHash } from 'node:crypto';
+import { execFileSync } from 'node:child_process';
 import { test, expect, toolCase, openTool, ioSection, uploadFile, grabDownload, setOption, fillInputs } from '../helpers.js';
 import { makePng, makeJpegWithExif } from '../fixtures.js';
 
@@ -761,6 +762,12 @@ test('image-convert: 여러 장은 ZIP으로 묶어 받는다', async ({ page })
   expect(zip.bytes.subarray(0, 4).toString('hex')).toBe('504b0304');
   expect(zip.bytes.toString('latin1')).toContain('a.png');
   expect(zip.bytes.toString('latin1')).toContain('b.png');
+  const verified = JSON.parse(execFileSync('python3', ['-c', [
+    'import io,json,sys,zipfile',
+    'z=zipfile.ZipFile(io.BytesIO(sys.stdin.buffer.read()))',
+    'print(json.dumps({"names":z.namelist(),"bad":z.testzip()}))',
+  ].join(';')], { input: zip.bytes, encoding: 'utf8' }));
+  expect(verified).toEqual({ names: ['a.png', 'b.png'], bad: null });
 });
 
 test('image-convert: 공통 회전·반전·자르기를 픽셀에 적용', async ({ page }) => {

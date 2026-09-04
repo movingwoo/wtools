@@ -1,0 +1,108 @@
+{
+  "standard": {
+    "repository": "whatwg/compression",
+    "branch": "main",
+    "commit": "770f314342e2ee560353a04a7f30ee9449a23ee4",
+    "feedUrl": "https://github.com/whatwg/compression/commits/main.atom",
+    "sourceUrl": "https://raw.githubusercontent.com/whatwg/compression/770f314342e2ee560353a04a7f30ee9449a23ee4/index.bs",
+    "sourceSha384": "sha384-hho9wzDZku1MgLf+JplSDvFUd7lOBzVwg8I5JnCFJOKfUI3P5S6DsuqPv7JYj8Le",
+    "formats": [
+      "brotli",
+      "deflate",
+      "deflate-raw",
+      "gzip"
+    ]
+  },
+  "wpt": {
+    "repository": "web-platform-tests/wpt",
+    "branch": "master",
+    "path": "compression",
+    "commit": "719d5e38fdd0903a18ed9007aba816c98cc491e0",
+    "feedUrl": "https://github.com/web-platform-tests/wpt/commits/master/compression.atom",
+    "rawBaseUrl": "https://raw.githubusercontent.com/web-platform-tests/wpt/719d5e38fdd0903a18ed9007aba816c98cc491e0/compression/",
+    "files": [
+      "META.yml",
+      "WEB_FEATURES.yml",
+      "compression-bad-chunks.any.js",
+      "compression-constructor-error.any.js",
+      "compression-including-empty-chunk.any.js",
+      "compression-large-flush-output.any.js",
+      "compression-multiple-chunks.any.js",
+      "compression-output-length.any.js",
+      "compression-stream.any.js",
+      "compression-with-detach.any.js",
+      "decompression-bad-chunks.any.js",
+      "decompression-brotli-large-window.tentative.any.js",
+      "decompression-buffersource.any.js",
+      "decompression-constructor-error.any.js",
+      "decompression-correct-input.any.js",
+      "decompression-corrupt-input.any.js",
+      "decompression-empty-input.any.js",
+      "decompression-extra-input.any.js",
+      "decompression-split-chunk.any.js",
+      "decompression-uint8array-output.any.js",
+      "decompression-with-detach.any.js",
+      "idlharness.https.any.js",
+      "resources/concatenate-stream.js",
+      "resources/decompress.js",
+      "resources/decompression-input.js",
+      "resources/formats.js",
+      "third_party/pako/LICENSE",
+      "third_party/pako/README",
+      "third_party/pako/pako_inflate.min.js"
+    ],
+    "aggregateSha384": "sha384-+3HSIcmQevpDqhne1bAr7zyn364wzISTGDHsO+B+VUIqEp9X62sPAYpgz0v4K4nS"
+  },
+  "rfcs": {
+    "1950": {
+      "format": "zlib",
+      "url": "https://www.rfc-editor.org/rfc/rfc1950.txt",
+      "sha384": "sha384-DCdy1G8iRXzziN6FaJWGgjTikob1BjGmh7Am3Pnlr4eIyWJcUMgXT7dRDVOlbXwA",
+      "errataUrl": "https://www.rfc-editor.org/errata/rfc1950",
+      "errata": []
+    },
+    "1951": {
+      "format": "deflate",
+      "url": "https://www.rfc-editor.org/rfc/rfc1951.txt",
+      "sha384": "sha384-7BZkVLEZr5pOd7Fi+VC6TE+WI0iYck5yUK4iqFcoGgcbGo0RaBJMr4jyw8IC+5gy",
+      "errataUrl": "https://www.rfc-editor.org/errata/rfc1951",
+      "errata": [
+        {
+          "id": 7764,
+          "status": "Reported"
+        },
+        {
+          "id": 8429,
+          "status": "Reported"
+        }
+      ]
+    },
+    "1952": {
+      "format": "gzip",
+      "url": "https://www.rfc-editor.org/rfc/rfc1952.txt",
+      "sha384": "sha384-f4Kv+RFSg7D6hxYnGXfXHdavy0UkRKaLuaM9f1hE+6NDOOvTnui1cDVVST8bIjyX",
+      "errataUrl": "https://www.rfc-editor.org/errata/rfc1952",
+      "errata": [
+        {
+          "id": 7517,
+          "status": "Verified"
+        }
+      ]
+    }
+  },
+  "zip": {
+    "version": "6.3.10",
+    "status": "FINAL",
+    "revised": "2022-11-01",
+    "url": "https://pkware.cachefly.net/webdocs/casestudies/APPNOTE.TXT",
+    "sha384": "sha384-qExBnt+1w2yGXwnDaOYg7yAWKFBgpt5x9tbbH9Qjh6MJ8KgZo/GWy6DtowuJh2dq",
+    "supported": [
+      "stored",
+      "deflate",
+      "data-descriptor",
+      "utf-8",
+      "unicode-path-extra-field"
+    ]
+  },
+  "reviewed": "2026-09-04"
+}

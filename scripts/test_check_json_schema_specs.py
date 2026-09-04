@@ -10,8 +10,8 @@ class JsonSchemaSpecLockTests(unittest.TestCase):
   def test_suite_hash_and_supported_inventory_are_pinned(self):
     lock = json_schema_specs.load_lock()
     self.assertEqual(lock['suiteRepository'], 'json-schema-org/JSON-Schema-Test-Suite')
-    self.assertEqual(lock['supportedGroups'], 1086)
-    self.assertEqual(lock['supportedCases'], 4164)
+    self.assertEqual(lock['supportedGroups'], 1090)
+    self.assertEqual(lock['supportedCases'], 4172)
     self.assertEqual(lock['drafts']['draft2020-12']['skippedCases'], 333)
     self.assertEqual(lock['skippedReasons']['nested-$id-resource']['groups'], 18)
     self.assertEqual(lock['currentDialect'], '2020-12')

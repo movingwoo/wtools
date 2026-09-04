@@ -32,6 +32,31 @@ with their official current-version pages and fails when the full manual grammar
 plus the current PostgreSQL, MySQL, and SQLite documentation. Release detection opens a review; it never
 rewrites keyword or tokenizer rules automatically.
 
+The first-party gzip, zlib, and raw DEFLATE codec keeps its reviewed WHATWG Compression Standard,
+the complete related Web Platform Tests subtree, RFC 1950/1951/1952 source hashes, and RFC Editor
+errata inventory in `scripts/compression-spec-lock.json`. Pull-request validation checks the lock
+shape without network access. The monthly workflow fetches every pinned source and compares the
+latest standard and WPT path commits; a change fails the review for a deliberate implementation and
+vector assessment rather than modifying the codec automatically.
+
+ZIP creation and extraction use the first-party classic ZIP implementation in `js/lib/archive/zip.js`.
+It shares the first-party DEFLATE codec, runs through a module Worker, and rejects ZIP64, encrypted entries,
+unsafe paths, overlapping local records, checksum mismatches, and configured expansion limits. The same
+monthly standards audit pins the official PKWARE APPNOTE 6.3.10 source and fails if that stable URL changes.
+ZIP format changes are reviewed against the source, Python's `zipfile` implementation, and the browser
+regression fixtures; they are never applied automatically.
+
+## 2026-09-04 security update
+
+- Upgraded the CDN pin from fflate 0.8.2 to 0.8.3 for GHSA-px8p-9vwx-vf98, including a freshly computed
+  SHA-384 pin and a new external service-worker cache generation as an interim mitigation. The runtime pin
+  was subsequently removed when ZIP creation and extraction moved to the first-party implementation.
+- The ZIP tool's directory preflight already rejects ZIP64 before fflate runs. A regression fixture now
+  covers the advisory shape: a ZIP64 central entry whose compressed-size sentinel has no required ZIP64
+  extra field.
+- The remaining version candidates from the 2026-08-28 review are still compatibility review items and
+  were not bundled into this security-only update.
+
 ## 2026-08-28 review record
 
 - OSV and GitHub Global Security Advisories reported no known vulnerability for the 22 distinct pinned

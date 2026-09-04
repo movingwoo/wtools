@@ -56,7 +56,7 @@
   중첩 256단계·내장 함수 순회를 포함한 평가 100만 회·UTF-8 입출력과 중간 문자열 각각
   16 MiB 상한, 제한 선검사·점진적 문자열 이스케이프와 256 KiB 이상 Worker·취소)
 - JSON Schema 검증 및 샘플 생성 (Draft 4/6/7/2019-09/2020-12 자체 엔진; 공식 Test Suite
-  핵심 검증 벡터 4,164건; 타입·enum·const, 숫자·문자열·배열·객체 제약,
+  핵심 검증 벡터 4,172건; 타입·enum·const, 숫자·문자열·배열·객체 제약,
   properties/patternProperties/additionalProperties, dependencies/dependent*, 조합·조건,
   contains/minContains/maxContains, 로컬 JSON Pointer·앵커 `$ref`; `format`·`content*`는 주석;
   외부 `$ref`, 중첩 `$id` 리소스, `$vocabulary`, `$dynamic*`/`$recursive*`, `unevaluated*`,
@@ -196,12 +196,11 @@
 
 ## 12. 압축 / 아카이브
 
-- Gzip 압축/해제 (텍스트 및 파일)
+- Gzip·Zlib·Raw DEFLATE 압축/해제 (RFC 1950/1951/1952 자체 코덱, 지원 브라우저의 Compression Streams 우선, 일치 탐색 깊이 기반 압축 레벨 1/6/9, stored/fixed/dynamic 블록 해제, CRC-32·Adler-32·출력 상한, Worker·취소, 텍스트 및 Gzip 파일)
 - Brotli 압축/해제 (품질 레벨, 텍스트·Base64·Hex 및 파일, Worker 처리)
 - Bzip2 해제 (텍스트·Base64·Hex 및 파일, Worker 처리)
 - Zstandard 압축/해제 (압축 레벨, 텍스트·Base64·Hex 및 파일, Worker 처리)
-- Raw Inflate/Deflate
 - LZMA 압축/해제
 - LZ4 압축/해제
-- Zip 압축/해제 (안전한 경로, CRC-32, 중복 이름, UTF-8, 항목·크기·압축률 상한)
+- Zip 압축/해제 (자체 ZIP/DEFLATE 엔진, 중앙·로컬 헤더 및 data descriptor 검증, UTF-8·CP437 파일명, CRC-32, 안전한 경로·중복·심볼릭 링크·항목 범위 검사, 항목·크기·압축률 상한, Worker·취소)
 - Tar/USTAR 아카이브/해제 (헤더 체크섬, UTF-8 긴 경로, 안전한 경로, 항목·크기·압축률 상한)

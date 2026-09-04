@@ -111,6 +111,7 @@ Linux CI에서 실행할 수 없어 같은 버전의 Playwright WebKit을 대리
 동적 ESM/WASM은 SHA-384로 고정한 검토본을 저장소에서 제공하며, 실제 CDN 원본과 운영 보안 헤더는 하루에 한 번 nightly 워크플로에서 확인합니다.
 테스트 의존성까지 포함한 등록부와 월간 점검 절차는 [DEPENDENCY_UPDATE.md](DEPENDENCY_UPDATE.md)를 참고하세요.
 월간 작업은 런타임·로컬 고정·테스트 패키지를 npm·OSV·GitHub Advisory와 함께 감사하고,
+WHATWG 압축 표준·관련 WPT·RFC 1950/1951/1952 본문과 정오표·PKWARE ZIP APPNOTE를 최신 검토본과 대조하며,
 분기 검토 기한이 지난 User-Agent·IANA 참조표·브라우저/CI 기준선을 실패로 알립니다.
 릴리즈 산출물은 최근 8일 이내의 최소 브라우저 호환성 워크플로 성공 이력이 있어야 게시됩니다.
 
@@ -136,8 +137,8 @@ scripts/            의존성 없는 저장소·정적 사이트 검증 스크�
 DEVELOPMENT_GUIDE.md 구현 구조, 크기 예산, 의존성 교체 및 릴리즈 규칙
 ```
 
-jsrsasign, pako 같은 classic script는 SRI로 검증하면서 해당 도구를 열 때 CDN에서 **지연 로드**합니다.  
-OpenPGP, GIF, Brotli·Zstandard·Bzip2·LZ4의 동적 ESM/WASM은 하위 import까지 검토한 로컬 사본을 사용합니다. crypto-js만 페이지를 열 때 불러오며, YAML·TOML·JSONPath·JMESPath·JSON Schema는 자체 엔진을 필요한 순간에 불러옵니다.
+jsrsasign 같은 classic script는 SRI로 검증하면서 해당 도구를 열 때 CDN에서 **지연 로드**합니다.  
+OpenPGP, GIF, Brotli·Zstandard·Bzip2·LZ4의 동적 ESM/WASM은 하위 import까지 검토한 로컬 사본을 사용합니다. crypto-js만 페이지를 열 때 불러오며, gzip·zlib·raw DEFLATE와 YAML·TOML·JSONPath·JMESPath·JSON Schema는 자체 엔진을 필요한 순간에 불러옵니다.
 
 ## 새 도구 추가
 

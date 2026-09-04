@@ -96,14 +96,14 @@ def validate_lock(data: dict) -> None:
   expected_drafts = {
     'draft4': {'rootFiles': 30, 'totalGroups': 160, 'totalCases': 618,
                'groups': 146, 'cases': 589, 'skippedGroups': 14, 'skippedCases': 29},
-    'draft6': {'rootFiles': 36, 'totalGroups': 232, 'totalCases': 839,
-               'groups': 209, 'cases': 790, 'skippedGroups': 23, 'skippedCases': 49},
-    'draft7': {'rootFiles': 37, 'totalGroups': 257, 'totalCases': 927,
-               'groups': 230, 'cases': 870, 'skippedGroups': 27, 'skippedCases': 57},
-    'draft2019-09': {'rootFiles': 46, 'totalGroups': 372, 'totalCases': 1259,
-                     'groups': 252, 'cases': 949, 'skippedGroups': 120, 'skippedCases': 310},
-    'draft2020-12': {'rootFiles': 46, 'totalGroups': 383, 'totalCases': 1299,
-                     'groups': 249, 'cases': 966, 'skippedGroups': 134, 'skippedCases': 333},
+    'draft6': {'rootFiles': 36, 'totalGroups': 233, 'totalCases': 841,
+               'groups': 210, 'cases': 792, 'skippedGroups': 23, 'skippedCases': 49},
+    'draft7': {'rootFiles': 37, 'totalGroups': 258, 'totalCases': 929,
+               'groups': 231, 'cases': 872, 'skippedGroups': 27, 'skippedCases': 57},
+    'draft2019-09': {'rootFiles': 46, 'totalGroups': 373, 'totalCases': 1261,
+                     'groups': 253, 'cases': 951, 'skippedGroups': 120, 'skippedCases': 310},
+    'draft2020-12': {'rootFiles': 46, 'totalGroups': 384, 'totalCases': 1301,
+                     'groups': 250, 'cases': 968, 'skippedGroups': 134, 'skippedCases': 333},
   }
   expected_skipped = {
     '$recursiveAnchor': {'groups': 1, 'cases': 2},
@@ -119,7 +119,7 @@ def validate_lock(data: dict) -> None:
     'unevaluatedProperties': {'groups': 4, 'cases': 6},
   }
   if data['drafts'] != expected_drafts or data['skippedReasons'] != expected_skipped \
-      or data['supportedGroups'] != 1086 or data['supportedCases'] != 4164:
+      or data['supportedGroups'] != 1090 or data['supportedCases'] != 4172:
     raise ValueError('JSON Schema supported case inventory is invalid')
   try:
     reviewed = date.fromisoformat(data['reviewed'])

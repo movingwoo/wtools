@@ -335,7 +335,7 @@ tool({
         if (action === 'sample') return response.sample;
         return schemaValidationOutput(response.result);
       },
-      note: 'JSON Schema 공식 Test Suite의 Draft 4/6/7과 2019-09/2020-12 핵심 검증 벡터 4,164건을 통과한 자체 엔진입니다. type/enum/const, 숫자·문자열·배열·객체 제약, properties/patternProperties/additionalProperties, dependencies/dependent*, allOf/anyOf/oneOf/not/if-then-else, contains/minContains/maxContains, 로컬 JSON Pointer·앵커 $ref를 지원합니다. format/content*는 주석으로만 처리하며 외부 $ref, 중첩 `$id` 리소스, $vocabulary, $dynamic*/$recursive*, unevaluated*, contentSchema는 명시적으로 거부합니다. $schema를 생략하면 2020-12로 처리합니다. 스키마는 UTF-8 1 MiB, 검증 JSON은 16 MiB, 샘플은 노드 10만 개·UTF-8 1 MiB까지이며 모든 작업을 취소 가능한 Worker에서 처리하고 10초 시간·중첩·노드·평가 횟수 상한을 적용합니다.',
+      note: 'JSON Schema 공식 Test Suite의 Draft 4/6/7과 2019-09/2020-12 핵심 검증 벡터 4,172건을 통과한 자체 엔진입니다. type/enum/const, 숫자·문자열·배열·객체 제약, properties/patternProperties/additionalProperties, dependencies/dependent*, allOf/anyOf/oneOf/not/if-then-else, contains/minContains/maxContains, 로컬 JSON Pointer·앵커 $ref를 지원합니다. format/content*는 주석으로만 처리하며 외부 $ref, 중첩 `$id` 리소스, $vocabulary, $dynamic*/$recursive*, unevaluated*, contentSchema는 명시적으로 거부합니다. $schema를 생략하면 2020-12로 처리합니다. 스키마는 UTF-8 1 MiB, 검증 JSON은 16 MiB, 샘플은 노드 10만 개·UTF-8 1 MiB까지이며 모든 작업을 취소 가능한 Worker에서 처리하고 10초 시간·중첩·노드·평가 횟수 상한을 적용합니다.',
     });
   },
 });

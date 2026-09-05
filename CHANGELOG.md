@@ -5,6 +5,38 @@
 
 ## [Unreleased]
 
+### 변경됨
+
+- Gzip·Zlib·Raw DEFLATE 압축·해제를 RFC 1950/1951/1952 기반 자체 코덱과
+  `CompressionStream`/`DecompressionStream` 우선 경로로 교체해 `pako 2.1.0`
+  런타임 CDN 의존성을 제거하고, Tar의 gzip 옵션도 같은 엔진을 공유하는 취소 가능한
+  모듈 Worker에서 처리
+- ZIP 생성·해제와 이미지 일괄 결과의 공용 ZIP 다운로드를 자체 ZIP/DEFLATE 엔진과
+  전용 모듈 Worker로 교체해 `fflate 0.8.3` 런타임 CDN 의존성을 제거
+
+### 보안
+
+- DEFLATE stored/fixed/dynamic 블록의 길이·허프만 트리·거리 참조, Gzip 헤더·CRC-32·
+  원본 크기, Zlib 헤더·Adler-32를 검증하고 해제 결과에 항목 크기·총 크기·200:1
+  압축률 상한을 스트리밍 단계부터 적용
+- ZIP 중앙·로컬 헤더, UTF-8·CP437/Unicode path 파일명, CRC-32, data descriptor,
+  항목 데이터 범위와 압축 방식을 교차 검증하고 경로 순회·중복·심볼릭 링크·ZIP64·
+  암호화 입력 및 항목별/전체 압축 폭탄을 해제 전에 거부
+
+### 품질 및 운영
+
+- Node zlib의 stored/fixed/dynamic 벡터 및 레벨별 자체 압축 결과를 양방향 교차 검증하고,
+  Gzip 선택 헤더·연결 멤버, 잘린 입력, 손상 체크섬, 과대 출력, Worker 취소·오프라인 실행과
+  제거된 pako 외부 캐시 정리를 회귀 테스트에 추가
+- Python `zipfile`이 생성한 stored/deflated·UTF-8·CP437·data descriptor ZIP을 해제하고
+  자체 생성 ZIP을 Python에서 읽는 양방향 교차 검증, 중앙·로컬 헤더 불일치·CRC 오류·
+  겹친 항목·과대 압축률·Worker 취소와 제거된 fflate 외부 캐시 정리를 회귀 테스트에 추가
+- WHATWG Compression Standard와 관련 WPT 29개 파일, RFC 1950/1951/1952 본문·정오표,
+  PKWARE ZIP APPNOTE 6.3.10 원문을 해시와 commit으로 고정하고 월간 유지보수 작업에서
+  최신 변경을 감지하도록 추가
+- JSON Schema 공식 Test Suite 최신 commit을 재검토해 지원 범위를 4,172건으로 갱신하고
+  모든 고정 코퍼스가 자체 엔진에서 계속 통과하는지 확인
+
 ## [1.4.1] - 2026-09-04
 
 데이터 형식 조회·검증·변환과 코드·SQL·Markdown 처리의 주요 런타임 의존성을

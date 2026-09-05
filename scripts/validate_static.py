@@ -23,7 +23,7 @@ MODULE_REF = re.compile(
   r"""(?:^\s*import(?:[\s\S]*?\sfrom\s*)?['"]([^'"]+)['"]|\bimport\(\s*['"]([^'"]+)['"]\s*\))""",
   re.MULTILINE,
 )
-TOOL_REF = re.compile(r"""(?:tool|symTool|pakoTool)\(\s*\{\s*id:\s*'([^']+)'""")
+TOOL_REF = re.compile(r"""(?:tool|symTool|deflateTool)\(\s*\{\s*id:\s*'([^']+)'""")
 CAT_REF = re.compile(r"""const CAT = '([^']+)';""")
 PLAYWRIGHT_CI_IMAGES = {
   '1.62.1': 'mcr.microsoft.com/playwright:v1.62.1-noble@sha256:'
@@ -50,8 +50,6 @@ HTML_ATTR_PATTERN = re.compile(r'([\w-]+)=["\']([^"\']*)["\']')
 DEPENDENCY_GLOBALS = {
   'cryptoJs': ('CryptoJS',),
   'jsrsasign': ('ASN1HEX', 'KEYUTIL', 'KJUR', 'X509', 'X509CRL', 'hextopem', 'pemtohex'),
-  'pako': ('pako',),
-  'fflate': ('fflate',),
   'lzma': ('LZMA',),
   'bcrypt': ('bcrypt',),
   'hashWasm': ('hashwasm',),

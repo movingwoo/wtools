@@ -5,10 +5,15 @@ function localModuleUrl(value) {
   return url.href;
 }
 
-self.onmessage = async ({ data: { codec, action, bytes, level, urls } }) => {
+self.onmessage = async ({ data: { codec, action, bytes, level, maxOutputLength, urls } }) => {
   try {
     let result;
-    if (codec === 'brotli') {
+    if (['gzip', 'zlib', 'raw-deflate'].includes(codec)) {
+      const { compress, decompress } = await import('../lib/archive/deflate.js');
+      result = action === 'comp'
+        ? await compress(bytes, { format: codec, level })
+        : await decompress(bytes, { format: codec, maxOutputLength });
+    } else if (codec === 'brotli') {
       if (action === 'comp') {
         const module = await import(localModuleUrl(urls.brotliCompress));
         result = await module.compress(bytes, { quality: level });
@@ -30,7 +35,10 @@ self.onmessage = async ({ data: { codec, action, bytes, level, urls } }) => {
       const module = await import(localModuleUrl(urls.bzip2Decompress));
       result = (module.default || module).decode(bytes);
     } else throw new Error('지원하지 않는 압축 작업입니다.');
-    const output = Uint8Array.from(result || []);
+    const output = result instanceof Uint8Array ? result
+      : result instanceof ArrayBuffer ? new Uint8Array(result)
+        : ArrayBuffer.isView(result) ? new Uint8Array(result.buffer, result.byteOffset, result.byteLength)
+          : Uint8Array.from(result || []);
     self.postMessage({ output }, [output.buffer]);
   } catch (error) {
     self.postMessage({ error: error?.message || String(error) });

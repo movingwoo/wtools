@@ -461,15 +461,20 @@ export const FMT_BIN = [['base64', 'Base64'], ['hex', 'Hex']];
 
 // 일괄 처리 결과를 ZIP 하나로 묶어 다운로드. entries: [{ name, data: Blob|Uint8Array }]
 export async function downloadZip(zipName, entries) {
-  await loadScript(LIB.fflate);
-  const obj = {};
+  const prepared = [];
+  const used = new Set();
   for (const e of entries) {
     let name = e.name, n = 1;
-    while (obj[name] != null) name = e.name.replace(/(\.[^.\/]*)?$/, (m) => ` (${++n})` + m);
-    obj[name] = e.data instanceof Blob ? new Uint8Array(await e.data.arrayBuffer()) : e.data;
+    while (used.has(name)) name = e.name.replace(/(\.[^.\/]*)?$/, (m) => ` (${++n})` + m);
+    used.add(name);
+    let data;
+    if (e.data instanceof Blob) data = new Uint8Array(await e.data.arrayBuffer());
+    else if (e.data instanceof Uint8Array) data = e.data.slice();
+    else throw new TypeError('ZIP 항목 데이터는 Blob 또는 Uint8Array여야 합니다.');
+    prepared.push({ name, data, mtime: e.mtime });
   }
-  const data = await new Promise((res, rej) =>
-    fflate.zip(obj, { level: 6 }, (err, d) => (err ? rej(err) : res(d))));
+  const { runZipWorker } = await import('./lib/archive/zip-worker-client.js');
+  const data = await runZipWorker('create', { entries: prepared, level: 6 });
   download(zipName, new Blob([data], { type: 'application/zip' }));
 }
 

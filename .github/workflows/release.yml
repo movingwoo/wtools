@@ -31,6 +31,11 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: python3 scripts/check_workflow_freshness.py
 
+      - name: Block release on a known dependency vulnerability
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/audit_dependencies.py --fail-on-vulnerability
+
       - name: Set up Node.js
         uses: actions/setup-node@v7
         with:

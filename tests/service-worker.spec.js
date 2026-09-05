@@ -6,7 +6,10 @@ import { cdnCache } from './cdn-cache.js';
 const test = base.extend({ ...cdnCache });
 test.use({ allowServiceWorker: true });
 
-const EXTERNAL_URL = 'https://cdn.jsdelivr.net/npm/pako@2.1.0/dist/pako.min.js';
+const EXTERNAL_URL = 'https://cdn.jsdelivr.net/npm/lzma@2.3.2/src/lzma_worker.min.js';
+const REMOVED_FFLATE_URL = 'https://cdn.jsdelivr.net/npm/fflate@0.8.2/umd/index.js';
+const REMOVED_FFLATE_083_URL = 'https://cdn.jsdelivr.net/npm/fflate@0.8.3/umd/index.js';
+const REMOVED_PAKO_URL = 'https://cdn.jsdelivr.net/npm/pako@2.1.0/dist/pako.min.js';
 const REMOVED_YAML_URL = 'https://cdn.jsdelivr.net/npm/js-yaml@4.3.1/dist/js-yaml.min.js';
 const REMOVED_MARKED_URL = 'https://cdn.jsdelivr.net/npm/marked@12.0.2/marked.min.js';
 const REMOVED_HIGHLIGHT_URL = 'https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js';
@@ -18,6 +21,9 @@ const REMOVED_SQL_FORMATTER_URL = 'https://cdn.jsdelivr.net/npm/sql-formatter@15
 const REMOVED_JSONPATH_URL = 'https://unpkg.com/jsonpath-plus@10.3.0/dist/index-browser-umd.min.cjs';
 const REMOVED_JMESPATH_URL = 'https://cdn.jsdelivr.net/npm/jmespath@0.16.0/jmespath.min.js';
 const REMOVED_Z_SCHEMA_URL = 'https://cdn.jsdelivr.net/npm/z-schema@12.4.0/umd/ZSchema.min.js';
+const DEFLATE_ENGINE_PATH = '/js/lib/archive/deflate.js';
+const ZIP_ENGINE_PATH = '/js/lib/archive/zip.js';
+const ZIP_WORKER_PATH = '/js/workers/zip.js';
 const TOML_ENGINE_PATH = '/js/lib/data/toml.js';
 const JSONPATH_ENGINE_PATH = '/js/lib/data/jsonpath.js';
 const JMESPATH_ENGINE_PATH = '/js/lib/data/jmespath.js';
@@ -39,7 +45,8 @@ async function waitForControl(page) {
 test('설치 시 검증된 자산만 캐시하고 이전 버전 캐시를 삭제한다', async ({ page, context }) => {
   await page.goto('/404.html');
   await page.evaluate(async ({
-    externalUrl, removedYamlUrl, removedJsonPathUrl, removedJmesPathUrl, removedZSchemaUrl,
+    externalUrl, removedFflateUrl, removedPakoUrl, removedYamlUrl, removedJsonPathUrl,
+    removedJmesPathUrl, removedZSchemaUrl, removedFflate083Url,
   }) => {
     await caches.open('wtools-shell-v0');
     await caches.open('wtools-external-v0');
@@ -83,12 +90,24 @@ test('설치 시 검증된 자산만 캐시하고 이전 버전 캐시를 삭제
     const jsonSchemaCache = await caches.open('wtools-external-v12');
     await jsonSchemaCache.put(externalUrl, response.clone());
     await jsonSchemaCache.put(removedZSchemaUrl, new Response('stale JSON Schema validator', { status: 200 }));
+    const deflateCache = await caches.open('wtools-external-v13');
+    await deflateCache.put(externalUrl, response.clone());
+    await deflateCache.put(removedPakoUrl, new Response('stale pako response', { status: 200 }));
+    const vulnerableFflateCache = await caches.open('wtools-external-v14');
+    await vulnerableFflateCache.put(removedFflateUrl,
+      new Response('stale vulnerable fflate response', { status: 200 }));
+    const removedFflateCache = await caches.open('wtools-external-v15');
+    await removedFflateCache.put(removedFflate083Url,
+      new Response('stale removed fflate response', { status: 200 }));
   }, {
     externalUrl: EXTERNAL_URL,
+    removedFflateUrl: REMOVED_FFLATE_URL,
+    removedPakoUrl: REMOVED_PAKO_URL,
     removedYamlUrl: REMOVED_YAML_URL,
     removedJsonPathUrl: REMOVED_JSONPATH_URL,
     removedJmesPathUrl: REMOVED_JMESPATH_URL,
     removedZSchemaUrl: REMOVED_Z_SCHEMA_URL,
+    removedFflate083Url: REMOVED_FFLATE_083_URL,
   });
 
   await page.goto('/');
@@ -96,19 +115,27 @@ test('설치 시 검증된 자산만 캐시하고 이전 버전 캐시를 삭제
   const state = await page.evaluate(async ({
     externalUrl, removedMarkedUrl, removedHighlightUrl, removedHighlightCssUrl,
     removedBeautifyJsUrl, removedBeautifyCssUrl, removedBeautifyHtmlUrl, removedSqlFormatterUrl,
-    removedYamlUrl, removedJsonPathUrl, removedJmesPathUrl, removedZSchemaUrl,
+    removedFflateUrl, removedFflate083Url, removedPakoUrl, removedYamlUrl, removedJsonPathUrl, removedJmesPathUrl,
+    removedZSchemaUrl,
+    deflateEnginePath, zipEnginePath, zipWorkerPath,
     tomlEnginePath, jsonPathEnginePath, jmesPathEnginePath, jsonSchemaEnginePath,
   }) => {
     const keys = await caches.keys();
     const shellName = keys.find((key) => key.startsWith('wtools-shell-'));
     const shell = await caches.open(shellName);
+    const deflateEngine = await shell.match(deflateEnginePath);
+    const zipEngine = await shell.match(zipEnginePath);
+    const zipWorker = await shell.match(zipWorkerPath);
     const tomlEngine = await shell.match(tomlEnginePath);
     const jsonPathEngine = await shell.match(jsonPathEnginePath);
     const jmesPathEngine = await shell.match(jmesPathEnginePath);
     const jsonSchemaEngine = await shell.match(jsonSchemaEnginePath);
-    const external = await caches.open('wtools-external-v13');
+    const external = await caches.open('wtools-external-v16');
     return {
       keys,
+      deflateEngineCached: !!deflateEngine,
+      zipEngineCached: !!zipEngine,
+      zipWorkerCached: !!zipWorker,
       tomlEngineCached: !!tomlEngine,
       jsonPathEngineCached: !!jsonPathEngine,
       jmesPathEngineCached: !!jmesPathEngine,
@@ -121,6 +148,9 @@ test('설치 시 검증된 자산만 캐시하고 이전 버전 캐시를 삭제
       removedBeautifyCssCached: !!await external.match(removedBeautifyCssUrl),
       removedBeautifyHtmlCached: !!await external.match(removedBeautifyHtmlUrl),
       removedSqlFormatterCached: !!await external.match(removedSqlFormatterUrl),
+      removedFflateCached: !!await external.match(removedFflateUrl),
+      removedFflate083Cached: !!await external.match(removedFflate083Url),
+      removedPakoCached: !!await external.match(removedPakoUrl),
       removedYamlCached: !!await external.match(removedYamlUrl),
       removedJsonPathCached: !!await external.match(removedJsonPathUrl),
       removedJmesPathCached: !!await external.match(removedJmesPathUrl),
@@ -136,10 +166,16 @@ test('설치 시 검증된 자산만 캐시하고 이전 버전 캐시를 삭제
     removedBeautifyCssUrl: REMOVED_BEAUTIFY_CSS_URL,
     removedBeautifyHtmlUrl: REMOVED_BEAUTIFY_HTML_URL,
     removedSqlFormatterUrl: REMOVED_SQL_FORMATTER_URL,
+    removedFflateUrl: REMOVED_FFLATE_URL,
+    removedFflate083Url: REMOVED_FFLATE_083_URL,
+    removedPakoUrl: REMOVED_PAKO_URL,
     removedYamlUrl: REMOVED_YAML_URL,
     removedJsonPathUrl: REMOVED_JSONPATH_URL,
     removedJmesPathUrl: REMOVED_JMESPATH_URL,
     removedZSchemaUrl: REMOVED_Z_SCHEMA_URL,
+    deflateEnginePath: DEFLATE_ENGINE_PATH,
+    zipEnginePath: ZIP_ENGINE_PATH,
+    zipWorkerPath: ZIP_WORKER_PATH,
     tomlEnginePath: TOML_ENGINE_PATH,
     jsonPathEnginePath: JSONPATH_ENGINE_PATH,
     jmesPathEnginePath: JMESPATH_ENGINE_PATH,
@@ -158,7 +194,13 @@ test('설치 시 검증된 자산만 캐시하고 이전 버전 캐시를 삭제
   expect(state.keys).not.toContain('wtools-external-v10');
   expect(state.keys).not.toContain('wtools-external-v11');
   expect(state.keys).not.toContain('wtools-external-v12');
+  expect(state.keys).not.toContain('wtools-external-v13');
+  expect(state.keys).not.toContain('wtools-external-v14');
+  expect(state.keys).not.toContain('wtools-external-v15');
   expect(state.shellName).toMatch(/^wtools-shell-[0-9a-f]{12}$/);
+  expect(state.deflateEngineCached).toBe(true);
+  expect(state.zipEngineCached).toBe(true);
+  expect(state.zipWorkerCached).toBe(true);
   expect(state.tomlEngineCached).toBe(true);
   expect(state.jsonPathEngineCached).toBe(true);
   expect(state.jmesPathEngineCached).toBe(true);
@@ -171,6 +213,9 @@ test('설치 시 검증된 자산만 캐시하고 이전 버전 캐시를 삭제
   expect(state.removedBeautifyCssCached).toBe(false);
   expect(state.removedBeautifyHtmlCached).toBe(false);
   expect(state.removedSqlFormatterCached).toBe(false);
+  expect(state.removedFflateCached).toBe(false);
+  expect(state.removedFflate083Cached).toBe(false);
+  expect(state.removedPakoCached).toBe(false);
   expect(state.removedYamlCached).toBe(false);
   expect(state.removedJsonPathCached).toBe(false);
   expect(state.removedJmesPathCached).toBe(false);
@@ -179,6 +224,18 @@ test('설치 시 검증된 자산만 캐시하고 이전 버전 캐시를 삭제
   await context.setOffline(true);
   const externalStatus = await page.evaluate((url) => fetch(url).then((response) => response.status), EXTERNAL_URL);
   expect(externalStatus).toBe(200);
+
+  await page.evaluate(() => { location.hash = '#/tool/gzip'; });
+  const gzip = page.locator('#content .io').first();
+  await gzip.locator('textarea.mono:not(.out)').fill('오프라인 DEFLATE');
+  await gzip.getByRole('button', { name: '압축', exact: true }).click();
+  await expect(gzip).toHaveAttribute('aria-busy', 'false');
+  const packed = (await gzip.locator('textarea.out').inputValue()).split('\n')[0];
+  await gzip.getByLabel('입력 형식').selectOption('base64');
+  await gzip.getByLabel('출력 형식').selectOption('text');
+  await gzip.locator('textarea.mono:not(.out)').fill(packed);
+  await gzip.getByRole('button', { name: '해제', exact: true }).click();
+  await expect(gzip.locator('textarea.out')).toHaveValue('오프라인 DEFLATE');
 
   await page.evaluate(() => { location.hash = '#/tool/data-convert'; });
   const content = page.locator('#content');
@@ -325,7 +382,7 @@ test('변조된 제3자 응답과 캐시를 폐기하고 한국어 오류를 반
   const result = await page.evaluate(async () => {
     await import('/js/sw-integrity.js');
     const { verifiedCached, fetchVerified, IntegrityError, integrityErrorResponse } = globalThis.WTOOLS_INTEGRITY;
-    const integrity = globalThis.WTOOLS_DEPENDENCIES.cdn.pako.integrity;
+    const integrity = globalThis.WTOOLS_DEPENDENCIES.cdn.lzma.integrity;
     const altered = () => new Response('globalThis.altered = true;', {
       headers: { 'Content-Type': 'application/javascript' },
     });

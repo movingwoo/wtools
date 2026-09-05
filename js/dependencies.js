@@ -20,24 +20,6 @@ globalThis.WTOOLS_DEPENDENCIES = {
       "kind": "script",
       "tools": ["js/tools/cryptotools.js", "js/tools/encoding.js", "js/tools/pki.js"]
     },
-    "pako": {
-      "package": "pako",
-      "version": "2.1.0",
-      "url": "https://cdn.jsdelivr.net/npm/pako@2.1.0/dist/pako.min.js",
-      "integrity": "sha384-rNlaE5fs9dGIjmxWDALQh/RBAaGRYT5ChrzHo6tRfgrZ36iRFAiquP5g41Jsv+0j",
-      "license": "MIT AND Zlib",
-      "kind": "script",
-      "tools": ["js/tools/archive.js"]
-    },
-    "fflate": {
-      "package": "fflate",
-      "version": "0.8.2",
-      "url": "https://cdn.jsdelivr.net/npm/fflate@0.8.2/umd/index.js",
-      "integrity": "sha384-DT0Ls0mO7JmjTnT+oBuMhEJzYJO1zUqzuuMXNdnOmOQRIpN2BgSjvBV/j50NngIT",
-      "license": "MIT",
-      "kind": "script",
-      "tools": ["js/core.js", "js/tools/archive.js"]
-    },
     "lzma": {
       "package": "lzma",
       "version": "2.3.2",
@@ -185,7 +167,7 @@ globalThis.WTOOLS_DEPENDENCIES = {
       "use": "WCAG 자동 접근성 검사"
     }
   },
-  "reviewed": "2026-09-02"
+  "reviewed": "2026-09-04"
 };
 
 Object.freeze(globalThis.WTOOLS_DEPENDENCIES.cdn);

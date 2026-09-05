@@ -91,6 +91,11 @@ jobs:
         shell: bash
         run: python3 scripts/check_json_schema_specs.py --check-latest | tee -a "$GITHUB_STEP_SUMMARY"
 
+      - name: Verify Compression Standard, WPT, RFC, and ZIP APPNOTE references
+        if: ${{ always() }}
+        shell: bash
+        run: python3 scripts/check_compression_specs.py --check-latest | tee -a "$GITHUB_STEP_SUMMARY"
+
       - name: Compare syntax language profiles with official releases
         if: ${{ always() }}
         shell: bash
@@ -117,7 +122,7 @@ jobs:
         shell: bash
         run: |
           echo '## 월간 품질·보안 점검' >> "$GITHUB_STEP_SUMMARY"
-          echo '- npm·OSV·GitHub Advisory, 고정 자산 원본 해시, UA·IANA·CommonMark·GFM·YAML 1.2·TOML 1.0·RFC 9535 JSONPath·JMESPath 1.0·JSON Schema 공식 suite·구문 강조·코드 포매터 언어 프로필·브라우저 기준선을 확인했습니다.' >> "$GITHUB_STEP_SUMMARY"
+          echo '- npm·OSV·GitHub Advisory, 고정 자산 원본 해시, UA·IANA·CommonMark·GFM·YAML 1.2·TOML 1.0·RFC 9535 JSONPath·JMESPath 1.0·JSON Schema 공식 suite·WHATWG 압축 표준·WPT·RFC 1950/1951/1952·ZIP APPNOTE·구문 강조·코드 포매터 언어 프로필·브라우저 기준선을 확인했습니다.' >> "$GITHUB_STEP_SUMMARY"
           echo '- 브라우저에서 실행하는 공개 대표 벡터는 public-vectors 잡 결과를 확인하세요.' >> "$GITHUB_STEP_SUMMARY"
           echo '- 실제 CDN 응답·CORS·SRI와 운영 헤더 검사는 nightly 워크플로 결과를 함께 확인하세요.' >> "$GITHUB_STEP_SUMMARY"
 
@@ -158,14 +163,14 @@ jobs:
       - name: Run representative public vectors
         working-directory: tests
         run: |
-          npx playwright test --project=chromium -g 'JSON Schema|YAML 1.2|TOML 1.0|punycode|zip:|tar:|markdown-html: 공개|markdown-html: 닫는 괄호|code-format: SQL 포맷·압축 결과|code-format: JavaScript 결과|code-format: CSS 결과|code-format: HTML 결과|code-format: 중첩 템플릿'
+          npx playwright test --project=chromium -g 'JSON Schema|YAML 1.2|TOML 1.0|punycode|deflate 자체|deflate 대용량|gzip: 연결된 Gzip|zip:|tar:|markdown-html: 공개|markdown-html: 닫는 괄호|code-format: SQL 포맷·압축 결과|code-format: JavaScript 결과|code-format: CSS 결과|code-format: HTML 결과|code-format: 중첩 템플릿'
 
       - name: Write public vector summary
         if: ${{ always() }}
         shell: bash
         run: |
           echo '## 공개 대표 벡터' >> "$GITHUB_STEP_SUMMARY"
-          echo '- JSON Schema·YAML 1.2·TOML 1.0·IDN·ZIP/Tar·Markdown·코드 포매터 대표 벡터를 Chromium에서 실행했습니다.' >> "$GITHUB_STEP_SUMMARY"
+          echo '- JSON Schema·YAML 1.2·TOML 1.0·IDN·DEFLATE/Gzip·ZIP/Tar·Markdown·코드 포매터 대표 벡터를 Chromium에서 실행했습니다.' >> "$GITHUB_STEP_SUMMARY"
 
   emoji-update:
     runs-on: ubuntu-latest

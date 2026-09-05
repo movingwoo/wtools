@@ -46,6 +46,7 @@ jobs:
           python3 scripts/check_jsonpath_specs.py --run-pinned
           python3 scripts/check_jmespath_specs.py --run-pinned
           python3 scripts/check_json_schema_specs.py --run-pinned
+          python3 scripts/check_compression_specs.py
           python3 scripts/check_toml_specs.py
           python3 scripts/check_syntax_languages.py
           python3 scripts/validate_static.py

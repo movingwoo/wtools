@@ -6,7 +6,7 @@ import { cdnCache } from './cdn-cache.js';
 const test = base.extend({ ...cdnCache });
 test.use({ allowServiceWorker: true });
 
-const EXTERNAL_URL = 'https://cdn.jsdelivr.net/npm/lzma@2.3.2/src/lzma_worker.min.js';
+const EXTERNAL_URL = 'https://cdn.jsdelivr.net/npm/bcryptjs@2.4.3/dist/bcrypt.min.js';
 const REMOVED_FFLATE_URL = 'https://cdn.jsdelivr.net/npm/fflate@0.8.2/umd/index.js';
 const REMOVED_FFLATE_083_URL = 'https://cdn.jsdelivr.net/npm/fflate@0.8.3/umd/index.js';
 const REMOVED_PAKO_URL = 'https://cdn.jsdelivr.net/npm/pako@2.1.0/dist/pako.min.js';
@@ -41,6 +41,38 @@ async function waitForControl(page) {
     });
   });
 }
+
+test('LZMA CDN 캐시를 제거하고 자체 Worker 코덱이 오프라인에서 압축·해제한다', async ({ page, context }) => {
+  const removed = 'https://cdn.jsdelivr.net/npm/lzma@2.3.2/src/lzma_worker.min.js';
+  await page.goto('/404.html');
+  await page.evaluate(async (url) => {
+    const cache = await caches.open('wtools-external-v16');
+    await cache.put(url, new Response('obsolete LZMA library'));
+  }, removed);
+  await page.goto('/');
+  await waitForControl(page);
+  const state = await page.evaluate(async (url) => ({
+    keys: await caches.keys(), removed: !!await caches.match(url),
+    engine: !!await caches.match('/js/lib/archive/lzma.js'),
+    io: !!await caches.match('/js/lib/archive/lzma-io.js'),
+  }), removed);
+  expect(state.keys).not.toContain('wtools-external-v16');
+  expect(state.removed).toBe(false);
+  expect(state.engine).toBe(true);
+  expect(state.io).toBe(true);
+  await context.setOffline(true);
+  await page.goto('/#/tool/lzma');
+  const io = page.locator('#content .io');
+  await io.locator('textarea.mono:not(.out)').fill('오프라인 LZMA 🎁');
+  await io.getByRole('button', { name: '압축', exact: true }).click();
+  await expect(io.locator('textarea.out')).not.toHaveValue('');
+  const packed = (await io.locator('textarea.out').inputValue()).split('\n')[0];
+  await io.getByLabel('입력 형식').selectOption('base64');
+  await io.getByLabel('출력 형식').selectOption('text');
+  await io.locator('textarea.mono:not(.out)').fill(packed);
+  await io.getByRole('button', { name: '해제', exact: true }).click();
+  await expect(io.locator('textarea.out')).toHaveValue('오프라인 LZMA 🎁');
+});
 
 test('설치 시 검증된 자산만 캐시하고 이전 버전 캐시를 삭제한다', async ({ page, context }) => {
   await page.goto('/404.html');
@@ -130,7 +162,7 @@ test('설치 시 검증된 자산만 캐시하고 이전 버전 캐시를 삭제
     const jsonPathEngine = await shell.match(jsonPathEnginePath);
     const jmesPathEngine = await shell.match(jmesPathEnginePath);
     const jsonSchemaEngine = await shell.match(jsonSchemaEnginePath);
-    const external = await caches.open('wtools-external-v16');
+    const external = await caches.open('wtools-external-v17');
     return {
       keys,
       deflateEngineCached: !!deflateEngine,
@@ -382,7 +414,7 @@ test('변조된 제3자 응답과 캐시를 폐기하고 한국어 오류를 반
   const result = await page.evaluate(async () => {
     await import('/js/sw-integrity.js');
     const { verifiedCached, fetchVerified, IntegrityError, integrityErrorResponse } = globalThis.WTOOLS_INTEGRITY;
-    const integrity = globalThis.WTOOLS_DEPENDENCIES.cdn.lzma.integrity;
+    const integrity = globalThis.WTOOLS_DEPENDENCIES.cdn.bcrypt.integrity;
     const altered = () => new Response('globalThis.altered = true;', {
       headers: { 'Content-Type': 'application/javascript' },
     });

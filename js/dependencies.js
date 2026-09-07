@@ -20,15 +20,6 @@ globalThis.WTOOLS_DEPENDENCIES = {
       "kind": "script",
       "tools": ["js/tools/cryptotools.js", "js/tools/encoding.js", "js/tools/pki.js"]
     },
-    "lzma": {
-      "package": "lzma",
-      "version": "2.3.2",
-      "url": "https://cdn.jsdelivr.net/npm/lzma@2.3.2/src/lzma_worker.min.js",
-      "integrity": "sha384-i0BmxJgY8ewnjHQFgeqUwAtroLPzl8tRN6M8tMYoR8fZPzUogiI6Uo8bUbzxKa9t",
-      "license": "MIT",
-      "kind": "script",
-      "tools": ["js/tools/archive.js"]
-    },
     "bcrypt": {
       "package": "bcryptjs",
       "version": "2.4.3",

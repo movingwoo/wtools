@@ -6,6 +6,61 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import zlib from 'node:zlib';
 
+// Independent liblzma oracle. Binary material is generated at test time.
+export function makeLzma(input, options = {}) {
+  return execFileSync('python3', ['-c', `
+import json, lzma, sys
+options = json.loads(sys.argv[1])
+filters = [dict(id=lzma.FILTER_LZMA1, **options)] if options else None
+sys.stdout.buffer.write(lzma.compress(sys.stdin.buffer.read(), format=lzma.FORMAT_ALONE, filters=filters))
+`, JSON.stringify(options)], { input, maxBuffer: 8 * 1024 * 1024 });
+}
+
+export function readLzma(input) {
+  return execFileSync('python3', ['-c', `
+import lzma, sys
+decoder = lzma.LZMADecompressor(format=lzma.FORMAT_ALONE)
+output = decoder.decompress(sys.stdin.buffer.read(), max_length=8 * 1024 * 1024)
+assert decoder.eof and not decoder.unused_data
+sys.stdout.buffer.write(output)
+`], { input, maxBuffer: 8 * 1024 * 1024 });
+}
+
+export function lzmaCorpus() {
+  let seed = 0x6c7a6d61;
+  const noise = Buffer.from(Array.from({ length: 1024 * 1024 }, () => {
+    seed ^= seed << 13; seed ^= seed >>> 17; seed ^= seed << 5;
+    return seed & 255;
+  }));
+  return [
+    Buffer.alloc(0), Buffer.from([0]), Buffer.from(Array.from({ length: 256 }, (_, i) => i)),
+    Buffer.from('LZMA 한글·NUL\0·이모지 🌏\n'.repeat(40)), noise.subarray(0, 4096),
+    Buffer.concat([noise.subarray(0, 70000), noise.subarray(0, 70000)]), noise,
+  ];
+}
+
+// Public-domain vectors from Igor Pavlov's 2015-06-14 LZMA Specification bundle:
+// https://www.7-zip.org/a/lzma-specification.7z (examples/). Decode only at run time.
+export function lzmaSpecVectors() {
+  const a = Buffer.from('XQAAgABHAQAAAAAAAAAmFoW8RfDf/9LoQfXO5ZDhyCDqxje+K9H0wzRvL4PCpnxvPYigWCIfOrp7xt1m/viS5MscxBkKDIsuObi4A81anhA6T2X6QcvyeWXX8Z+rcB1v97Z5zIp9ztv49p7JEp+qv4n+BTaA', 'base64');
+  const eos = Buffer.from('XQAAAQD//////////wAmFoW8RfDf/9LoQfXO5ZDhyCDqxje+K9H0wzRvL4PCpnxvPYigWCIfOrp7xt1m/viS5MscxBkKDIsuObi4A81anhA6T2X6QcvyeWXX8Z+rcB1v97Z5zIp9ztv49p7JEp+qv4oI9ZmNf/oYClI=', 'base64');
+  const eosSize = Buffer.from(eos);
+  eosSize.writeBigUInt64LE(327n, 5);
+  const properties = Buffer.from('NwAAAQBHAQAAAAAAAAAmFoYjvFzJQCtrkVvNkEDLmnFbhGjgWquj6QT3o6aOX6oki/wgOKa3KkevB/cUrOi02ZYn4PRHjendBSga37HtGtwLVbK9VWls2fxwQ6cWWJn+lwQRJ1ZexrBOMaDLFyfscjYOmq0A', 'base64');
+  const corrupted = Buffer.from('XQAAgABHAQAAAAAAAAAmFoW8RfDf/9LoQfXO5ZDhyCDqxje+K9H0wzRvL4PCpnxvPYigWCIfOrp7xt1m/viS5MscxBkKDIsuObi4A81anhA6T2X6QcvyeWXX8f///x1v97Z5zIp9ztv49p7JEp+qv4n+BTaA', 'base64');
+  const eosIncorrectSize = Buffer.from(eosSize);
+  eosIncorrectSize.writeBigUInt64LE(328n, 5);
+  const incorrectSize = Buffer.from(a);
+  incorrectSize.writeBigUInt64LE(290n, 5);
+  const plain = Buffer.from([
+    'LZMA decoder test example', '=========================', '! LZMA ! Decoder ! TEST !',
+    '=========================', '! TEST ! LZMA ! Decoder !', '=========================',
+    '---- Test Line 1 -------- ', '=========================', '---- Test Line 2 -------- ',
+    '=========================', '=== End of test file ==== ', '=========================', '',
+  ].join('\r\n'));
+  return { plain, good: [a, eos, eosSize, properties], bad: [corrupted, eosIncorrectSize, incorrectSize] };
+}
+
 const CRC_TABLE = Array.from({ length: 256 }, (_, n) => {
   let c = n;
   for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;

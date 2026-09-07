@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validate pinned Compression Standard, WPT, and RFC sources."""
+"""Validate compression sources and detect upstream documentation/security changes."""
 
 from __future__ import annotations
 
@@ -26,6 +26,14 @@ FORMATS = ['brotli', 'deflate', 'deflate-raw', 'gzip']
 RFC_FORMATS = {'1950': 'zlib', '1951': 'deflate', '1952': 'gzip'}
 ZIP_SPEC_URL = 'https://pkware.cachefly.net/webdocs/casestudies/APPNOTE.TXT'
 ZIP_FEATURES = ['stored', 'deflate', 'data-descriptor', 'utf-8', 'unicode-path-extra-field']
+LZMA_SPEC_URL = 'https://www.7-zip.org/a/lzma-specification.7z'
+LZMA_FEATURES = ['lzma-alone', 'known-size', 'end-marker', 'lc-0-8', 'lp-0-4', 'pb-0-4']
+LZMA_UPSTREAM_URLS = {
+  'sdkPage': 'https://www.7-zip.org/sdk.html',
+  'releaseHistory': 'https://www.7-zip.org/history.txt',
+  'containerDescription': 'https://raw.githubusercontent.com/tukaani-project/xz/master/doc/lzma-file-format.txt',
+  'xzSecurity': 'https://tukaani.org/xz/',
+}
 
 
 def load_lock(path: Path = LOCK_PATH) -> dict:
@@ -35,7 +43,7 @@ def load_lock(path: Path = LOCK_PATH) -> dict:
 
 
 def validate_lock(data: dict) -> None:
-  if set(data) != {'standard', 'wpt', 'rfcs', 'zip', 'reviewed'}:
+  if set(data) != {'standard', 'wpt', 'rfcs', 'zip', 'lzma', 'reviewed'}:
     raise ValueError('compression lock fields differ from the required schema')
 
   standard = data['standard']
@@ -97,6 +105,20 @@ def validate_lock(data: dict) -> None:
       or not SRI_PATTERN.fullmatch(zip_spec['sha384']) \
       or zip_spec['supported'] != ZIP_FEATURES:
     raise ValueError('ZIP APPNOTE source inventory is invalid')
+
+  lzma_spec = data['lzma']
+  if set(lzma_spec) != {'version', 'url', 'sha384', 'supported', 'upstream'} \
+      or lzma_spec['version'] != '2015-06-14' or lzma_spec['url'] != LZMA_SPEC_URL \
+      or not SRI_PATTERN.fullmatch(lzma_spec['sha384']) \
+      or lzma_spec['supported'] != LZMA_FEATURES:
+    raise ValueError('LZMA specification source inventory is invalid')
+  if not isinstance(lzma_spec['upstream'], dict) or set(lzma_spec['upstream']) != set(LZMA_UPSTREAM_URLS):
+    raise ValueError('LZMA upstream source inventory is invalid')
+  for name, url in LZMA_UPSTREAM_URLS.items():
+    source = lzma_spec['upstream'][name]
+    if set(source) != {'url', 'sha384'} or source['url'] != url \
+        or not SRI_PATTERN.fullmatch(source['sha384']):
+      raise ValueError(f'LZMA upstream {name} source pin is invalid')
 
   try:
     reviewed = date.fromisoformat(data['reviewed'])
@@ -192,6 +214,20 @@ def check_pinned(lock: dict) -> list[str]:
       errors.append(f'RFC {number} errata changed: reviewed {entry["errata"]}, received {errata}')
   if sha384_sri(request(lock['zip']['url'])) != lock['zip']['sha384']:
     errors.append('ZIP APPNOTE source SHA-384 changed')
+  if sha384_sri(request(lock['lzma']['url'])) != lock['lzma']['sha384']:
+    errors.append('LZMA specification bundle SHA-384 changed')
+  return errors
+
+
+def check_lzma_upstream(lock: dict) -> list[str]:
+  # Hash complete, mutable official documents: this also detects edited advisories,
+  # new specification URLs, and removed content without depending on HTML structure.
+  # A mismatch is a human review gate, never evidence that our JS codec is affected.
+  errors = []
+  for name, source in lock['lzma']['upstream'].items():
+    if sha384_sri(request(source['url'])) != source['sha384']:
+      errors.append(f'LZMA upstream {name} changed: {source["url"]}; '
+                    'review format/security applicability and rerun LZMA vectors before updating the pin')
   return errors
 
 
@@ -206,22 +242,24 @@ def check_latest(lock: dict) -> list[str]:
     errors.append('Compression WPT changed: '
                   f'reviewed {lock["wpt"]["commit"]}, latest {latest_wpt}')
   errors.extend(check_pinned(lock))
+  errors.extend(check_lzma_upstream(lock))
   return errors
 
 
 def main() -> int:
   parser = argparse.ArgumentParser(
-    description='Validate Compression Standard, WPT, and RFC source pins.')
+    description='Validate Compression Standard, WPT, RFC, ZIP, and LZMA source pins.')
   parser.add_argument('--run-pinned', action='store_true',
                       help='download and verify every pinned official source')
   parser.add_argument('--check-latest', action='store_true',
-                      help='compare the standards and WPT feeds with the reviewed commits')
+                      help='compare standards/WPT commits and LZMA upstream documentation/security snapshots')
   args = parser.parse_args()
   try:
     lock = load_lock()
     print('Compression standards lock is valid: WHATWG '
           f'{lock["standard"]["commit"][:12]}, {len(lock["wpt"]["files"])} WPT files, '
-          f'RFC {"/".join(lock["rfcs"])}, ZIP APPNOTE {lock["zip"]["version"]}.')
+          f'RFC {"/".join(lock["rfcs"])}, ZIP APPNOTE {lock["zip"]["version"]}, '
+          f'LZMA {lock["lzma"]["version"]}.')
     errors = check_latest(lock) if args.check_latest else (
       check_pinned(lock) if args.run_pinned else []
     )
@@ -231,9 +269,10 @@ def main() -> int:
         print(f'- {error}', file=sys.stderr)
       return 1
     if args.check_latest:
-      print('Latest Compression Standard, WPT, RFC, and ZIP APPNOTE sources and errata are current.')
+      print('Latest Compression Standard, WPT, RFC, ZIP APPNOTE, and LZMA sources are current; '
+            'LZMA SDK/7-Zip notices and XZ documentation/security snapshots are unchanged.')
     elif args.run_pinned:
-      print('All pinned Compression Standard, WPT, RFC, and ZIP APPNOTE sources and errata are intact.')
+      print('All pinned Compression Standard, WPT, RFC, ZIP APPNOTE, and LZMA sources and errata are intact.')
     return 0
   except (json.JSONDecodeError, KeyError, OSError, ValueError, urllib.error.URLError) as error:
     print(f'Compression standards audit failed: {error}', file=sys.stderr)

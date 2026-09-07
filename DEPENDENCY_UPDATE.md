@@ -46,6 +46,24 @@ monthly standards audit pins the official PKWARE APPNOTE 6.3.10 source and fails
 ZIP format changes are reviewed against the source, Python's `zipfile` implementation, and the browser
 regression fixtures; they are never applied automatically.
 
+LZMA uses the first-party Alone codec in `js/lib/archive/lzma.js`, not an installed SDK or liblzma.
+The compression lock pins the 2015-06-14 specification bundle and four mutable upstream documents:
+the official SDK page (including its specification link), 7-Zip's release/security history, XZ's
+`doc/lzma-file-format.txt` on the current upstream branch, and the XZ home page with its security notices.
+`python3 scripts/check_compression_specs.py --check-latest` compares full-document SHA-384 snapshots.
+Even a corrected advisory, new specification URL, removed content, or non-security page edit requests
+human review. Network failures also fail the audit; no parser can silently treat a changed page as empty.
+Monthly Chromium vectors explicitly include every `lzma`/`LZMA` case, including Python differential
+tests, unique single-bit mutations, bounded previews, full downloads, and offline execution.
+
+When a snapshot changes, read the official diff and assess whether it changes the Alone bitstream or a
+corresponding JavaScript validation path. An SDK/XZ notice does not by itself establish that this codec
+is affected: native memory bugs, XZ/LZMA2, archive filesystem extraction, and Mark-of-the-Web behavior
+are not shipped here. Add a regression for applicable cases, run the LZMA and browser/release gates,
+then deliberately update the reviewed hashes/date. Do not automatically import new SDK code or bump
+runtime dependencies. The 2026-09-07 snapshot includes SDK 26.03, the 7-Zip 26.03/26.02 notices, and
+the XZ security section; future changes remain review items, not automatic vulnerability conclusions.
+
 ## 2026-09-04 security update
 
 - Upgraded the CDN pin from fflate 0.8.2 to 0.8.3 for GHSA-px8p-9vwx-vf98, including a freshly computed

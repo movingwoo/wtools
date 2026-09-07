@@ -1589,8 +1589,8 @@ export const TOOL_MANIFESTS = Object.freeze([
     "id": "lzma",
     "cat": "압축 / 아카이브",
     "name": "LZMA 압축/해제",
-    "desc": "LZMA 알고리즘으로 데이터를 압축하거나 해제합니다.",
-    "keywords": "lzma xz compress",
+    "desc": "LZMA 단독(.lzma) 형식으로 데이터를 브라우저 안에서 압축하거나 해제합니다.",
+    "keywords": "lzma alone compress decompress 압축 해제 worker",
     "module": "./tools/archive.js",
     "externalLibrary": true
   },

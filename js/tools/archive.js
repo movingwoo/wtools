@@ -1,7 +1,7 @@
 // 압축 / 아카이브
 import {
   tool, makeIO, h, formLabel, kvTable, strToBytes, bytesToStr, bytesToB64, b64ToBytes,
-  bytesToHex, hexToBytes, decodeInput, loadScript, loadModule, vendorUrl, LIB, download,
+  bytesToHex, hexToBytes, decodeInput, loadModule, vendorUrl, download,
   createAsyncRunner, throwIfAborted, formatBytes,
 } from '../core.js';
 
@@ -143,10 +143,21 @@ deflateTool({ id: 'zlib', name: 'Zlib 압축/해제', desc: 'zlib(deflate) 형�
 /* ---------- LZMA ---------- */
 tool({
   id: 'lzma', cat: CAT, name: 'LZMA 압축/해제',
-  desc: 'LZMA 알고리즘으로 데이터를 압축하거나 해제합니다.',
-  keywords: 'lzma xz compress',
+  desc: 'LZMA 단독(.lzma) 형식으로 데이터를 브라우저 안에서 압축하거나 해제합니다.',
+  keywords: 'lzma alone compress decompress 압축 해제 worker',
   render(root) {
-    makeIO(root, {
+    const tasks = new Set();
+    let resultBlob = null, resultName = '';
+    const save = h('button', { class: 'btn small hidden', type: 'button', onclick: () => {
+      if (resultBlob) download(resultName, resultBlob);
+    } }, '전체 결과 다운로드');
+    const previewNote = h('div', { class: 'note hidden', role: 'status' });
+    const clearDownload = () => {
+      resultBlob = null;
+      save.classList.add('hidden');
+      previewNote.classList.add('hidden');
+    };
+    const io = makeIO(root, {
       inputs: [{ id: 'input', label: '입력', rows: 6, value: 'LZMA 압축 테스트 '.repeat(5) }],
       options: [
         { id: 'ifmt', label: '입력 형식', type: 'select', values: [['text', '텍스트'], ['base64', 'Base64'], ['hex', 'Hex']] },
@@ -154,29 +165,35 @@ tool({
         { id: 'level', label: '압축 레벨(1~9)', type: 'select', values: [['5', '5'], ['9', '9'], ['1', '1']] },
       ],
       actions: [{ id: 'comp', label: '압축' }, { id: 'decomp', label: '해제' }],
-      autorun: false,
-      async process(text, o, action) {
-        await loadScript(LIB.lzma);
-        const lzma = LZMA;
-        const input = decodeInput(text, o.ifmt);
-        return new Promise((res, rej) => {
-          if (action === 'decomp') {
-            lzma.decompress(Array.from(new Int8Array(input.buffer, input.byteOffset, input.length)), (result, err) => {
-              if (err) return rej(new Error('해제 실패: ' + err));
-              const bytes = typeof result === 'string' ? strToBytes(result) : new Uint8Array(Int8Array.from(result).buffer);
-              enforceArchiveBudget([{ name: '해제 결과', size: bytes.length }], input.length);
-              res(outBytes(bytes, o.ofmt));
-            });
-          } else {
-            lzma.compress(Array.from(input), +o.level, (result, err) => {
-              if (err) return rej(new Error('압축 실패: ' + err));
-              const bytes = new Uint8Array(Int8Array.from(result).buffer);
-              res(outBytes(bytes, o.ofmt) + `\n\n// ${ratio(input.length, bytes.length)}`);
-            });
-          }
-        });
+      autorun: false, cancelable: true,
+      async process(text, o, action, signal) {
+        clearDownload();
+        const result = await runCodecWorker('lzma', action, null, +o.level, signal, tasks, undefined,
+          { text, ifmt: o.ifmt, ofmt: o.ofmt });
+        throwIfAborted(signal);
+        resultBlob = result.blob;
+        resultName = `lzma-${action === 'comp' ? 'compressed' : 'decompressed'}.${o.ofmt}.txt`;
+        save.textContent = `전체 결과 다운로드 (${o.ofmt === 'text' ? '텍스트' : o.ofmt === 'hex' ? 'Hex' : 'Base64'})`;
+        save.classList.remove('hidden');
+        previewNote.textContent = result.truncated
+          ? `결과가 커서 앞부분 ${result.preview.length.toLocaleString()}자만 표시합니다. 복사 버튼도 이 미리보기만 복사합니다. 전체 ${result.characters.toLocaleString()}자는 다운로드하세요.`
+          : '';
+        previewNote.classList.toggle('hidden', !result.truncated);
+        return result.preview
+          + (action === 'comp' ? `\n\n// ${ratio(result.inputLength, result.outputLength)}` : '');
       },
+      note: '자체 LZMA 코덱을 Web Worker에서 실행합니다. .lzma 단독 스트림을 지원하며 .xz·LZMA2는 지원하지 않습니다. '
+        + '입력 최대 256 MiB, 해제 최대 128 MiB·압축률 200:1입니다. 레벨은 사전 크기와 일치 탐색 깊이를 조절하며 압축 결과는 구현에 따라 달라집니다. '
+        + '결과는 최대 32,768자까지 미리 보며, 전체 결과는 선택한 출력 형식으로 다운로드할 수 있습니다. 텍스트는 UTF-8로 해석하므로 바이너리 보존에는 Base64·Hex를 사용하세요. '
+        + '.lzma 형식에는 체크섬이 없어 모든 손상을 검출할 수는 없습니다.',
     });
+    io.out.before(previewNote);
+    io.out.after(save);
+    return () => {
+      clearDownload();
+      io.cancel();
+      for (const cancel of [...tasks]) cancel();
+    };
   },
 });
 
@@ -190,9 +207,11 @@ const CODEC_URLS = {
 };
 const CODEC_WORKER_URL = new URL('../workers/archive-codec.js', import.meta.url);
 
-function runCodecWorker(codec, action, bytes, level, signal, tasks, maxOutputLength) {
+function runCodecWorker(codec, action, bytes, level, signal, tasks, maxOutputLength, presentation) {
+  if (signal?.aborted) return Promise.reject(new DOMException('작업 취소', 'AbortError'));
   if (typeof Worker === 'undefined') return Promise.reject(new Error('이 브라우저는 Web Worker를 지원하지 않습니다.'));
-  const input = bytes.byteOffset === 0 && bytes.byteLength === bytes.buffer.byteLength ? bytes : bytes.slice();
+  const input = presentation ? null
+    : bytes.byteOffset === 0 && bytes.byteLength === bytes.buffer.byteLength ? bytes : bytes.slice();
   return new Promise((resolve, reject) => {
     const worker = new Worker(CODEC_WORKER_URL, { type: 'module' });
     let settled = false;
@@ -210,13 +229,17 @@ function runCodecWorker(codec, action, bytes, level, signal, tasks, maxOutputLen
     tasks.add(cancel);
     signal?.addEventListener('abort', abort, { once: true });
     worker.addEventListener('message', ({ data }) => {
-      finish(data.error ? new Error(data.error) : null, data.output && new Uint8Array(data.output));
+      finish(data.error ? new Error(data.error) : null,
+        presentation ? data.presentation : data.output && new Uint8Array(data.output));
     });
     worker.addEventListener('error', (event) => {
       event.preventDefault();
       finish(new Error(event.message || '압축 Worker를 실행하지 못했습니다.'));
     });
-    worker.postMessage({ codec, action, bytes: input, level, maxOutputLength, urls: CODEC_URLS }, [input.buffer]);
+    try {
+      worker.postMessage({ codec, action, bytes: input, level, maxOutputLength, urls: CODEC_URLS, presentation },
+        input ? [input.buffer] : []);
+    } catch (error) { finish(error); }
   });
 }
 

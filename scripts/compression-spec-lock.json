@@ -104,5 +104,29 @@
       "unicode-path-extra-field"
     ]
   },
-  "reviewed": "2026-09-04"
+  "lzma": {
+    "version": "2015-06-14",
+    "url": "https://www.7-zip.org/a/lzma-specification.7z",
+    "sha384": "sha384-7yeFMABHusP1yu4rpw7TBrE2atwnCd6qgAZjZhP9if93KVgErR1FbRcI9/etFUUD",
+    "supported": ["lzma-alone", "known-size", "end-marker", "lc-0-8", "lp-0-4", "pb-0-4"],
+    "upstream": {
+      "sdkPage": {
+        "url": "https://www.7-zip.org/sdk.html",
+        "sha384": "sha384-yIFreTVZeyHvlAG36LAjEv2fP3+cLaEVmOFcgi98w/Es8EmXQYX2f+oyX6CU/iRh"
+      },
+      "releaseHistory": {
+        "url": "https://www.7-zip.org/history.txt",
+        "sha384": "sha384-ti+ZhRXYBo/7J15fu1vCSpVQoyeNhwB+2FaM1yDMjt8tDtNwaM7VycI5G9FQAD5F"
+      },
+      "containerDescription": {
+        "url": "https://raw.githubusercontent.com/tukaani-project/xz/master/doc/lzma-file-format.txt",
+        "sha384": "sha384-L4+69UcDqABr+ry8cUKW3rVy8gGwNXZx91dnGnM9MAoJCNeESnxdEC9lHjlcsOo0"
+      },
+      "xzSecurity": {
+        "url": "https://tukaani.org/xz/",
+        "sha384": "sha384-5Twfq26PpwwvKnDEEcw1XEmFohxUD3VDcZskTqTw84yiwWCvpKwkz+7sO3N9nUSs"
+      }
+    }
+  },
+  "reviewed": "2026-09-07"
 }

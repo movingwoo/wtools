@@ -50,7 +50,6 @@ HTML_ATTR_PATTERN = re.compile(r'([\w-]+)=["\']([^"\']*)["\']')
 DEPENDENCY_GLOBALS = {
   'cryptoJs': ('CryptoJS',),
   'jsrsasign': ('ASN1HEX', 'KEYUTIL', 'KJUR', 'X509', 'X509CRL', 'hextopem', 'pemtohex'),
-  'lzma': ('LZMA',),
   'bcrypt': ('bcrypt',),
   'hashWasm': ('hashwasm',),
   'tweetnacl': ('nacl',),

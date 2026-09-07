@@ -1,4 +1,4 @@
-function normalizedBase64(value) {
+export function normalizedBase64(value) {
   return String(value).replace(/\s/g, '').replace(/-/g, '+').replace(/_/g, '/');
 }
 

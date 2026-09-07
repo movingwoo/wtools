@@ -7,6 +7,8 @@ import {
   inflateRawSync, inflateSync, zstdDecompressSync,
 } from 'node:zlib';
 import { execFileSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
+import { makeLzma, readLzma, lzmaCorpus, lzmaSpecVectors } from '../fixtures.js';
 
 const MSG = 'hello wtools compression test\n'.repeat(3); // 90바이트
 // 원문 MSG를 다른 구현으로 압축한 벡터: node zlib(gzip/deflate/deflateRaw), python bz2/lzma(FORMAT_ALONE)
@@ -179,7 +181,7 @@ const cases = [
   { name: 'zlib: 잘못된 데이터 해제는 에러', tool: 'zlib', options: { '입력 형식': 'base64' }, inputs: 'AAAA', action: '해제', error: '압축 데이터를 해제하지 못했습니다. 형식과 손상 여부를 확인하세요.' },
   { name: 'raw-deflate: 잘린 데이터 해제는 에러', tool: 'raw-deflate', options: { '입력 형식': 'base64' }, inputs: 'y0jN', action: '해제', error: '압축 데이터를 해제하지 못했습니다. 형식과 손상 여부를 확인하세요.' },
   { name: 'lz4: 매직 넘버가 아니면 에러', tool: 'lz4', options: { '입력 형식': 'base64' }, inputs: 'AAAA', action: '해제', error: 'invalid magic number' },
-  { name: 'lzma: 잘린 입력은 에러', tool: 'lzma', options: { '입력 형식': 'base64' }, inputs: 'AAAA', action: '해제', error: '해제 실패: Error: truncated input' },
+  { name: 'lzma: 잘린 입력은 에러', tool: 'lzma', options: { '입력 형식': 'base64' }, inputs: 'AAAA', action: '해제', error: 'LZMA 입력이 잘렸습니다. 최소 18바이트가 필요합니다.' },
   { name: 'bzip2: bzip2 데이터가 아니면 에러', tool: 'bzip2', io: 0, options: { '입력 형식': 'base64' }, inputs: 'AAAA', action: '해제', error: 'Not bzip data: bad magic' },
 
   { name: 'brotli: node zlib 벡터 해제', tool: 'brotli', options: B64, inputs: V.brotli, action: '해제', output: MSG },
@@ -189,6 +191,331 @@ const cases = [
 ];
 
 toolCases('archive', cases);
+
+/* ---------- First-party LZMA engine ---------- */
+
+test('lzma 자체 코덱: 공개 명세의 정상 4개·손상 3개 예제', async ({ page }) => {
+  const { plain, good, bad } = lzmaSpecVectors();
+  good.forEach((bytes) => expect(readLzma(bytes)).toEqual(plain));
+  await page.goto('/');
+  const result = await page.evaluate(async ({ good, bad }) => {
+    const { decompress } = await import('/js/lib/archive/lzma.js');
+    const { b64ToBytes, bytesToB64 } = await import('/js/lib/common/base64.js');
+    return {
+      outputs: good.map((value) => bytesToB64(decompress(b64ToBytes(value)))),
+      errors: bad.map((value) => {
+        try { decompress(b64ToBytes(value)); return ''; }
+        catch (error) { return error.message; }
+      }),
+    };
+  }, { good: good.map((b) => b.toString('base64')), bad: bad.map((b) => b.toString('base64')) });
+  expect(result.outputs).toEqual(good.map(() => plain.toString('base64')));
+  result.errors.forEach((error) => expect(error).toMatch(/LZMA .*입력 바이트/));
+});
+
+for (const level of [1, 5, 9]) {
+  test(`lzma 자체 압축기: 레벨 ${level} 빈 입력·바이너리·장거리·1 MiB Python 교차 검증`, async ({ page }) => {
+    const corpus = lzmaCorpus();
+    await page.goto('/');
+    const outputs = await page.evaluate(async ({ corpus, level }) => {
+      const { compress } = await import('/js/lib/archive/lzma.js');
+      const { b64ToBytes, bytesToB64 } = await import('/js/lib/common/base64.js');
+      return corpus.map((value) => bytesToB64(compress(b64ToBytes(value), { level })));
+    }, { corpus: corpus.map((b) => b.toString('base64')), level });
+    for (let i = 0; i < corpus.length; i++) {
+      const packed = Buffer.from(outputs[i], 'base64');
+      expect(readLzma(packed)).toEqual(corpus[i]);
+      expect(packed.readUInt32LE(1)).toBe({ 1: 65536, 5: 2097152, 9: 33554432 }[level]);
+      expect(packed.readBigUInt64LE(5)).toBe(BigInt(corpus[i].length));
+      if (i === 3) expect(packed.length).toBeLessThan(corpus[i].length / 4);
+    }
+  });
+}
+
+test('lzma 자체 해제기: Python 레벨·속성·사전·장거리 참조와 1 MiB 데이터', async ({ page }) => {
+  const corpus = lzmaCorpus();
+  const vectors = corpus.map((source) => ({ source, packed: makeLzma(source) }));
+  for (const preset of [0, 1, 5, 9]) vectors.push({ source: corpus[5], packed: makeLzma(corpus[5], { preset }) });
+  for (let lc = 0; lc <= 4; lc++) for (let lp = 0; lc + lp <= 4; lp++) {
+    for (const pb of [0, 1, 4]) vectors.push({
+      source: corpus[3], packed: makeLzma(corpus[3], { lc, lp, pb, dict_size: 4096 }),
+    });
+  }
+  await page.goto('/');
+  const digests = await page.evaluate(async (encoded) => {
+    const { decompress } = await import('/js/lib/archive/lzma.js');
+    const { b64ToBytes } = await import('/js/lib/common/base64.js');
+    return Promise.all(encoded.map(async (value) => {
+      const output = decompress(b64ToBytes(value));
+      const digest = await crypto.subtle.digest('SHA-256', output);
+      return Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, '0')).join('');
+    }));
+  }, vectors.map(({ packed }) => packed.toString('base64')));
+  expect(digests).toEqual(vectors.map(({ source }) => createHash('sha256').update(source).digest('hex')));
+});
+
+test('lzma 자체 해제기: 모든 잘린 접두사·손상 종료·후행 데이터·과대 출력을 거부', async ({ page }) => {
+  const { good } = lzmaSpecVectors();
+  const bomb = makeLzma(Buffer.alloc(1024 * 1024, 65));
+  await page.goto('/');
+  const result = await page.evaluate(async ({ encoded, bomb }) => {
+    const { decompress, compress } = await import('/js/lib/archive/lzma.js');
+    const { b64ToBytes } = await import('/js/lib/common/base64.js');
+    const vectors = encoded.map(b64ToBytes);
+    const message = (bytes, options) => {
+      try { decompress(bytes, options); return ''; }
+      catch (error) { return error.message; }
+    };
+    const prefixes = vectors.flatMap((bytes) => Array.from({ length: bytes.length }, (_, i) => message(bytes.slice(0, i))));
+    const property = vectors[0].slice(); property[0] = 225;
+    const initial = vectors[0].slice(); initial[13] = 1;
+    const end = vectors[1].slice(); end[end.length - 1] ^= 1;
+    const huge = vectors[0].slice(); huge.fill(0xff, 5, 13); huge[5] = 0xfe;
+    const trailing = new Uint8Array(vectors[0].length + 1); trailing.set(vectors[0]);
+    const largeDictionary = vectors[0].slice(); largeDictionary.fill(0xff, 1, 5);
+    const allProperties = Array.from({ length: 225 }, (_, property) => {
+      const empty = new Uint8Array(18); empty[0] = property;
+      return decompress(empty).length;
+    });
+    const invalidOptions = [-1, 0.5, NaN, Infinity, 128 * 1024 * 1024 + 1]
+      .map((maxOutputLength) => message(vectors[0], { maxOutputLength }));
+    let invalidLevel = '';
+    try { compress(new Uint8Array(), { level: 10 }); } catch (error) { invalidLevel = error.message; }
+    return {
+      prefixes, property: message(property), initial: message(initial), end: message(end),
+      huge: message(huge), trailing: message(trailing), bomb: message(b64ToBytes(bomb)),
+      knownLimit: message(vectors[0], { maxOutputLength: 326 }),
+      unknownLimit: message(vectors[1], { maxOutputLength: 326 }),
+      exactLimit: decompress(vectors[1], { maxOutputLength: 327 }).length,
+      largeDictionary: decompress(largeDictionary).length, allProperties, invalidOptions, invalidLevel,
+    };
+  }, { encoded: good.map((b) => b.toString('base64')), bomb: bomb.toString('base64') });
+  result.prefixes.forEach((error) => expect(error).toMatch(/LZMA/));
+  for (const key of ['property', 'initial', 'end', 'huge', 'trailing', 'bomb', 'knownLimit', 'unknownLimit'])
+    expect(result[key], key).toMatch(/LZMA/);
+  expect(result.bomb).toContain('안전 한도');
+  expect(result.exactLimit).toBe(327);
+  expect(result.largeDictionary).toBe(327);
+  expect(result.allProperties).toEqual(Array(225).fill(0));
+  result.invalidOptions.forEach((error) => expect(error).toContain('한도'));
+  expect(result.invalidLevel).toContain('압축 레벨');
+});
+
+test('lzma 자체 해제기: 모든 페이로드 단일 비트 변이를 중복 없이 Python과 교차 검증', async ({ page }) => {
+  const source = makeLzma(lzmaCorpus()[3]);
+  const mutations = Array.from({ length: (source.length - 13) * 8 }, (_, i) => {
+    const bytes = Buffer.from(source);
+    bytes[13 + Math.floor(i / 8)] ^= 1 << (i % 8);
+    return bytes.toString('base64');
+  });
+  expect(mutations.length).toBeGreaterThanOrEqual(256);
+  expect(new Set(mutations).size).toBe(mutations.length);
+  const expected = JSON.parse(execFileSync('python3', ['-c', `
+import base64, json, lzma, sys
+results = []
+for encoded in json.load(sys.stdin):
+    try:
+        decoder = lzma.LZMADecompressor(format=lzma.FORMAT_ALONE, memlimit=32*1024*1024)
+        output = decoder.decompress(base64.b64decode(encoded), max_length=65537)
+        results.append(base64.b64encode(output).decode() if decoder.eof and not decoder.unused_data and len(output) <= 65536 else None)
+    except lzma.LZMAError:
+        results.append(None)
+json.dump(results, sys.stdout)
+`], { input: JSON.stringify(mutations), encoding: 'utf8' }));
+  await page.goto('/');
+  const actual = await page.evaluate(async (mutations) => {
+    const { decompress } = await import('/js/lib/archive/lzma.js');
+    const { b64ToBytes, bytesToB64 } = await import('/js/lib/common/base64.js');
+    return mutations.map((value) => {
+      try { return bytesToB64(decompress(b64ToBytes(value), { maxOutputLength: 65536, maxRatio: 65536 })); }
+      catch { return null; }
+    });
+  }, mutations);
+  expect(actual).toEqual(expected);
+});
+
+test('lzma: 큰 결과는 제한된 미리보기와 손실 없는 전체 형식 다운로드로 제공', async ({ page }) => {
+  const block = lzmaCorpus()[4].subarray(0, 4096);
+  const plain = Buffer.concat(Array.from({ length: 32 }, () => block));
+  const compressed = makeLzma(plain);
+  await page.addInitScript(() => {
+    const NativeWorker = window.Worker;
+    window.__lzmaPresentation = [];
+    window.Worker = class extends NativeWorker {
+      constructor(...args) {
+        super(...args);
+        this.addEventListener('message', ({ data }) => {
+          if (data.presentation) window.__lzmaPresentation.push({
+            previewLength: data.presentation.preview.length,
+            hasBlob: data.presentation.blob instanceof Blob,
+            hasRawOutput: 'output' in data,
+          });
+        });
+      }
+    };
+  });
+  await openTool(page, 'lzma');
+  const io = ioSection(page);
+  for (const format of ['hex', 'base64', 'text']) {
+    const output = await runIO(io, {
+      inputs: compressed.toString('base64'),
+      options: { '입력 형식': 'base64', '출력 형식': format }, action: '해제',
+    });
+    const expected = format === 'text' ? new TextDecoder().decode(plain) : plain.toString(format);
+    expect(output.length).toBeLessThanOrEqual(32768);
+    // HTML textareas normalize CR/CRLF to LF; the download must retain decoded text exactly.
+    expect(expected.replace(/\r\n?/g, '\n').startsWith(output)).toBe(true);
+    await expect(io.getByText(/복사 버튼도 이 미리보기만 복사합니다/)).toBeVisible();
+    const saved = await grabDownload(page, () => io.getByRole('button', { name: /전체 결과 다운로드/ }).click());
+    expect(saved.name).toBe(`lzma-decompressed.${format}.txt`);
+    expect(saved.bytes.toString('utf8')).toBe(expected);
+  }
+  const messages = await page.evaluate(() => window.__lzmaPresentation);
+  expect(messages).toHaveLength(3);
+  for (const item of messages) expect(item).toEqual({ previewLength: expect.any(Number), hasBlob: true, hasRawOutput: false });
+  await runIO(io, { inputs: '%%%%', options: { '입력 형식': 'base64' }, action: '해제' });
+  await expect(io.getByRole('button', { name: /전체 결과 다운로드/ })).toBeHidden();
+  await expect(io.getByText(/복사 버튼도 이 미리보기만 복사합니다/)).toBeHidden();
+});
+
+test('lzma 출력 변환: 청크 경계·UTF-8·입력 한도·빈 다운로드를 검증', async ({ page }) => {
+  await page.goto('/');
+  const results = await page.evaluate(async () => {
+    const { decodeLzmaInput, formatLzmaOutput, LZMA_PREVIEW_CHARS } = await import('/js/lib/archive/lzma-io.js');
+    const { bytesToB64 } = await import('/js/lib/common/base64.js');
+    const inputs = [new Uint8Array(), new Uint8Array([0xff]), new Uint8Array([0, 0xff]),
+      new TextEncoder().encode('a'.repeat(24575) + '🌏한글' + 'b'.repeat(8283) + '🌏끝'),
+      new TextEncoder().encode('x'.repeat(32767) + '🌏'),
+      new Uint8Array([0xef, 0xbb, 0xbf, 0, 0xff, 0xe2, 0x82])];
+    const formatted = [];
+    for (const bytes of inputs) {
+      for (const format of ['text', 'hex', 'base64']) {
+        const expected = format === 'text' ? new TextDecoder().decode(bytes)
+          : format === 'hex' ? Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('')
+            : bytesToB64(bytes);
+        const result = formatLzmaOutput(bytes, format);
+        formatted.push(await result.blob.text() === expected
+          && expected.startsWith(result.preview) && result.preview.length <= LZMA_PREVIEW_CHARS
+          && result.characters === expected.length && result.truncated === (expected.length > LZMA_PREVIEW_CHARS)
+          && !/[\ud800-\udbff]$/.test(result.preview));
+      }
+    }
+    const invalid = [['한', 'text', 2], ['🌏', 'text', 3], ['\ud800', 'text', 2],
+      ['0xff 01', 'hex', 1], ['YWI=', 'base64', 1], ['A', 'base64', 4], ['zz', 'hex', 4]];
+    const errors = invalid.map(([text, format, limit]) => {
+      try { decodeLzmaInput(text, format, limit); return ''; } catch (error) { return error.message; }
+    });
+    const valid = [['한🌏', 'text', 7], ['\ud800', 'text', 3], ['0xff 01', 'hex', 2],
+      [' YW I= ', 'base64', 2], ['-_8', 'base64', 2], ['', 'text', 0]];
+    return { formatted, errors, lengths: valid.map(([text, format, limit]) => decodeLzmaInput(text, format, limit).length) };
+  });
+  expect(results.formatted.every(Boolean)).toBe(true);
+  results.errors.forEach((message) => expect(message).toMatch(/안전 한도|올바른/));
+  expect(results.lengths).toEqual([7, 3, 2, 2, 2, 0]);
+});
+
+test('lzma: 지연 로드 실패를 안내하고 재시도·직접 URL 새로고침·좁은 화면에서 실행', async ({ page }) => {
+  const requested = [];
+  page.on('request', (request) => requested.push(request.url()));
+  await page.goto('/');
+  expect(requested.some((url) => url.includes('/archive/lzma.js'))).toBe(false);
+  await openTool(page, 'lzma');
+  await page.reload();
+  expect(requested.some((url) => url.includes('/archive/lzma.js'))).toBe(false);
+  await page.route('**/js/lib/archive/lzma.js', (route) => route.fulfill({
+    contentType: 'application/javascript', body: 'throw new Error("simulated engine load failure");',
+  }));
+  const io = ioSection(page);
+  await io.locator('textarea.mono:not(.out)').fill('재시도와 바이너리 보존');
+  await io.getByRole('button', { name: '압축', exact: true }).click();
+  await expect(io.locator('textarea.out')).toHaveValue(/LZMA 코덱을 불러오지 못했습니다\./);
+  await page.unroute('**/js/lib/archive/lzma.js');
+  const source = Buffer.from([0, 255, 128, 192, 0, 65, 13, 10]);
+  const packed = await runIO(io, {
+    inputs: source.toString('hex'), options: { '입력 형식': 'hex' }, action: '압축',
+  });
+  expect(readLzma(Buffer.from(packed.split('\n')[0], 'base64'))).toEqual(source);
+  await page.setViewportSize({ width: 375, height: 812 });
+  for (const colorScheme of ['light', 'dark']) {
+    await page.emulateMedia({ colorScheme });
+    const back = await runIO(io, {
+      inputs: packed.split('\n')[0], options: { '입력 형식': 'base64', '출력 형식': 'hex' }, action: '해제',
+    });
+    expect(back).toBe(source.toString('hex'));
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  }
+  expect(requested.some((url) => url.includes('/lzma@'))).toBe(false);
+});
+
+test('lzma: 취소와 도구 이탈이 Worker를 종료하고 재실행 결과를 보존', async ({ page }) => {
+  await page.addInitScript(() => {
+    const NativeWorker = window.Worker;
+    window.__lzmaWorkers = [];
+    window.__lzmaTerminations = 0;
+    window.Worker = class extends NativeWorker {
+      constructor(url, options) {
+        super(url, options);
+        window.__lzmaWorkers.push({ url: String(url), type: options.type });
+      }
+      // Deterministically keep the task in flight long enough to cancel it.
+      postMessage(...args) { this.pending = setTimeout(() => super.postMessage(...args), 500); }
+      terminate() {
+        clearTimeout(this.pending);
+        window.__lzmaTerminations++;
+        return super.terminate();
+      }
+    };
+  });
+  await openTool(page, 'lzma');
+  const io = ioSection(page);
+  await io.locator('textarea.mono:not(.out)').evaluate((element) => {
+    element.value = 'large LZMA input '.repeat(100000);
+    element.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+  await io.getByRole('button', { name: '압축', exact: true }).click();
+  await io.getByRole('button', { name: '그래도 처리', exact: true }).click();
+  await io.getByRole('button', { name: '취소', exact: true }).click();
+  await expect(io.locator('.io-status')).toHaveText('작업이 취소되었습니다.');
+  expect(await page.evaluate(() => window.__lzmaTerminations)).toBe(1);
+  await io.getByRole('button', { name: '압축', exact: true }).click();
+  await page.evaluate(() => { location.hash = '#/tool/base64'; });
+  await expect(page.locator('.tool-header h1')).toHaveText('Base64 인코딩/디코딩');
+  expect(await page.evaluate(() => window.__lzmaTerminations)).toBe(2);
+  await page.evaluate(() => { location.hash = '#/tool/lzma'; });
+  await expect(page.locator('.tool-header h1')).toHaveText('LZMA 압축/해제');
+  await ioSection(page).locator('textarea.mono:not(.out)').fill('');
+  await ioSection(page).getByRole('button', { name: '압축', exact: true }).click();
+  await expect(ioSection(page).locator('textarea.out')).toHaveValue(/원본 0B/);
+  const output = await ioSection(page).locator('textarea.out').inputValue();
+  expect(readLzma(Buffer.from(output.split('\n')[0], 'base64'))).toEqual(Buffer.alloc(0));
+  const workers = await page.evaluate(() => window.__lzmaWorkers);
+  expect(workers).toHaveLength(3);
+  workers.forEach(({ url, type }) => {
+    expect(url).toContain('/js/workers/archive-codec.js');
+    expect(type).toBe('module');
+  });
+});
+
+test('lzma Worker: 전달된 입력 버퍼 소유권과 빈 해제 결과', async ({ page }) => {
+  const packed = makeLzma(Buffer.alloc(0)).toString('base64');
+  await page.goto('/');
+  const result = await page.evaluate(async (packed) => {
+    const { b64ToBytes } = await import('/js/lib/common/base64.js');
+    const bytes = b64ToBytes(packed);
+    const worker = new Worker('/js/workers/archive-codec.js', { type: 'module' });
+    try {
+      const pending = new Promise((resolve, reject) => {
+        worker.onmessage = ({ data }) => data.error ? reject(new Error(data.error)) : resolve(data.output);
+        worker.onerror = reject;
+      });
+      worker.postMessage({ codec: 'lzma', action: 'decomp', bytes, maxOutputLength: 0 }, [bytes.buffer]);
+      const detachedLength = bytes.byteLength;
+      const output = await pending;
+      return { detachedLength, outputLength: output.byteLength, typed: output instanceof Uint8Array };
+    } finally { worker.terminate(); }
+  }, packed);
+  expect(result).toEqual({ detachedLength: 0, outputLength: 0, typed: true });
+});
 
 /* ---------- First-party DEFLATE engine ---------- */
 

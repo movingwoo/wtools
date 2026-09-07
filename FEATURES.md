@@ -200,7 +200,7 @@
 - Brotli 압축/해제 (품질 레벨, 텍스트·Base64·Hex 및 파일, Worker 처리)
 - Bzip2 해제 (텍스트·Base64·Hex 및 파일, Worker 처리)
 - Zstandard 압축/해제 (압축 레벨, 텍스트·Base64·Hex 및 파일, Worker 처리)
-- LZMA 압축/해제
+- LZMA 압축/해제 (자체 range coder·사전·상태 머신, .lzma 단독 형식, 원본 길이·종료 표식 검증, 레벨 1/5/9, 입출력 변환까지 Worker·취소, 최대 32,768자 미리보기와 전체 텍스트·Base64·Hex 다운로드, 입력 256 MiB·해제 128 MiB·압축률 200:1 한도, .xz·LZMA2 미지원, 형식 자체에 체크섬 없음)
 - LZ4 압축/해제
 - Zip 압축/해제 (자체 ZIP/DEFLATE 엔진, 중앙·로컬 헤더 및 data descriptor 검증, UTF-8·CP437 파일명, CRC-32, 안전한 경로·중복·심볼릭 링크·항목 범위 검사, 항목·크기·압축률 상한, Worker·취소)
 - Tar/USTAR 아카이브/해제 (헤더 체크섬, UTF-8 긴 경로, 안전한 경로, 항목·크기·압축률 상한)

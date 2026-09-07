@@ -5,7 +5,7 @@ function localModuleUrl(value) {
   return url.href;
 }
 
-self.onmessage = async ({ data: { codec, action, bytes, level, maxOutputLength, urls } }) => {
+self.onmessage = async ({ data: { codec, action, bytes, level, maxOutputLength, urls, presentation } }) => {
   try {
     let result;
     if (['gzip', 'zlib', 'raw-deflate'].includes(codec)) {
@@ -13,6 +13,29 @@ self.onmessage = async ({ data: { codec, action, bytes, level, maxOutputLength, 
       result = action === 'comp'
         ? await compress(bytes, { format: codec, level })
         : await decompress(bytes, { format: codec, maxOutputLength });
+    } else if (codec === 'lzma') {
+      let module, io;
+      try {
+        module = await import('../lib/archive/lzma.js');
+        if (presentation) io = await import('../lib/archive/lzma-io.js');
+      }
+      catch (error) {
+        throw new Error('LZMA 코덱을 불러오지 못했습니다. 연결 상태를 확인하고 다시 실행하세요.', { cause: error });
+      }
+      if (presentation) {
+        bytes = io.decodeLzmaInput(presentation.text, presentation.ifmt);
+        maxOutputLength = Math.min(128 * 1024 * 1024, bytes.length * 200);
+      }
+      if (action === 'comp') result = module.compress(bytes, { level });
+      else if (action === 'decomp') result = module.decompress(bytes, { maxOutputLength });
+      else throw new Error('지원하지 않는 LZMA 작업입니다.');
+      if (presentation) {
+        self.postMessage({ presentation: {
+          ...io.formatLzmaOutput(result, presentation.ofmt),
+          inputLength: bytes.length, outputLength: result.length,
+        } });
+        return;
+      }
     } else if (codec === 'brotli') {
       if (action === 'comp') {
         const module = await import(localModuleUrl(urls.brotliCompress));

@@ -42,8 +42,8 @@ test('구형 기준 엔진에서 자체 DEFLATE·ZIP과 압축 Worker가 동작�
     }
 
     const worker = new Worker('/js/workers/archive-codec.js', { type: 'module' });
-    const request = (payload, transfer) => new Promise((resolve, reject) => {
-      worker.onmessage = ({ data }) => data.error ? reject(new Error(data.error)) : resolve(data.output);
+    const request = (payload, transfer = []) => new Promise((resolve, reject) => {
+      worker.onmessage = ({ data }) => data.error ? reject(new Error(data.error)) : resolve(data.presentation || data.output);
       worker.onerror = ({ message }) => reject(new Error(message));
       worker.postMessage(payload, transfer);
     });
@@ -53,6 +53,16 @@ test('구형 기준 엔진에서 자체 DEFLATE·ZIP과 압축 Worker가 동작�
     const unpacked = await request({
       codec: 'gzip', action: 'decomp', bytes: packed, level: 1, maxOutputLength: source.length,
     }, [packed.buffer]);
+    const lzmaInput = source.slice();
+    const lzmaPacked = await request({ codec: 'lzma', action: 'comp', bytes: lzmaInput, level: 5 },
+      [lzmaInput.buffer]);
+    const { bytesToB64 } = await import('/js/lib/common/base64.js');
+    const lzmaText = await request({ codec: 'lzma', action: 'decomp', presentation: {
+      text: bytesToB64(lzmaPacked), ifmt: 'base64', ofmt: 'text',
+    } });
+    const lzmaOutput = await request({
+      codec: 'lzma', action: 'decomp', bytes: lzmaPacked, maxOutputLength: source.length,
+    }, [lzmaPacked.buffer]);
     worker.terminate();
 
     const { runZipWorker } = await import('/js/lib/archive/zip-worker-client.js');
@@ -64,6 +74,9 @@ test('구형 기준 엔진에서 자체 DEFLATE·ZIP과 압축 Worker가 동작�
     return {
       formats,
       worker: decoder.decode(unpacked),
+      lzma: decoder.decode(lzmaOutput),
+      lzmaPreview: lzmaText.preview,
+      lzmaDownload: await lzmaText.blob.text(),
       zip: { name: zipEntry.name, text: decoder.decode(zipEntry.data) },
     };
   });
@@ -71,6 +84,9 @@ test('구형 기준 엔진에서 자체 DEFLATE·ZIP과 압축 Worker가 동작�
   expect(result).toEqual({
     formats: { gzip: expected, zlib: expected, 'raw-deflate': expected },
     worker: expected,
+    lzma: expected,
+    lzmaPreview: expected,
+    lzmaDownload: expected,
     zip: { name: '한글.txt', text: expected },
   });
 });

@@ -6,6 +6,38 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import zlib from 'node:zlib';
 
+// WPT compression/resources/decompression-input.js at the pinned WPT commit in
+// scripts/compression-spec-lock.json. Materialize the public vector at run time.
+export function brotliWptVector() {
+  return { plain: Buffer.from('expected output'), packed: Buffer.from('213800046578706563746564206f757470757403', 'hex') };
+}
+
+export function brotliCorpus() {
+  let seed = 0x62726f74;
+  const noise = Buffer.alloc(1024 * 1024 + 1);
+  for (let i = 0; i < noise.length; i++) {
+    seed ^= seed << 13; seed ^= seed >>> 17; seed ^= seed << 5;
+    noise[i] = seed & 255;
+  }
+  const samples = [Buffer.alloc(0), Buffer.from([255]), brotliWptVector().plain,
+    Buffer.from('Brotli 한글·NUL\0·이모지 🌏\n'.repeat(120)),
+    Buffer.from(Array.from({ length: 256 }, (_, i) => i)),
+    Buffer.alloc(70000, 97), Buffer.alloc(2 * 1024 * 1024 + 1, 255)];
+  for (const size of [3, 4, 5, 65535, 65536, 65537, 1048575, 1048576, 1048577])
+    samples.push(noise.subarray(0, size));
+  // Explicit long distances, non-zero offsets and mixed raw/compressed blocks.
+  samples.push(Buffer.concat([noise.subarray(0, 400000), noise.subarray(0, 350000)]));
+  samples.push(Buffer.concat([noise.subarray(0, 1048576), Buffer.alloc(1048576, 0), noise.subarray(0, 77)]));
+  // Vary literal/command/distance histograms, overlapping copies and run lengths.
+  for (let run = 0; run < 96; run++) {
+    const bytes = Buffer.alloc(40 + run * 31), alphabet = 1 + run * 47 % 256;
+    for (let i = 0; i < bytes.length; i++) bytes[i] = noise[(run * 253 + i) % noise.length] % alphabet;
+    if (run % 3 === 0) for (let i = 21; i < bytes.length; i++) if (i % 5) bytes[i] = bytes[i - 17];
+    samples.push(bytes);
+  }
+  return samples;
+}
+
 // Independent liblzma oracle. Binary material is generated at test time.
 export function makeLzma(input, options = {}) {
   return execFileSync('python3', ['-c', `

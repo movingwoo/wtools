@@ -63,6 +63,14 @@ test('구형 기준 엔진에서 자체 DEFLATE·ZIP과 압축 Worker가 동작�
     const lzmaOutput = await request({
       codec: 'lzma', action: 'decomp', bytes: lzmaPacked, maxOutputLength: source.length,
     }, [lzmaPacked.buffer]);
+    const brotliPacked = await request({ codec: 'brotli', action: 'comp', bytes: source.slice(), level: 11 });
+    const brotliText = await request({ codec: 'brotli', action: 'decomp',
+      presentation: { text: bytesToB64(brotliPacked), ifmt: 'base64', ofmt: 'text' },
+      urls: { brotliDecompress: '/assets/vendor/brotli-decompress-1.3.3.mjs' },
+    });
+    const brotliOutput = await request({ codec: 'brotli', action: 'decomp', bytes: brotliPacked,
+      urls: { brotliDecompress: '/assets/vendor/brotli-decompress-1.3.3.mjs' },
+    }, [brotliPacked.buffer]);
     worker.terminate();
 
     const { runZipWorker } = await import('/js/lib/archive/zip-worker-client.js');
@@ -75,6 +83,9 @@ test('구형 기준 엔진에서 자체 DEFLATE·ZIP과 압축 Worker가 동작�
       formats,
       worker: decoder.decode(unpacked),
       lzma: decoder.decode(lzmaOutput),
+      brotli: decoder.decode(brotliOutput),
+      brotliPreview: brotliText.preview,
+      brotliDownload: await brotliText.blob.text(),
       lzmaPreview: lzmaText.preview,
       lzmaDownload: await lzmaText.blob.text(),
       zip: { name: zipEntry.name, text: decoder.decode(zipEntry.data) },
@@ -85,6 +96,9 @@ test('구형 기준 엔진에서 자체 DEFLATE·ZIP과 압축 Worker가 동작�
     formats: { gzip: expected, zlib: expected, 'raw-deflate': expected },
     worker: expected,
     lzma: expected,
+    brotli: expected,
+    brotliPreview: expected,
+    brotliDownload: expected,
     lzmaPreview: expected,
     lzmaDownload: expected,
     zip: { name: '한글.txt', text: expected },

@@ -31,6 +31,32 @@ test('홈 화면이 렌더링된다', async ({ page, pageErrors }) => {
   expect(await page.locator('#nav a[data-id]').count()).toBeGreaterThan(30);
 });
 
+test('Brotli 자체 압축기가 모든 브라우저에서 레벨별 Unicode를 보존한다', async ({ page }) => {
+  await page.goto('/#/tool/brotli');
+  const io = page.locator('#content .io').first();
+  for (const level of ['1', '6', '11']) {
+    await io.getByLabel('입력 형식').selectOption('text');
+    await io.getByLabel('출력 형식').selectOption('base64');
+    await io.getByLabel('압축 레벨', { exact: true }).selectOption(level);
+    await io.locator('textarea.mono:not(.out)').fill('Brotli 브라우저 호환 🌏'.repeat(20));
+    await io.getByRole('button', { name: '압축', exact: true }).click();
+    await expect(io.locator('textarea.out')).toHaveValue(/원본/);
+    const packed = (await io.locator('textarea.out').inputValue()).split('\n')[0];
+    await io.getByLabel('입력 형식').selectOption('base64');
+    await io.getByLabel('출력 형식').selectOption('text');
+    await io.locator('textarea.mono:not(.out)').fill(packed);
+    await io.getByRole('button', { name: '해제', exact: true }).click();
+    await expect(io.locator('textarea.out')).toHaveValue('Brotli 브라우저 호환 🌏'.repeat(20));
+  }
+  const [saved] = await Promise.all([
+    page.waitForEvent('download'),
+    io.getByRole('button', { name: '전체 결과 다운로드 (텍스트)', exact: true }).click(),
+  ]);
+  const chunks = [];
+  for await (const chunk of await saved.createReadStream()) chunks.push(chunk);
+  expect(Buffer.concat(chunks).toString()).toBe('Brotli 브라우저 호환 🌏'.repeat(20));
+});
+
 test('LZMA 자체 Worker가 공개 벡터를 해제하고 Unicode를 압축한다', async ({ page }) => {
   await page.goto('/#/tool/lzma');
   const io = page.locator('#content .io');

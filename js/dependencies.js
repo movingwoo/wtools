@@ -59,16 +59,6 @@ globalThis.WTOOLS_DEPENDENCIES = {
       "license": "MIT",
       "tools": ["js/tools/hashing.js", "js/workers/file-hash.js"]
     },
-    "brotliCompress": {
-      "package": "brotli-compress",
-      "version": "1.3.3",
-      "path": "assets/vendor/brotli-compress-1.3.3.mjs",
-      "integrity": "sha384-/hg6ctFoDqW/LRdLeiuUW28NL+RL+R+ninNkKzNIAMf9PzcllGfuNUN9p23y0DLc",
-      "source": "https://cdn.jsdelivr.net/npm/brotli-compress@1.3.3/index.mjs",
-      "sourceIntegrity": "sha384-/hg6ctFoDqW/LRdLeiuUW28NL+RL+R+ninNkKzNIAMf9PzcllGfuNUN9p23y0DLc",
-      "license": "Apache-2.0",
-      "tools": ["js/tools/archive.js"]
-    },
     "brotliDecompress": {
       "package": "brotli",
       "version": "1.3.3",

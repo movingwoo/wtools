@@ -37,13 +37,45 @@ self.onmessage = async ({ data: { codec, action, bytes, level, maxOutputLength, 
         return;
       }
     } else if (codec === 'brotli') {
+      let io;
+      if (presentation) {
+        try { io = await import('../lib/archive/codec-io.js'); }
+        catch (error) {
+          throw new Error('Brotli 입출력 모듈을 불러오지 못했습니다. 연결 상태를 확인하고 다시 실행하세요.', { cause: error });
+        }
+        bytes = io.decodeCodecInput(presentation.text, presentation.ifmt, undefined, 'Brotli');
+      }
+      if (bytes.length > 256 * 1024 * 1024) throw new Error('Brotli 입력이 안전 한도 256 MiB를 넘습니다.');
+      const inputLength = bytes.length;
       if (action === 'comp') {
-        const module = await import(localModuleUrl(urls.brotliCompress));
-        result = await module.compress(bytes, { quality: level });
-      } else {
-        const module = await import(localModuleUrl(urls.brotliDecompress));
+        let module;
+        try { module = await import('../lib/archive/brotli-encode.js'); }
+        catch (error) {
+          throw new Error('Brotli 압축기를 불러오지 못했습니다. 연결 상태를 확인하고 다시 실행하세요.', { cause: error });
+        }
+        result = module.compress(bytes, { quality: level });
+      } else if (action === 'decomp') {
+        let module;
+        try { module = await import(localModuleUrl(urls.brotliDecompress)); }
+        catch (error) {
+          throw new Error('Brotli 해제기를 불러오지 못했습니다. 연결 상태를 확인하고 다시 실행하세요.', { cause: error });
+        }
         const decompress = module.default || module.decompress || module;
-        result = decompress(bytes);
+        try { result = decompress(bytes); }
+        catch (error) {
+          throw new Error('올바른 Brotli 데이터가 아니거나 지원하지 않는 형식입니다.', { cause: error });
+        }
+        // The legacy decoder has no streaming limit API. Reject before transfer
+        // or formatting; enforcing the limit during decoding needs its replacement.
+        if (result.length > 128 * 1024 * 1024 || result.length > inputLength * 200)
+          throw new Error('Brotli 해제 결과가 안전 한도(128 MiB·압축률 200:1)를 넘습니다.');
+      } else throw new Error('지원하지 않는 Brotli 작업입니다.');
+      if (presentation) {
+        self.postMessage({ presentation: {
+          ...io.formatCodecOutput(result, presentation.ofmt, 'Brotli'),
+          inputLength, outputLength: result.length,
+        } });
+        return;
       }
     } else if (codec === 'zstd') {
       if (action === 'comp') {

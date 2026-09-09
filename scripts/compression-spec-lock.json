@@ -88,6 +88,29 @@
           "status": "Verified"
         }
       ]
+    },
+    "7932": {
+      "format": "brotli",
+      "url": "https://www.rfc-editor.org/rfc/rfc7932.txt",
+      "sha384": "sha384-ppB4BP46duUCIItJtsv/jdTvLvUFSwfxPd2yb+Jovgg71wL5DDyoi8wHRjFbgWxW",
+      "errataUrl": "https://www.rfc-editor.org/errata/rfc7932",
+      "errata": [
+        {
+          "id": 5948,
+          "status": "Verified"
+        },
+        {
+          "id": 6977,
+          "status": "Reported"
+        }
+      ]
+    },
+    "9841": {
+      "format": "shared-brotli",
+      "url": "https://www.rfc-editor.org/rfc/rfc9841.txt",
+      "sha384": "sha384-+h2qK8qjPKXqxJL1T1vQKWYguTQwRYTsdEQc8Wz/ddj/G2bhGbIrcG8hzXjkd0u/",
+      "errataUrl": "https://www.rfc-editor.org/errata/rfc9841",
+      "errata": []
     }
   },
   "zip": {
@@ -128,5 +151,24 @@
       }
     }
   },
-  "reviewed": "2026-09-07"
+  "reviewed": "2026-09-09",
+  "brotli": {
+    "supported": [
+      "rfc7932"
+    ],
+    "upstream": {
+      "rfcMetadata": {
+        "url": "https://www.rfc-editor.org/rfc/rfc7932.json",
+        "sha384": "sha384-n0/pWkzJxUS0xxm7/gmQ1ctWNHjnAyXNAZ0muXeMZYHhBdt81+IaA7aT8oVvMSiI"
+      },
+      "releases": {
+        "url": "https://api.github.com/repos/google/brotli/releases?per_page=100",
+        "sha384": "sha384-plZUtMkl+v6i3DeAu9sePnAb8ALbEBbjiAX1COvZvTfNuaNWooAMNTCuTXwFPTu0"
+      },
+      "advisories": {
+        "url": "https://api.github.com/repos/google/brotli/security-advisories?per_page=100",
+        "sha384": "sha384-ViEJsFTLRCj8U2B7EHwKzfkd5DS5kKApX1Fu8qrXnvyQIjiUTnbULyG89xC/pMVU"
+      }
+    }
+  }
 }

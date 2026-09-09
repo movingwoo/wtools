@@ -33,11 +33,37 @@ plus the current PostgreSQL, MySQL, and SQLite documentation. Release detection 
 rewrites keyword or tokenizer rules automatically.
 
 The first-party gzip, zlib, and raw DEFLATE codec keeps its reviewed WHATWG Compression Standard,
-the complete related Web Platform Tests subtree, RFC 1950/1951/1952 source hashes, and RFC Editor
+the complete related Web Platform Tests subtree, RFC 1950/1951/1952/7932/9841 source hashes, and RFC Editor
 errata inventory in `scripts/compression-spec-lock.json`. Pull-request validation checks the lock
 shape without network access. The monthly workflow fetches every pinned source and compares the
 latest standard and WPT path commits; a change fails the review for a deliberate implementation and
 vector assessment rather than modifying the codec automatically.
+
+Brotli compression uses `js/lib/archive/brotli-encode.js`; decompression still uses the
+registered `brotli` dependency until its separate replacement. The monthly filter includes
+`brotli`/`Brotli` tests for the pinned public WPT vector, Node interoperability, block boundaries,
+generated input, cancellation, and offline use. RFC 7932 erratum 5948 is editorial; 6977 concerns
+implicit distances during distance block switches, neither of which this encoder emits.
+Compression levels retain their numeric API but control this encoder's bounded match search;
+compressed bytes and ratios are deliberately not matched to Google's quality implementation.
+
+The Brotli encoder's prefix/length tables are fixed format definitions, not a periodically refreshed
+dataset. The monthly review also checks RFC 7932 JSON relationship metadata (new updates or obsoleting
+RFCs), RFC 9841 and its errata, all public Google Brotli release notes, and public repository security
+advisories. The JSON snapshots keep security-relevant release fields and bodies, including old releases,
+but exclude download counters and other volatile statistics. Malformed/empty release responses and a
+100-item page require review rather than silently truncating the inventory. These three requests use
+public endpoints; a request error fails the audit.
+
+RFC 9841 adds shared dictionaries, a large-window extension, and framing. It does not require replacing
+our ordinary RFC 7932 output; those optional formats remain outside the tool contract. The reviewed
+Google v1.2.0 release discusses output limits in its Python wrapper. Native/Python defects are not
+automatically defects in this JavaScript encoder, but the class of risk applies to decoder review.
+The retained npm `brotli` decoder is independently covered by the existing npm/OSV/GitHub dependency
+audit. The 2026-09-08 check found npm latest 1.3.3 and no registered advisory for that pin. This does
+not establish a streaming memory bound: the decoder still expands its output allocation before the
+Worker can reject the final result. The next decoder replacement must enforce limits before growth.
+Do not respond to upstream notices by automatically copying or updating a native encoder.
 
 ZIP creation and extraction use the first-party classic ZIP implementation in `js/lib/archive/zip.js`.
 It shares the first-party DEFLATE codec, runs through a module Worker, and rejects ZIP64, encrypted entries,

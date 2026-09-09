@@ -111,9 +111,11 @@ Linux CI에서 실행할 수 없어 같은 버전의 Playwright WebKit을 대리
 동적 ESM/WASM은 SHA-384로 고정한 검토본을 저장소에서 제공하며, 실제 CDN 원본과 운영 보안 헤더는 하루에 한 번 nightly 워크플로에서 확인합니다.
 테스트 의존성까지 포함한 등록부와 월간 점검 절차는 [DEPENDENCY_UPDATE.md](DEPENDENCY_UPDATE.md)를 참고하세요.
 월간 작업은 런타임·로컬 고정·테스트 패키지를 npm·OSV·GitHub Advisory와 함께 감사하고,
-WHATWG 압축 표준·관련 WPT·RFC 1950/1951/1952 본문과 정오표·PKWARE ZIP APPNOTE·LZMA 규격을 최신 검토본과 대조하며,
+WHATWG 압축 표준·관련 WPT·RFC 1950/1951/1952/7932/9841 본문과 정오표·PKWARE ZIP APPNOTE·LZMA 규격을 최신 검토본과 대조하며,
 LZMA SDK 규격 안내·7-Zip 릴리즈/보안 공지·XZ 형식 문서/보안 공지의 변경도 확인합니다.
-월간 대표 벡터에는 LZMA 교차 검증과 대용량 미리보기·다운로드 회귀 테스트가 포함됩니다.
+Brotli의 후속 RFC 관계·Google Brotli 릴리즈 본문과 보안 공지도 확인합니다. RFC 9841의
+공유 사전·큰 윈도·컨테이너 확장은 현재 도구의 지원 범위에 추가하지 않습니다.
+월간 대표 벡터에는 LZMA·Brotli 교차 검증과 대용량·다운로드 회귀 테스트가 포함됩니다.
 공지 변경은 담당자 검토를 요청하는 실패로 알리며 코덱이나 의존성을 자동 교체하지 않습니다.
 분기 검토 기한이 지난 User-Agent·IANA 참조표·브라우저/CI 기준선을 실패로 알립니다.
 릴리즈 산출물은 최근 8일 이내의 최소 브라우저 호환성 워크플로 성공 이력이 있어야 게시됩니다.
@@ -141,7 +143,7 @@ DEVELOPMENT_GUIDE.md 구현 구조, 크기 예산, 의존성 교체 및 릴리�
 ```
 
 jsrsasign 같은 classic script는 SRI로 검증하면서 해당 도구를 열 때 CDN에서 **지연 로드**합니다.  
-OpenPGP, GIF, Brotli·Zstandard·Bzip2·LZ4의 동적 ESM/WASM은 하위 import까지 검토한 로컬 사본을 사용합니다. crypto-js만 페이지를 열 때 불러오며, gzip·zlib·raw DEFLATE와 YAML·TOML·JSONPath·JMESPath·JSON Schema는 자체 엔진을 필요한 순간에 불러옵니다.
+OpenPGP, GIF, Brotli 해제·Zstandard·Bzip2·LZ4의 동적 ESM/WASM은 하위 import까지 검토한 로컬 사본을 사용합니다. crypto-js만 페이지를 열 때 불러오며, Brotli 압축·LZMA·gzip·zlib·raw DEFLATE와 YAML·TOML·JSONPath·JMESPath·JSON Schema는 자체 엔진을 필요한 순간에 불러옵니다.
 
 ## 새 도구 추가
 

@@ -197,7 +197,7 @@
 ## 12. 압축 / 아카이브
 
 - Gzip·Zlib·Raw DEFLATE 압축/해제 (RFC 1950/1951/1952 자체 코덱, 지원 브라우저의 Compression Streams 우선, 일치 탐색 깊이 기반 압축 레벨 1/6/9, stored/fixed/dynamic 블록 해제, CRC-32·Adler-32·출력 상한, Worker·취소, 텍스트 및 Gzip 파일)
-- Brotli 압축/해제 (품질 레벨, 텍스트·Base64·Hex 및 파일, Worker 처리)
+- Brotli 압축/해제 (RFC 7932 기반 자체 LZ77·허프만 압축기, 레벨 1/6/11의 일치 탐색 깊이 조절, 텍스트·Base64·Hex 및 파일, 입출력 변환까지 Worker·취소, 최대 32,768자 미리보기와 전체 결과 다운로드, 입력 256 MiB·해제 완료 후 결과 128 MiB·압축률 200:1 검사, 기존 해제기의 처리 중 메모리 제한은 후속 교체 과제)
 - Bzip2 해제 (텍스트·Base64·Hex 및 파일, Worker 처리)
 - Zstandard 압축/해제 (압축 레벨, 텍스트·Base64·Hex 및 파일, Worker 처리)
 - LZMA 압축/해제 (자체 range coder·사전·상태 머신, .lzma 단독 형식, 원본 길이·종료 표식 검증, 레벨 1/5/9, 입출력 변환까지 Worker·취소, 최대 32,768자 미리보기와 전체 텍스트·Base64·Hex 다운로드, 입력 256 MiB·해제 128 MiB·압축률 200:1 한도, .xz·LZMA2 미지원, 형식 자체에 체크섬 없음)

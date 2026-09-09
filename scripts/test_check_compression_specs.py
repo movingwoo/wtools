@@ -1,4 +1,5 @@
 import copy
+import json
 import re
 import unittest
 from unittest import mock
@@ -12,6 +13,10 @@ class CompressionSpecLockTests(unittest.TestCase):
     self.assertEqual(lock['standard']['formats'], compression.FORMATS)
     self.assertEqual(len(lock['wpt']['files']), 29)
     self.assertEqual(lock['rfcs']['1951']['errata'][0]['id'], 7764)
+    self.assertEqual(lock['rfcs']['7932']['format'], 'brotli')
+    self.assertEqual(lock['rfcs']['7932']['errata'], [
+      {'id': 5948, 'status': 'Verified'}, {'id': 6977, 'status': 'Reported'},
+    ])
     self.assertEqual(lock['zip']['version'], '6.3.10')
     self.assertEqual(lock['lzma']['supported'], compression.LZMA_FEATURES)
 
@@ -105,11 +110,12 @@ class CompressionSpecLockTests(unittest.TestCase):
       with self.assertRaisesRegex(OSError, 'offline'):
         compression.check_lzma_upstream(lock)
 
-  def test_monthly_browser_filter_selects_lzma_regressions(self):
+  def test_monthly_browser_filter_selects_lzma_and_brotli_regressions(self):
     workflow = (compression.ROOT / '.github/workflows/maintenance.yml').read_text(encoding='utf-8')
     match = re.search(r"npx playwright test --project=chromium -g '([^']+)'", workflow)
     self.assertIsNotNone(match)
-    for title in ['lzma 자체 해제기: 공개 벡터', 'LZMA: 취소·다운로드']:
+    for title in ['lzma 자체 해제기: 공개 벡터', 'LZMA: 취소·다운로드',
+                  'brotli 자체 압축기: 블록 경계', 'Brotli: 오프라인']:
       self.assertRegex(title, match.group(1))
 
   def test_errata_ids_and_statuses_are_parsed(self):
@@ -128,13 +134,70 @@ class CompressionSpecLockTests(unittest.TestCase):
     with mock.patch.object(compression, 'request', side_effect=[b'standard', b'wpt']), \
          mock.patch.object(compression, 'latest_feed_commit', side_effect=['a' * 40, 'b' * 40]), \
          mock.patch.object(compression, 'check_pinned', return_value=[]), \
-         mock.patch.object(compression, 'check_lzma_upstream', return_value=['LZMA upstream changed']) as upstream:
+         mock.patch.object(compression, 'check_lzma_upstream', return_value=['LZMA upstream changed']) as upstream, \
+         mock.patch.object(compression, 'check_brotli_upstream', return_value=['Brotli upstream changed']) as brotli:
       errors = compression.check_latest(lock)
     upstream.assert_called_once_with(lock)
-    self.assertEqual(len(errors), 3)
+    brotli.assert_called_once_with(lock)
+    self.assertEqual(len(errors), 4)
     self.assertIn('Compression Standard changed', errors[0])
     self.assertIn('Compression WPT changed', errors[1])
     self.assertIn('LZMA upstream changed', errors[2])
+    self.assertIn('Brotli upstream changed', errors[3])
+
+  def brotli_sources(self):
+    return {
+      'rfcMetadata': {'doc_id': 'RFC7932', 'updated_by': ['RFC9841'], 'obsoleted_by': []},
+      'releases': [{'id': 1, 'tag_name': 'v1.2.0', 'name': 'v1.2.0', 'prerelease': False,
+                    'published_at': '2025-10-27', 'updated_at': '2025-10-27',
+                    'body': 'Reviewed security notes', 'assets': [{'download_count': 1}]}],
+      'advisories': [],
+    }
+
+  def test_brotli_release_edits_are_detected_but_download_counters_are_ignored(self):
+    original = self.brotli_sources()['releases']
+    changed = copy.deepcopy(original)
+    changed[0]['assets'][0]['download_count'] += 1
+    snapshot = lambda value: compression.brotli_snapshot('releases', json.dumps(value).encode())
+    self.assertEqual(snapshot(original), snapshot(changed))
+    changed[0]['body'] += ' Edited security applicability'
+    self.assertNotEqual(snapshot(original), snapshot(changed))
+
+  def test_brotli_each_upstream_change_requires_review(self):
+    original = self.brotli_sources()
+    for name in compression.BROTLI_UPSTREAM_URLS:
+      changed = copy.deepcopy(original)
+      if name == 'rfcMetadata': changed[name]['updated_by'].append('RFC9999')
+      elif name == 'releases': changed[name][0]['body'] += ' New security correction'
+      else: changed[name].append({'ghsa_id': 'GHSA-test', 'description': 'New advisory'})
+      lock = copy.deepcopy(compression.load_lock())
+      for key, value in original.items():
+        lock['brotli']['upstream'][key]['sha384'] = compression.sha384_sri(
+          compression.brotli_snapshot(key, json.dumps(value).encode()))
+      responses = {url: json.dumps(changed[key]).encode() for key, url in compression.BROTLI_UPSTREAM_URLS.items()}
+      with mock.patch.object(compression, 'request', side_effect=lambda url: responses[url]):
+        errors = compression.check_brotli_upstream(lock)
+      self.assertEqual(len(errors), 1)
+      self.assertIn(f'Brotli upstream {name} changed', errors[0])
+
+  def test_brotli_bad_responses_and_pagination_do_not_silently_pass(self):
+    for name, value in [('rfcMetadata', {}), ('releases', []), ('releases', [{}]),
+                        ('releases', [{}] * 100), ('advisories', {}), ('advisories', [{}])]:
+      with self.subTest(name=name, value=value), self.assertRaises(ValueError):
+        compression.brotli_snapshot(name, json.dumps(value).encode())
+    with mock.patch.object(compression, 'request', side_effect=OSError('offline')):
+      with self.assertRaisesRegex(OSError, 'offline'):
+        compression.check_brotli_upstream(compression.load_lock())
+
+  def test_brotli_sources_and_shared_rfc_scope_cannot_be_dropped(self):
+    lock = compression.load_lock()
+    self.assertEqual(lock['rfcs']['9841']['format'], 'shared-brotli')
+    self.assertEqual(lock['brotli']['supported'], ['rfc7932'])
+    for name in compression.BROTLI_UPSTREAM_URLS:
+      changed = copy.deepcopy(lock)
+      del changed['brotli']['upstream'][name]
+      with self.assertRaisesRegex(ValueError, 'Brotli upstream'):
+        compression.validate_lock(changed)
 
 
 if __name__ == '__main__':

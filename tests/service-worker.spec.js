@@ -42,6 +42,33 @@ async function waitForControl(page) {
   });
 }
 
+test('Brotli 제3자 압축기 캐시를 제거하고 자체 Worker가 오프라인에서 동작한다', async ({ page, context }) => {
+  const removed = '/assets/vendor/brotli-compress-1.3.3.mjs';
+  await page.goto('/404.html');
+  await page.evaluate(async (path) => {
+    const cache = await caches.open('wtools-shell-obsolete-brotli');
+    await cache.put(path, new Response('obsolete Brotli encoder'));
+  }, removed);
+  await page.goto('/');
+  await waitForControl(page);
+  expect(await page.evaluate(async (path) => ({
+    removed: !!await caches.match(path), engine: !!await caches.match('/js/lib/archive/brotli-encode.js'),
+    io: !!await caches.match('/js/lib/archive/codec-io.js'),
+  }), removed)).toEqual({ removed: false, engine: true, io: true });
+  await context.setOffline(true);
+  await page.goto('/#/tool/brotli');
+  const io = page.locator('#content .io').first();
+  await io.locator('textarea.mono:not(.out)').fill('오프라인 Brotli 🎁');
+  await io.getByRole('button', { name: '압축', exact: true }).click();
+  await expect(io.locator('textarea.out')).toHaveValue(/원본/);
+  const packed = (await io.locator('textarea.out').inputValue()).split('\n')[0];
+  await io.getByLabel('입력 형식').selectOption('base64');
+  await io.getByLabel('출력 형식').selectOption('text');
+  await io.locator('textarea.mono:not(.out)').fill(packed);
+  await io.getByRole('button', { name: '해제', exact: true }).click();
+  await expect(io.locator('textarea.out')).toHaveValue('오프라인 Brotli 🎁');
+});
+
 test('LZMA CDN 캐시를 제거하고 자체 Worker 코덱이 오프라인에서 압축·해제한다', async ({ page, context }) => {
   const removed = 'https://cdn.jsdelivr.net/npm/lzma@2.3.2/src/lzma_worker.min.js';
   await page.goto('/404.html');

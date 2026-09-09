@@ -4,7 +4,7 @@ importScripts('./js/sw-integrity.js');
 
 const CACHE_PREFIX = 'wtools-';
 // scripts/update_cache_version.py가 앱 셸 내용의 SHA-256 앞 12자리와 일치시킨다.
-const CACHE_REVISION = '996f58ff1820';
+const CACHE_REVISION = 'adfb6cbbd178';
 const CACHE_NAME = CACHE_PREFIX + 'shell-' + CACHE_REVISION;
 const EXTERNAL_CACHE_PREFIX = CACHE_PREFIX + 'external-';
 const EXTERNAL_CACHE_NAME = EXTERNAL_CACHE_PREFIX + 'v17';
@@ -44,7 +44,6 @@ const APP_SHELL = [
   './assets/data/figlet/Standard.flf',
   './assets/vendor/crypto-js-4.2.0.min.js',
   './assets/eff-short-wordlist-1.txt',
-  './assets/vendor/brotli-compress-1.3.3.mjs',
   './assets/vendor/brotli-decompress-1.3.3.mjs',
   './assets/vendor/fzstd-0.1.1.mjs',
   './assets/vendor/lz4js-0.2.0.mjs',
@@ -55,6 +54,8 @@ const APP_SHELL = [
   './js/core.js',
   './js/dependencies.js',
   './js/lib/common/base64.js',
+  './js/lib/archive/brotli-encode.js',
+  './js/lib/archive/codec-io.js',
   './js/lib/archive/deflate.js',
   './js/lib/archive/lzma.js',
   './js/lib/archive/lzma-io.js',

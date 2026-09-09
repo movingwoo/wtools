@@ -1,5 +1,11 @@
 # LZMA codec review
 
+Follow-up on 2026-09-09: `lzma-io.js` now preserves the same exported API through
+thin wrappers around `codec-io.js`, shared with Brotli. Both modules are precached;
+the existing LZMA byte-boundary, input-limit, preview, download, and offline tests
+passed in the expanded 902-test Chromium suite. The size figures below record the
+original LZMA replacement before this shared-adapter extraction.
+
 Reviewed on 2026-09-07. This is first-party JavaScript implementing the LZMA1 range
 coder, probability models, literal/match state machine, and dictionary references.
 No SDK implementation or compiled third-party codec is shipped.

@@ -3,12 +3,12 @@
 // 압축 → 해제 왕복과 파일 업로드/다운로드 경로를 확인한다.
 import { test, expect, toolCases, openTool, ioSection, runIO, uploadFile, grabDownload } from '../helpers.js';
 import {
-  brotliDecompressSync, constants, deflateRawSync, deflateSync, gunzipSync, gzipSync,
+  brotliCompressSync, brotliDecompressSync, constants, deflateRawSync, deflateSync, gunzipSync, gzipSync,
   inflateRawSync, inflateSync, zstdDecompressSync,
 } from 'node:zlib';
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { makeLzma, readLzma, lzmaCorpus, lzmaSpecVectors } from '../fixtures.js';
+import { makeLzma, readLzma, lzmaCorpus, lzmaSpecVectors, brotliCorpus, brotliWptVector } from '../fixtures.js';
 
 const MSG = 'hello wtools compression test\n'.repeat(3); // 90바이트
 // 원문 MSG를 다른 구현으로 압축한 벡터: node zlib(gzip/deflate/deflateRaw), python bz2/lzma(FORMAT_ALONE)
@@ -185,7 +185,11 @@ const cases = [
   { name: 'bzip2: bzip2 데이터가 아니면 에러', tool: 'bzip2', io: 0, options: { '입력 형식': 'base64' }, inputs: 'AAAA', action: '해제', error: 'Not bzip data: bad magic' },
 
   { name: 'brotli: node zlib 벡터 해제', tool: 'brotli', options: B64, inputs: V.brotli, action: '해제', output: MSG },
-  { name: 'brotli: 잘못된 데이터는 에러', tool: 'brotli', options: { '입력 형식': 'hex' }, inputs: '010203', action: '해제', error: 'Invalid size nibble' },
+  { name: 'brotli: 공개 WPT 벡터 해제', tool: 'brotli', options: B64,
+    inputs: brotliWptVector().packed.toString('base64'), action: '해제', output: 'expected output' },
+  { name: 'brotli: 잘못된 Hex 압축 입력 거부', tool: 'brotli', options: { '입력 형식': 'hex' },
+    inputs: 'zz', action: '압축', error: '올바른 Hex 문자열이 아닙니다.' },
+  { name: 'brotli: 잘못된 데이터는 에러', tool: 'brotli', options: { '입력 형식': 'hex' }, inputs: '010203', action: '해제', error: '올바른 Brotli 데이터가 아니거나 지원하지 않는 형식입니다.' },
   { name: 'zstd: node zlib 벡터 해제', tool: 'zstd', options: B64, inputs: V.zstd, action: '해제', output: MSG },
   { name: 'zstd: 잘못된 데이터는 에러', tool: 'zstd', options: { '입력 형식': 'hex' }, inputs: '010203', action: '해제', error: 'invalid zstd data' },
 ];
@@ -1160,4 +1164,221 @@ test('bzip2: 파일 해제와 미리보기', async ({ page }) => {
   const saved = await grabDownload(page, () => content.getByRole('button', { name: '다운로드' }).click());
   expect(saved.name).toBe('note.txt');
   expect(saved.bytes.toString()).toBe(MSG);
+});
+
+/* ---------- First-party Brotli encoder (RFC 7932) ---------- */
+
+test('brotli 자체 압축기: 공개 WPT·레벨·블록 경계·대용량·생성 코퍼스를 Node로 교차 검증', async ({ page }) => {
+  test.setTimeout(60_000);
+  const corpus = brotliCorpus();
+  expect(brotliDecompressSync(brotliWptVector().packed)).toEqual(brotliWptVector().plain);
+  await page.goto('/');
+  const results = await page.evaluate(async (inputs) => {
+    const { compress } = await import('/js/lib/archive/brotli-encode.js');
+    const { b64ToBytes, bytesToB64 } = await import('/js/lib/common/base64.js');
+    const results = [];
+    for (let index = 0; index < inputs.length; index++) {
+      const source = b64ToBytes(inputs[index]), original = source.slice();
+      for (const quality of source.length > 65536 ? [6] : [0, 1, 6, 11]) {
+        const packed = compress(source, { quality });
+        results.push({ index, quality, packed: bytesToB64(packed),
+          unchanged: source.every((value, at) => value === original[at]) });
+      }
+    }
+    return results;
+  }, corpus.map((input) => input.toString('base64')));
+  for (const { index, quality, packed, unchanged } of results) {
+    const bytes = Buffer.from(packed, 'base64');
+    expect(brotliDecompressSync(bytes), `input ${index}, quality ${quality}`).toEqual(corpus[index]);
+    expect(unchanged).toBe(true);
+    // Incompressible blocks must fall back to storage with bounded overhead.
+    expect(bytes.length).toBeLessThanOrEqual(corpus[index].length + Math.ceil(corpus[index].length / 1048576) * 5 + 8);
+    if (index === 3 || index === 5 || index === 6) expect(bytes.length).toBeLessThan(corpus[index].length / 5);
+  }
+});
+
+test('brotli 자체 압축기: 잘못된 옵션·입력 상한을 할당 전에 거부하고 부분 배열을 보존', async ({ page }) => {
+  await page.goto('/');
+  const result = await page.evaluate(async () => {
+    const { compress } = await import('/js/lib/archive/brotli-encode.js');
+    const invalid = [
+      () => compress('text'),
+      ...[-1, 12, 1.5, NaN, '6'].map((quality) => () => compress(new Uint8Array(), { quality })),
+      ...[-1, Infinity, 268435457].map((maxInputLength) => () => compress(new Uint8Array(), { maxInputLength })),
+      () => compress(new Uint8Array(2), { maxInputLength: 1 }),
+    ];
+    const errors = invalid.map((run) => { try { run(); return ''; } catch (error) { return error.message; } });
+    const source = new Uint8Array([44, 0, 255, 128, 44]);
+    return { errors, source: [...source], packed: [...compress(source.subarray(1, 4))],
+      empty: [...compress(new Uint8Array(), { maxInputLength: 0 })] };
+  });
+  result.errors.forEach((message) => expect(message).toMatch(/Brotli.*바이트|Brotli.*레벨|Brotli.*안전 한도/));
+  expect(result.source).toEqual([44, 0, 255, 128, 44]);
+  expect(brotliDecompressSync(Buffer.from(result.packed))).toEqual(Buffer.from([0, 255, 128]));
+  expect(brotliDecompressSync(Buffer.from(result.empty))).toEqual(Buffer.alloc(0));
+});
+
+test('brotli: 압축기 지연 로드·실패 후 재시도·직접 URL·화면 크기와 테마', async ({ page }) => {
+  const requested = [];
+  page.on('request', (request) => requested.push(request.url()));
+  await page.goto('/');
+  await openTool(page, 'brotli');
+  await page.reload();
+  expect(requested.some((url) => url.includes('/archive/brotli-encode.js'))).toBe(false);
+  await page.route('**/js/lib/archive/brotli-encode.js', (route) => route.fulfill({
+    contentType: 'application/javascript', body: 'throw new Error("simulated encoder load failure");',
+  }));
+  const io = ioSection(page);
+  await io.getByRole('button', { name: '압축', exact: true }).click();
+  await expect(io.locator('textarea.out')).toHaveValue(/Brotli 압축기를 불러오지 못했습니다/);
+  await page.unroute('**/js/lib/archive/brotli-encode.js');
+  await page.setViewportSize({ width: 375, height: 812 });
+  for (const colorScheme of ['light', 'dark']) {
+    await page.emulateMedia({ colorScheme });
+    const source = 'Brotli 재시도 한글 🎁';
+    const packed = await runIO(io, { inputs: source, options: { '압축 레벨': '11' }, action: '압축' });
+    expect(brotliDecompressSync(Buffer.from(packed.split('\n')[0], 'base64')).toString()).toBe(source);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  }
+  expect(requested.some((url) => /brotli-compress|brotli-decompress/.test(url))).toBe(false);
+});
+
+test('brotli: 대용량 Worker 취소·도구 이탈·재실행과 입력 버퍼 소유권', async ({ page }) => {
+  await page.addInitScript(() => {
+    const NativeWorker = window.Worker;
+    window.__brotliTerminations = 0;
+    window.Worker = class extends NativeWorker {
+      // Hold dispatch so cancellation assertions do not depend on machine speed.
+      postMessage(...args) { this.pending = setTimeout(() => super.postMessage(...args), 500); }
+      terminate() { clearTimeout(this.pending); window.__brotliTerminations++; return super.terminate(); }
+    };
+  });
+  await openTool(page, 'brotli');
+  const io = ioSection(page);
+  await io.locator('textarea.mono:not(.out)').evaluate((element) => {
+    element.value = 'Brotli cancellation '.repeat(100000);
+    element.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+  await io.getByRole('button', { name: '압축', exact: true }).click();
+  await io.getByRole('button', { name: '그래도 처리', exact: true }).click();
+  await io.getByRole('button', { name: '취소', exact: true }).click();
+  await expect(io.locator('.io-status')).toHaveText('작업이 취소되었습니다.');
+  expect(await page.evaluate(() => window.__brotliTerminations)).toBe(1);
+  await io.getByRole('button', { name: '압축', exact: true }).click();
+  await page.evaluate(() => { location.hash = '#/tool/base64'; });
+  await expect(page.locator('.tool-header h1')).toHaveText('Base64 인코딩/디코딩');
+  expect(await page.evaluate(() => window.__brotliTerminations)).toBe(2);
+  await openTool(page, 'brotli');
+  const packed = await runIO(ioSection(page), { inputs: '재실행', action: '압축' });
+  expect(brotliDecompressSync(Buffer.from(packed.split('\n')[0], 'base64')).toString()).toBe('재실행');
+  const result = await page.evaluate(async () => {
+    const bytes = new Uint8Array([0, 255, 128]);
+    const worker = new Worker('/js/workers/archive-codec.js', { type: 'module' });
+    try {
+      const pending = new Promise((resolve, reject) => {
+        worker.onmessage = ({ data }) => data.error ? reject(new Error(data.error)) : resolve(data.output);
+        worker.onerror = reject;
+      });
+      worker.postMessage({ codec: 'brotli', action: 'comp', bytes, level: 6 }, [bytes.buffer]);
+      const output = await pending;
+      return { detached: bytes.byteLength === 0, output: [...output] };
+    } finally { worker.terminate(); }
+  });
+  expect(result.detached).toBe(true);
+  expect(brotliDecompressSync(Buffer.from(result.output))).toEqual(Buffer.from([0, 255, 128]));
+});
+
+test('brotli: 큰 입력·결과 변환은 Worker에서 수행하고 전체 형식을 다운로드', async ({ page }) => {
+  const plain = brotliCorpus()[14].subarray(0, 131072);
+  await page.addInitScript(() => {
+    const NativeWorker = window.Worker;
+    window.__brotliPresentation = [];
+    window.Worker = class extends NativeWorker {
+      constructor(...args) {
+        super(...args);
+        this.addEventListener('message', ({ data }) => {
+          if (data.presentation) window.__brotliPresentation.push({
+            previewLength: data.presentation.preview.length,
+            hasBlob: data.presentation.blob instanceof Blob, hasRawOutput: 'output' in data,
+          });
+        });
+      }
+      postMessage(data, transfer) {
+        if (data.codec === 'brotli' && !data.presentation) throw new Error('Text conversion must run in the Worker');
+        return super.postMessage(data, transfer);
+      }
+    };
+  });
+  await openTool(page, 'brotli');
+  const io = ioSection(page);
+  for (const format of ['hex', 'base64']) {
+    const output = await runIO(io, { inputs: plain.toString('base64'),
+      options: { '입력 형식': 'base64', '출력 형식': format }, action: '압축' });
+    expect(output.split('\n')[0]).toHaveLength(32768);
+    await expect(io.getByText(/복사 버튼도 이 미리보기만 복사합니다/)).toBeVisible();
+    const saved = await grabDownload(page, () => io.getByRole('button', { name: /전체 결과 다운로드/ }).click());
+    expect(saved.name).toBe(`brotli-compressed.${format}.txt`);
+    const packed = Buffer.from(saved.bytes.toString(), format);
+    expect(brotliDecompressSync(packed)).toEqual(plain);
+  }
+  const packed = brotliCompressSync(plain);
+  for (const format of ['hex', 'base64', 'text']) {
+    const output = await runIO(io, { inputs: packed.toString('base64'),
+      options: { '입력 형식': 'base64', '출력 형식': format }, action: '해제' });
+    expect(output.length).toBeLessThanOrEqual(32768);
+    const saved = await grabDownload(page, () => io.getByRole('button', { name: /전체 결과 다운로드/ }).click());
+    expect(saved.name).toBe(`brotli-decompressed.${format}.txt`);
+    const expected = format === 'text' ? new TextDecoder().decode(plain) : plain.toString(format);
+    expect(saved.bytes.toString('utf8')).toBe(expected);
+    expect(expected.replace(/\r\n?/g, '\n').startsWith(output)).toBe(true);
+  }
+  const messages = await page.evaluate(() => window.__brotliPresentation);
+  // runIO also compresses empty input before each compression as a reset.
+  expect(messages.filter((message) => message.previewLength > 4)).toHaveLength(5);
+  messages.forEach((message) => expect(message).toEqual({
+    previewLength: expect.any(Number), hasBlob: true, hasRawOutput: false,
+  }));
+  await runIO(io, { inputs: '%%%%', options: { '입력 형식': 'base64' }, action: '해제' });
+  await expect(io.getByRole('button', { name: /전체 결과 다운로드/ })).toBeHidden();
+  await expect(io.getByText(/복사 버튼도 이 미리보기만 복사합니다/)).toBeHidden();
+});
+
+test('brotli: 입출력 모듈 로드 실패 후 재시도와 빈 결과 다운로드', async ({ page }) => {
+  await openTool(page, 'brotli');
+  const io = ioSection(page);
+  await page.route('**/js/lib/archive/codec-io.js', (route) => route.fulfill({
+    contentType: 'application/javascript', body: 'throw new Error("simulated adapter load failure");',
+  }));
+  await io.getByRole('button', { name: '압축', exact: true }).click();
+  await expect(io.locator('textarea.out')).toHaveValue(/Brotli 입출력 모듈을 불러오지 못했습니다/);
+  await page.unroute('**/js/lib/archive/codec-io.js');
+  await runIO(io, { inputs: brotliCompressSync('').toString('base64'),
+    options: { '입력 형식': 'base64', '출력 형식': 'text' }, action: '해제' });
+  const saved = await grabDownload(page, () => io.getByRole('button', { name: /전체 결과 다운로드/ }).click());
+  expect(saved.bytes).toHaveLength(0);
+});
+
+test('brotli Worker: 과대 해제 결과는 전송·형식 변환 전에 거부', async ({ page }) => {
+  // Only 64 KiB expands here: demonstrate the existing decoder's post-decode
+  // ratio policy without allocating an actual memory-exhaustion payload.
+  const packed = brotliCompressSync(Buffer.alloc(65536)).toString('base64');
+  await page.goto('/');
+  const outputs = await page.evaluate(async (packed) => {
+    const { b64ToBytes } = await import('/js/lib/common/base64.js');
+    const worker = new Worker('/js/workers/archive-codec.js', { type: 'module' });
+    const run = (data) => new Promise((resolve, reject) => {
+      worker.onmessage = ({ data }) => resolve(data);
+      worker.onerror = reject;
+      worker.postMessage({ codec: 'brotli', action: 'decomp',
+        urls: { brotliDecompress: '/assets/vendor/brotli-decompress-1.3.3.mjs' }, ...data });
+    });
+    try {
+      return [await run({ bytes: b64ToBytes(packed) }),
+        await run({ presentation: { text: packed, ifmt: 'base64', ofmt: 'hex' } })];
+    } finally { worker.terminate(); }
+  }, packed);
+  for (const output of outputs) {
+    expect(Object.keys(output)).toEqual(['error']);
+    expect(output.error).toContain('안전 한도');
+  }
 });

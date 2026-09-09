@@ -199,7 +199,6 @@ tool({
 
 /* ---------- Worker 기반 Brotli / Zstandard 및 Bzip2 해제 ---------- */
 const CODEC_URLS = {
-  brotliCompress: vendorUrl('brotliCompress'),
   brotliDecompress: vendorUrl('brotliDecompress'),
   zstdCompress: vendorUrl('zstdCompress'),
   zstdDecompress: vendorUrl('zstdDecompress'),
@@ -230,7 +229,8 @@ function runCodecWorker(codec, action, bytes, level, signal, tasks, maxOutputLen
     signal?.addEventListener('abort', abort, { once: true });
     worker.addEventListener('message', ({ data }) => {
       finish(data.error ? new Error(data.error) : null,
-        presentation ? data.presentation : data.output && new Uint8Array(data.output));
+        presentation ? data.presentation : data.output instanceof Uint8Array
+          ? data.output : data.output && new Uint8Array(data.output));
     });
     worker.addEventListener('error', (event) => {
       event.preventDefault();
@@ -243,10 +243,20 @@ function runCodecWorker(codec, action, bytes, level, signal, tasks, maxOutputLen
   });
 }
 
-function codecRender({ id, name, ext, levels }) {
+function codecRender({ id, name, ext, levels, note }) {
   return function render(root) {
       const tasks = new Set();
       root.append(h('h3', null, '텍스트 / Base64 / Hex'));
+      let resultBlob = null, resultName = '';
+      const save = id === 'brotli' ? h('button', { class: 'btn small hidden', type: 'button', onclick: () => {
+        if (resultBlob) download(resultName, resultBlob);
+      } }, '전체 결과 다운로드') : null;
+      const previewNote = id === 'brotli' ? h('div', { class: 'note hidden', role: 'status' }) : null;
+      const clearResult = () => {
+        resultBlob = null;
+        save?.classList.add('hidden');
+        previewNote?.classList.add('hidden');
+      };
       const io = makeIO(root, {
         inputs: [{ id: 'input', label: '입력', rows: 6, value: `${name} 테스트 `.repeat(5) }],
         options: [
@@ -257,6 +267,20 @@ function codecRender({ id, name, ext, levels }) {
         actions: [{ id: 'comp', label: '압축' }, { id: 'decomp', label: '해제' }],
         autorun: false, cancelable: true,
         async process(text, options, action, signal) {
+          if (id === 'brotli') {
+            clearResult();
+            const result = await runCodecWorker(id, action, null, +options.level, signal, tasks, undefined,
+              { text, ifmt: options.ifmt, ofmt: options.ofmt });
+            throwIfAborted(signal);
+            resultBlob = result.blob;
+            resultName = `brotli-${action === 'comp' ? 'compressed' : 'decompressed'}.${options.ofmt}.txt`;
+            save.textContent = `전체 결과 다운로드 (${options.ofmt === 'text' ? '텍스트' : options.ofmt === 'hex' ? 'Hex' : 'Base64'})`;
+            save.classList.remove('hidden');
+            previewNote.textContent = result.truncated
+              ? `결과가 커서 앞부분 ${result.preview.length.toLocaleString()}자만 표시합니다. 복사 버튼도 이 미리보기만 복사합니다. 전체 ${result.characters.toLocaleString()}자는 다운로드하세요.` : '';
+            previewNote.classList.toggle('hidden', !result.truncated);
+            return result.preview + (action === 'comp' ? `\n\n// ${ratio(result.inputLength, result.outputLength)}` : '');
+          }
           const input = decodeInput(text, options.ifmt);
           const inputLength = input.length;
           const result = await runCodecWorker(id, action, input, +options.level, signal, tasks);
@@ -264,8 +288,12 @@ function codecRender({ id, name, ext, levels }) {
           return outBytes(result, options.ofmt)
             + (action === 'comp' ? `\n\n// ${ratio(inputLength, result.length)}` : '');
         },
-        note: '압축·해제는 Web Worker에서 처리하며 입력 데이터는 브라우저 밖으로 전송되지 않습니다.',
+        note: note || '압축·해제는 Web Worker에서 처리하며 입력 데이터는 브라우저 밖으로 전송되지 않습니다.',
       });
+      if (save) {
+        io.out.before(previewNote);
+        io.out.after(save);
+      }
 
       root.append(h('h3', { style: { marginTop: '26px' } }, '파일 압축/해제'));
       const fileOut = h('div');
@@ -283,6 +311,8 @@ function codecRender({ id, name, ext, levels }) {
       const handle = (action) => runner.run(async (task) => {
           const file = picker.files[0];
           if (!file) throw new Error('파일을 먼저 선택하세요.');
+          if (id === 'brotli' && file.size > ARCHIVE_LIMITS.maxTotalBytes)
+            throw new Error('Brotli 입력 파일이 안전 한도 256 MiB를 넘습니다.');
           const input = new Uint8Array(await file.arrayBuffer());
           const inputLength = input.length;
           const result = await runCodecWorker(id, action, input, +io.optEls.level.value, task.signal, tasks);
@@ -300,6 +330,7 @@ function codecRender({ id, name, ext, levels }) {
       decompressButton.addEventListener('click', () => handle('decomp'));
       root.append(section);
       return () => {
+        clearResult();
         runner.cleanup();
         io.cancel();
         for (const cancel of [...tasks]) cancel();
@@ -313,7 +344,13 @@ tool({
   keywords: 'brotli br compress decompress web content-encoding 압축 해제 worker',
   render: codecRender({
     id: 'brotli', name: 'Brotli 압축/해제', ext: '.br',
-    levels: [['6', '6 (기본)'], ['11', '11 (최대)'], ['1', '1 (빠름)']],
+    levels: [['6', '6 (기본)'], ['11', '11 (깊은 탐색)'], ['1', '1 (빠른 탐색)']],
+    note: '자체 Brotli 압축기를 취소 가능한 Web Worker에서 실행하며 입력은 브라우저 밖으로 전송되지 않습니다. '
+      + '입력 최대 256 MiB이며, 해제 결과는 완료 후 128 MiB·압축률 200:1 한도를 검사합니다. '
+      + '현재 해제기는 처리 중 메모리 사용량을 제한하지 못합니다. 레벨은 일치 탐색 깊이를 조절하며, '
+      + '압축 결과와 압축률은 구현에 따라 다릅니다. 높은 레벨이 항상 더 작은 결과를 보장하지는 않습니다. '
+      + '결과는 최대 32,768자까지 미리 보며 전체 결과는 선택한 출력 형식으로 다운로드할 수 있습니다. '
+      + '텍스트는 UTF-8로 해석하므로 바이너리 보존에는 Base64·Hex를 사용하세요.',
   }),
 });
 tool({

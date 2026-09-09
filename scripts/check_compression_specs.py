@@ -23,7 +23,12 @@ SRI_PATTERN = re.compile(r'^sha384-[A-Za-z0-9+/]{64}$')
 COMMIT_PATTERN = re.compile(r'^[0-9a-f]{40}$')
 MAX_REVIEW_AGE = timedelta(days=120)
 FORMATS = ['brotli', 'deflate', 'deflate-raw', 'gzip']
-RFC_FORMATS = {'1950': 'zlib', '1951': 'deflate', '1952': 'gzip'}
+RFC_FORMATS = {'1950': 'zlib', '1951': 'deflate', '1952': 'gzip', '7932': 'brotli', '9841': 'shared-brotli'}
+BROTLI_UPSTREAM_URLS = {
+  'rfcMetadata': 'https://www.rfc-editor.org/rfc/rfc7932.json',
+  'releases': 'https://api.github.com/repos/google/brotli/releases?per_page=100',
+  'advisories': 'https://api.github.com/repos/google/brotli/security-advisories?per_page=100',
+}
 ZIP_SPEC_URL = 'https://pkware.cachefly.net/webdocs/casestudies/APPNOTE.TXT'
 ZIP_FEATURES = ['stored', 'deflate', 'data-descriptor', 'utf-8', 'unicode-path-extra-field']
 LZMA_SPEC_URL = 'https://www.7-zip.org/a/lzma-specification.7z'
@@ -43,7 +48,7 @@ def load_lock(path: Path = LOCK_PATH) -> dict:
 
 
 def validate_lock(data: dict) -> None:
-  if set(data) != {'standard', 'wpt', 'rfcs', 'zip', 'lzma', 'reviewed'}:
+  if set(data) != {'standard', 'wpt', 'rfcs', 'zip', 'lzma', 'brotli', 'reviewed'}:
     raise ValueError('compression lock fields differ from the required schema')
 
   standard = data['standard']
@@ -119,6 +124,16 @@ def validate_lock(data: dict) -> None:
     if set(source) != {'url', 'sha384'} or source['url'] != url \
         or not SRI_PATTERN.fullmatch(source['sha384']):
       raise ValueError(f'LZMA upstream {name} source pin is invalid')
+
+  brotli = data['brotli']
+  if set(brotli) != {'supported', 'upstream'} or brotli['supported'] != ['rfc7932'] \
+      or not isinstance(brotli['upstream'], dict) or set(brotli['upstream']) != set(BROTLI_UPSTREAM_URLS):
+    raise ValueError('Brotli upstream source inventory or supported scope is invalid')
+  for name, url in BROTLI_UPSTREAM_URLS.items():
+    source = brotli['upstream'][name]
+    if set(source) != {'url', 'sha384'} or source['url'] != url \
+        or not SRI_PATTERN.fullmatch(source['sha384']):
+      raise ValueError(f'Brotli upstream {name} source pin is invalid')
 
   try:
     reviewed = date.fromisoformat(data['reviewed'])
@@ -231,6 +246,41 @@ def check_lzma_upstream(lock: dict) -> list[str]:
   return errors
 
 
+def brotli_snapshot(name: str, raw: bytes) -> bytes:
+  """Normalize official metadata without hashing volatile download counters."""
+  data = json.loads(raw)
+  if name == 'rfcMetadata':
+    if not isinstance(data, dict) or data.get('doc_id') != 'RFC7932' \
+        or any(not isinstance(data.get(field), list) for field in ('updated_by', 'obsoleted_by')):
+      raise ValueError('Brotli RFC metadata structure changed')
+  elif name in {'releases', 'advisories'}:
+    if not isinstance(data, list) or len(data) >= 100:
+      raise ValueError(f'Brotli {name} response is invalid or needs pagination review')
+    if name == 'releases':
+      fields = ['id', 'tag_name', 'name', 'published_at', 'updated_at', 'prerelease', 'body']
+      if not data or any(not isinstance(item, dict) or not set(fields) <= set(item) for item in data):
+        raise ValueError('Brotli release metadata structure changed')
+      # Include old release bodies: security corrections can edit an older notice.
+      data = sorted(({field: item[field] for field in fields} for item in data), key=lambda item: item['id'])
+    else:
+      if any(not isinstance(item, dict) or not isinstance(item.get('ghsa_id'), str) for item in data):
+        raise ValueError('Brotli security advisory structure changed')
+      data = sorted(data, key=lambda item: item['ghsa_id'])
+  else:
+    raise ValueError(f'Unknown Brotli upstream snapshot: {name}')
+  return json.dumps(data, sort_keys=True, separators=(',', ':'), ensure_ascii=False).encode('utf-8')
+
+
+def check_brotli_upstream(lock: dict) -> list[str]:
+  errors = []
+  for name, source in lock['brotli']['upstream'].items():
+    snapshot = brotli_snapshot(name, request(source['url']))
+    if sha384_sri(snapshot) != source['sha384']:
+      errors.append(f'Brotli upstream {name} changed: {source["url"]}; '
+                    'review RFC/encoder/decoder applicability and rerun Brotli vectors before updating the pin')
+  return errors
+
+
 def check_latest(lock: dict) -> list[str]:
   errors = []
   latest_standard = latest_feed_commit(request(lock['standard']['feedUrl']))
@@ -243,6 +293,7 @@ def check_latest(lock: dict) -> list[str]:
                   f'reviewed {lock["wpt"]["commit"]}, latest {latest_wpt}')
   errors.extend(check_pinned(lock))
   errors.extend(check_lzma_upstream(lock))
+  errors.extend(check_brotli_upstream(lock))
   return errors
 
 
@@ -252,7 +303,7 @@ def main() -> int:
   parser.add_argument('--run-pinned', action='store_true',
                       help='download and verify every pinned official source')
   parser.add_argument('--check-latest', action='store_true',
-                      help='compare standards/WPT commits and LZMA upstream documentation/security snapshots')
+                      help='compare standards/WPT commits and LZMA/Brotli documentation/security snapshots')
   args = parser.parse_args()
   try:
     lock = load_lock()
@@ -270,7 +321,7 @@ def main() -> int:
       return 1
     if args.check_latest:
       print('Latest Compression Standard, WPT, RFC, ZIP APPNOTE, and LZMA sources are current; '
-            'LZMA SDK/7-Zip notices and XZ documentation/security snapshots are unchanged.')
+            'LZMA SDK/7-Zip notices, XZ documentation/security, and Brotli RFC/release/security snapshots are unchanged.')
     elif args.run_pinned:
       print('All pinned Compression Standard, WPT, RFC, ZIP APPNOTE, and LZMA sources and errata are intact.')
     return 0

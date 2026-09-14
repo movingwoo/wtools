@@ -14,13 +14,22 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     container:
-      # Playwright 1.32.3: Chromium 112(Chrome 110 근접), Firefox 111(기준보다 낮음), WebKit 16.4.
-      image: mcr.microsoft.com/playwright:v1.32.3-jammy@sha256:821472c31a97a7ccfc4dd4ab80c52b9239c467280287a60193498180fdc5ce97
+      image: ${{ matrix.image }}
       options: --user 1001
     strategy:
       fail-fast: false
       matrix:
-        browser: [chromium, firefox, webkit]
+        # Keep Chromium and WebKit near their baseline; Firefox needs module Workers.
+        include:
+          - browser: chromium
+            playwright: 1.32.3
+            image: mcr.microsoft.com/playwright:v1.32.3-jammy@sha256:821472c31a97a7ccfc4dd4ab80c52b9239c467280287a60193498180fdc5ce97
+          - browser: firefox
+            playwright: 1.36.0
+            image: mcr.microsoft.com/playwright:v1.36.0-jammy@sha256:3d3619bf5e622d264f519bffd3aa321d061bf420688eda8a5143da7884b36a6b
+          - browser: webkit
+            playwright: 1.32.3
+            image: mcr.microsoft.com/playwright:v1.32.3-jammy@sha256:821472c31a97a7ccfc4dd4ab80c52b9239c467280287a60193498180fdc5ce97
 
     steps:
       - name: Check out repository
@@ -38,7 +47,7 @@ jobs:
         working-directory: tests
         env:
           PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
-        run: npm install --no-save --ignore-scripts --force @playwright/test@1.32.3
+        run: npm install --no-save --ignore-scripts --force @playwright/test@${{ matrix.playwright }}
 
       - name: Run closest baseline engine
         working-directory: tests

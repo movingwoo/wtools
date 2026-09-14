@@ -102,7 +102,7 @@ GitHub Actions는 모든 PR과 `main` 브랜치 푸시에서 정적 검사, Java
 `main` 검증과 별도로 공식 GitHub Pages Actions가 저장소 루트의 정적 사이트를 배포합니다.
 
 매주 정기 호환성 잡은 digest로 고정한 Playwright 1.32.3 컨테이너의 Chromium 112
-(Chrome 110에 가장 가까운 제공 엔진), Firefox 111(기준 115보다 더 낮음), WebKit 16.4에서
+(Chrome 110에 가장 가까운 제공 엔진)·WebKit 16.4와 Playwright 1.36.0 컨테이너의 Firefox 115에서
 홈·직접 도구 URL·지연 로드와 핵심 API를 실행합니다. `scripts/check_browser_compat.mjs`는
 최소 버전 이후 전역 API와 `Intl.Segmenter` 무가드 사용을 정적으로 차단합니다. 실제 Safari는
 Linux CI에서 실행할 수 없어 같은 버전의 Playwright WebKit을 대리 엔진으로 사용합니다.

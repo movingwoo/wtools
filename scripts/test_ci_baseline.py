@@ -1,5 +1,6 @@
 import unittest
 from datetime import datetime, timezone
+from unittest.mock import patch
 
 import audit_ci_baseline as baseline
 import check_workflow_freshness as freshness
@@ -14,6 +15,25 @@ class CiBaselineTests(unittest.TestCase):
     self.assertTrue(baseline.workflow_images_match([image, image], image))
     self.assertFalse(baseline.workflow_images_match([], image))
     self.assertFalse(baseline.workflow_images_match([image, f'{image}-different'], image))
+
+  def test_minimum_browser_matrix_rejects_drift(self):
+    policy = baseline.load_policy()
+    sources = baseline.workflow_sources()
+    source = sources['compatibility.yml']
+    firefox = policy['playwright']['minimum']['firefox']
+    chromium = policy['playwright']['minimum']['chromium']
+    mutations = {
+      'old Firefox driver': source.replace('playwright: 1.36.0', 'playwright: 1.32.3'),
+      'old Firefox image': source.replace(firefox['image'], chromium['image']),
+      'missing Firefox': source.replace('browser: firefox', 'browser: chromium'),
+      'unused matrix image': source.replace('image: ${{ matrix.image }}', 'image: fixed'),
+      'unused matrix driver': source.replace('@${{ matrix.playwright }}', '@1.32.3'),
+    }
+    for name, changed in mutations.items():
+      with self.subTest(name=name), patch.object(
+        baseline, 'workflow_sources', return_value={**sources, 'compatibility.yml': changed},
+      ):
+        self.assertTrue(baseline.validate_local(policy))
 
   def test_recent_successful_compatibility_run_passes(self):
     payload = {'workflow_runs': [{

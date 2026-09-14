@@ -66,11 +66,20 @@ def validate_local(policy: dict) -> list[str]:
   if not workflow_images_match(images, current.get('image')):
     errors.append('validate.yml does not use the current digest-pinned Playwright image')
   compatibility = workflows['compatibility.yml']
-  images = re.findall(r'^\s*image:\s*(mcr\.microsoft\.com/playwright:\S+)\s*$', compatibility, re.MULTILINE)
-  if not workflow_images_match(images, minimum.get('image')):
-    errors.append('compatibility.yml does not use the minimum digest-pinned Playwright image')
-  if f'@playwright/test@{minimum.get("version")}' not in compatibility:
-    errors.append('compatibility.yml legacy driver does not match the minimum Playwright version')
+  entries = re.findall(
+    r'^\s*- browser: (\w+)\n\s+playwright: (\S+)\n\s+image: (\S+)\s*$',
+    compatibility, re.MULTILINE,
+  )
+  expected_entries = [
+    (browser, entry.get('version'), entry.get('image'))
+    for browser, entry in minimum.items()
+  ]
+  if set(minimum) != {'chromium', 'firefox', 'webkit'} or sorted(entries) != sorted(expected_entries):
+    errors.append('compatibility.yml browser matrix does not match the minimum Playwright policy')
+  if 'image: ${{ matrix.image }}' not in compatibility:
+    errors.append('compatibility.yml must use the browser matrix image')
+  if '@playwright/test@${{ matrix.playwright }}' not in compatibility:
+    errors.append('compatibility.yml legacy driver must use the browser matrix version')
 
   seen_actions: set[str] = set()
   expected_actions = policy.get('githubActions', {})
@@ -141,8 +150,9 @@ def check_latest(policy: dict) -> tuple[list[str], list[str]]:
     notes.append(f'Playwright {current["version"]}은 npm latest와 일치')
   else:
     notes.append(f'Playwright 갱신 검토: {current["version"]} → {latest_playwright}')
-  for name in ('current', 'minimum'):
-    expected, actual = image_digest(policy['playwright'][name]['image'])
+  images = {'current': current, **policy['playwright']['minimum']}
+  for name, entry in images.items():
+    expected, actual = image_digest(entry['image'])
     if expected != actual:
       errors.append(f'Playwright {name} image digest differs: {expected} != {actual}')
     else:

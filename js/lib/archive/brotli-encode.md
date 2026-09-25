@@ -1,5 +1,9 @@
 # Brotli encoder review
 
+The encoder review below records the 2026-09-09 cutover. The separate
+[decoder replacement review](brotli-decode.md) supersedes its retained-decoder
+notes and resolves the P1 intermediate output-allocation risk described below.
+
 Reviewed on 2026-09-09. `brotli-encode.js` is first-party JavaScript implementing
 LZ77 parsing, canonical Huffman codes, and Brotli meta-block serialization. No
 third-party encoder source, compiled core, dictionary, or WASM is shipped.
@@ -146,14 +150,14 @@ With Worker-side formatting and bounded preview, the same Chromium probe observe
 no main-thread task of at least 50 ms. Timing is a local observation; tests assert
 the bounded message/download contract rather than hardware-dependent durations.
 
-The remaining P1 risk is the retained decoder's unbounded intermediate output
-allocation. `BrotliDecompressBuffer` and its internal decoder grow their output
+At the encoder cutover, the remaining P1 risk was the retained decoder's unbounded
+intermediate output allocation. `BrotliDecompressBuffer` and its internal decoder grew their output
 buffer according to meta-block lengths before returning to our code. Its optional
 output-size argument is an initial capacity, not a cap. The Worker now rejects
 results above 128 MiB or 200:1 before transferring or formatting them, and the UI
-accurately describes a post-decode check. This does not prevent a decoder memory
-exhaustion payload. Enforcing the bound before allocation/growth remains the first
-requirement of the separate decoder replacement in TODO.
+then described a post-decode check. That check did not prevent a decoder memory
+exhaustion payload. The subsequent [decoder replacement](brotli-decode.md) now
+enforces the bound before allocation/growth and removes the legacy decoder.
 
 The monthly audit now includes RFC 7932 relationship metadata, the related RFC
 9841 and errata, all public Google Brotli release notes, and repository security

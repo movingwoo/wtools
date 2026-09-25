@@ -111,6 +111,51 @@
       "sha384": "sha384-+h2qK8qjPKXqxJL1T1vQKWYguTQwRYTsdEQc8Wz/ddj/G2bhGbIrcG8hzXjkd0u/",
       "errataUrl": "https://www.rfc-editor.org/errata/rfc9841",
       "errata": []
+    },
+    "8878": {
+      "format": "zstd",
+      "url": "https://www.rfc-editor.org/rfc/rfc8878.txt",
+      "sha384": "sha384-Q0bnbzbV+mYoOuKVzaHeermulJ8Jda3ra7CeNV9WV7GqX9YinnQ1wmJ7MSwJjWbz",
+      "errataUrl": "https://www.rfc-editor.org/errata/rfc8878",
+      "errata": [
+        {
+          "id": 6441,
+          "status": "Verified"
+        },
+        {
+          "id": 6442,
+          "status": "Verified"
+        },
+        {
+          "id": 7297,
+          "status": "Verified"
+        },
+        {
+          "id": 7567,
+          "status": "Reported"
+        },
+        {
+          "id": 8085,
+          "status": "Reported"
+        },
+        {
+          "id": 8195,
+          "status": "Reported"
+        },
+        {
+          "id": 8668,
+          "status": "Reported"
+        }
+      ],
+      "errataSha384": "sha384-9zZitBmiNdJFK6o1NRK1eVUN4QmdcLMijvpHzx1t44WVaM3ZRuP9y7cgz8TslpRd"
+    },
+    "9659": {
+      "format": "zstd-http",
+      "url": "https://www.rfc-editor.org/rfc/rfc9659.txt",
+      "sha384": "sha384-1LETrioPwUZ6EqRnmPD3Z+5iJnn4IjeewNQGaQDkMwbd1tu0WMQdm8Biciv2olQd",
+      "errataUrl": "https://www.rfc-editor.org/errata/rfc9659",
+      "errata": [],
+      "errataSha384": "sha384-pyS8klbWvsNCQifi1DWZF27R8gq5+9+Ri4aG7ZXMvmX+KuNgP8jPcTIhpQZs78u2"
     }
   },
   "zip": {
@@ -131,7 +176,14 @@
     "version": "2015-06-14",
     "url": "https://www.7-zip.org/a/lzma-specification.7z",
     "sha384": "sha384-7yeFMABHusP1yu4rpw7TBrE2atwnCd6qgAZjZhP9if93KVgErR1FbRcI9/etFUUD",
-    "supported": ["lzma-alone", "known-size", "end-marker", "lc-0-8", "lp-0-4", "pb-0-4"],
+    "supported": [
+      "lzma-alone",
+      "known-size",
+      "end-marker",
+      "lc-0-8",
+      "lp-0-4",
+      "pb-0-4"
+    ],
     "upstream": {
       "sdkPage": {
         "url": "https://www.7-zip.org/sdk.html",
@@ -147,11 +199,11 @@
       },
       "xzSecurity": {
         "url": "https://tukaani.org/xz/",
-        "sha384": "sha384-5Twfq26PpwwvKnDEEcw1XEmFohxUD3VDcZskTqTw84yiwWCvpKwkz+7sO3N9nUSs"
+        "sha384": "sha384-ho3XP0wRVazxkAXwZXdFbdLXiCgwK/CllcFQRcAO2i5xGDpTKUrVRCZCBq4dEs4W"
       }
     }
   },
-  "reviewed": "2026-09-09",
+  "reviewed": "2026-09-10",
   "brotli": {
     "supported": [
       "rfc7932"
@@ -169,6 +221,74 @@
         "url": "https://api.github.com/repos/google/brotli/security-advisories?per_page=100",
         "sha384": "sha384-ViEJsFTLRCj8U2B7EHwKzfkd5DS5kKApX1Fu8qrXnvyQIjiUTnbULyG89xC/pMVU"
       }
+    }
+  },
+  "phase3": {
+    "zstd": {
+      "url": "https://www.rfc-editor.org/rfc/rfc8878.txt",
+      "sha384": "sha384-Q0bnbzbV+mYoOuKVzaHeermulJ8Jda3ra7CeNV9WV7GqX9YinnQ1wmJ7MSwJjWbz"
+    },
+    "lz4Frame": {
+      "url": "https://raw.githubusercontent.com/lz4/lz4/dev/doc/lz4_Frame_format.md",
+      "sha384": "sha384-aUZ0odDIIZhQJGYd1QVeCASugBs/IU3nSkEDOptkozBmQl4LcQvKriWNQkjVAk3E"
+    },
+    "lz4Block": {
+      "url": "https://raw.githubusercontent.com/lz4/lz4/dev/doc/lz4_Block_format.md",
+      "sha384": "sha384-LByIiorYSduoZgf7V9VOSCYpNDlRc7/pgau1xq5G5BRVgPns6Z5hhxeWVt0XoVnY"
+    },
+    "bzip2": {
+      "url": "https://sourceware.org/bzip2/manual/manual.html",
+      "sha384": "sha384-FXxp/oJ4XDDCJfuDflY+vsHkFIorLwxnj04VnJCVUukmrNgMKkU4drE20bPIjkKu"
+    },
+    "bzip2Random": {
+      "url": "https://raw.githubusercontent.com/libarchive/bzip2/bzip2-1.0.8/randtable.c",
+      "sha384": "sha384-o/i9hxbQo6cYYCABou4/lckEn/yAjIpEfIo1Tvnv2k2aftIOaihR/gePavb7VZBT"
+    }
+  },
+  "phase3Upstream": {
+    "zstdRfcMetadata": {
+      "url": "https://www.rfc-editor.org/rfc/rfc8878.json",
+      "sha384": "sha384-BuZN3Qi7tIgjhIsZMH8mKLvokSjDa6sp3uT3R3xc0HbUlnDZeKQxJ8TiLUgJkEyP"
+    },
+    "zstdHttpRfcMetadata": {
+      "url": "https://www.rfc-editor.org/rfc/rfc9659.json",
+      "sha384": "sha384-SL64gDUB/uYFtE03S4x7n8+soi3e3sLtnr71/cOI6FeKBAd7mCYiLXqhop6Pa/Ym"
+    },
+    "zstdReleases": {
+      "url": "https://api.github.com/repos/facebook/zstd/releases?per_page=100",
+      "sha384": "sha384-SoSTZeApkIA6tKzIdXH9vz/l/s2gtF224nMMuDjxMGNDThorOwb2hP1xWcS3vift"
+    },
+    "zstdAdvisories": {
+      "url": "https://api.github.com/repos/facebook/zstd/security-advisories?per_page=100",
+      "sha384": "sha384-ViEJsFTLRCj8U2B7EHwKzfkd5DS5kKApX1Fu8qrXnvyQIjiUTnbULyG89xC/pMVU"
+    },
+    "zstdChanges": {
+      "url": "https://raw.githubusercontent.com/facebook/zstd/dev/CHANGELOG",
+      "sha384": "sha384-9v0BPs7U3H+OgsatZOZu0+MUUnWpGpxhDtcsKZ7//D6ehja9uVs2guAgsVIgUmmZ"
+    },
+    "lz4Releases": {
+      "url": "https://api.github.com/repos/lz4/lz4/releases?per_page=100",
+      "sha384": "sha384-JxfHq2ngt9YPYlvtRqKYGnqY/JVIO0UFHADrWXd7UYLOpLHmlWL7vmBO8zpy/037"
+    },
+    "lz4Advisories": {
+      "url": "https://api.github.com/repos/lz4/lz4/security-advisories?per_page=100",
+      "sha384": "sha384-ViEJsFTLRCj8U2B7EHwKzfkd5DS5kKApX1Fu8qrXnvyQIjiUTnbULyG89xC/pMVU"
+    },
+    "lz4Changes": {
+      "url": "https://raw.githubusercontent.com/lz4/lz4/dev/NEWS",
+      "sha384": "sha384-6+InwvnlDK5qGhI/oCh4wYGnq4uRHW/ALse7lp5yW8qJO2CqYUdLxirKB87UQDzp"
+    },
+    "bzip2Downloads": {
+      "url": "https://sourceware.org/bzip2/downloads.html",
+      "sha384": "sha384-YcL+KH5drNhdmGryQkKGZSz/8+1OcGdl0liFzE8Oex7Mvb0dP+OYn/sxiyrPOZ7j"
+    },
+    "bzip2Changes": {
+      "url": "https://sourceware.org/cgit/bzip2/plain/CHANGES",
+      "sha384": "sha384-r0l3ugI+7dTw4AgzwhbxrXyCtHSwtrG5jWpppUeoxzpXynyX7zMyEASW2b2UR/3v"
+    },
+    "bzip2Announcements": {
+      "url": "https://sourceware.org/pipermail/bzip2-devel/",
+      "sha384": "sha384-o0JUpvTKGMD2qkyG/kXFsTxMZ1dVdUH7C+jCFYNVoOfiN4rUH/FWN4oAsT73D8n2"
     }
   }
 }

@@ -1,10 +1,121 @@
 // 테스트용 이미지·인증서 재료 생성기.
 // 바이너리 파일과 개인키를 저장소에 커밋하지 않도록, 필요한 재료를 테스트 실행 중에 만든다.
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { closeSync, openSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import zlib from 'node:zlib';
+import { RANDOM_NUMBERS } from '../js/lib/archive/bzip2-random.js';
+import { TRANSFORMS, DICTIONARY_BITS } from '../js/lib/archive/brotli-tables.js';
+
+// A small RFC bitstream author for decoder tests. It does not call either first-party
+// codec. Node independently validates every normal stream and supplies expected bytes.
+export class BrotliBits {
+  constructor() { this.bytes = []; this.position = 0; }
+  write(width, value) {
+    for (let i = 0; i < width; i++, this.position++) {
+      const at = this.position >>> 3;
+      this.bytes[at] = (this.bytes[at] || 0) | (value & 1) << (this.position & 7);
+      value = Math.floor(value / 2);
+    }
+  }
+  align() { this.write((8 - this.position % 8) % 8, 0); }
+  raw(bytes) { this.align(); for (const byte of bytes) this.write(8, byte); }
+  finish() { return Buffer.from(this.bytes); }
+  simple(alphabet, values) {
+    this.write(2, 1); this.write(2, values.length - 1);
+    for (const value of values) this.write(Math.ceil(Math.log2(alphabet)), value);
+  }
+}
+
+export function brotliDictionaryStream({ length = 4, index = 0, transform = 0, postfix = 0, direct = 0,
+  declaredLength, distanceCode, distanceExtra } = {}) {
+  const w = new BrotliBits();
+  const copyWidths = [0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 7, 8, 9, 10, 24];
+  let copyCode = 0, copyBase = 2;
+  while (copyBase + 2 ** copyWidths[copyCode] <= length) copyBase += 2 ** copyWidths[copyCode++];
+  const command = [128, 192, 384][copyCode >>> 3] + (copyCode & 7), terminal = 136;
+  const distance = transform * 2 ** DICTIONARY_BITS[length] + index + 1;
+  const alphabet = 16 + direct + (48 << postfix);
+  let code = 16, extra = 0, extraBits = 0;
+  for (; code < alphabet; code++) {
+    if (code < 16 + direct) { if (code - 15 === distance) break; continue; }
+    const high = (code - 16 - direct) >>> postfix, low = (code - 16 - direct) & ((1 << postfix) - 1);
+    extraBits = 1 + (high >>> 1);
+    const base = (((2 + (high & 1)) * 2 ** extraBits - 4) << postfix) + low + direct + 1;
+    extra = (distance - base) / 2 ** postfix;
+    if (Number.isInteger(extra) && extra >= 0 && extra < 2 ** extraBits) break;
+  }
+  if (code >= alphabet) throw new Error('Unrepresentable test dictionary distance');
+  if (distanceCode !== undefined) { code = distanceCode; extra = distanceExtra || 0; extraBits = 0; }
+  const entry = TRANSFORMS[transform] || ['', 0, ''];
+  const omit = entry[1] >= 12 ? entry[1] - 11 : entry[1] >= 3 ? entry[1] - 2 : 0;
+  const size = declaredLength ?? entry[0].length + Math.max(0, length - omit) + entry[2].length + 1;
+  w.write(1, 0); // WBITS=16.
+  w.write(1, 1); w.write(1, 0); w.write(2, 0); w.write(16, size - 1);
+  w.write(3, 0); // One block type in each category.
+  w.write(2, postfix); w.write(4, direct >>> postfix);
+  w.write(2, 0); w.write(2, 0); // LSB6 context mode, one literal/distance tree.
+  w.simple(256, [120]);
+  w.simple(704, [command, terminal]);
+  w.simple(alphabet, [code]);
+  w.write(1, command < terminal ? 0 : 1);
+  w.write(copyWidths[copyCode], length - copyBase);
+  w.write(extraBits, extra);
+  w.write(1, command < terminal ? 1 : 0);
+  return w.finish();
+}
+
+export function brotliStoredStream(parts, { metadata = null, declaredExtra = 0 } = {}) {
+  const w = new BrotliBits();
+  w.write(1, 0); // WBITS=16, no dictionary/window allocation is implied.
+  if (metadata) {
+    w.write(1, 0); w.write(2, 3); w.write(1, 0);
+    const count = metadata.length ? Math.ceil(Math.log2(metadata.length + 1) / 8) : 0;
+    w.write(2, count); w.write(count * 8, Math.max(0, metadata.length - 1));
+    w.raw(metadata);
+  }
+  for (const part of parts) {
+    const size = part.length + declaredExtra;
+    const nibbles = size <= 65536 ? 4 : size <= 1048576 ? 5 : 6;
+    w.write(1, 0); w.write(2, nibbles - 4); w.write(nibbles * 4, size - 1); w.write(1, 1);
+    w.raw(part);
+  }
+  w.write(1, 1); w.write(1, 1);
+  return w.finish();
+}
+
+// RFC 7932 section 10 / erratum 6977: a distance block is exhausted before an
+// implicit-distance command. Its switch fields belong to the next explicit one.
+export function brotliBlockSwitchStream() {
+  const w = new BrotliBits();
+  w.write(1, 0); w.write(1, 1); w.write(1, 0); w.write(2, 0); w.write(16, 15);
+  const twoBlocks = () => {
+    w.write(4, 1); // Two block types.
+    w.simple(4, [1]); w.simple(26, [0]); w.write(2, 0); // Increment type; count=1.
+  };
+  twoBlocks(); // Literal types alternate between 'a' and 'b'.
+  w.write(1, 0); // One command block type.
+  twoBlocks(); // Distance types: last distance, then second-to-last distance.
+  w.write(6, 0); // NPOSTFIX=NDIRECT=0.
+  w.write(2, 2); w.write(2, 3); // UTF8 and Signed literal modes.
+  w.write(4, 1); // Two literal trees.
+  w.write(1, 1); w.write(4, 5); // RLEMAX=6.
+  w.simple(8, [6, 7]);
+  w.write(1, 0); w.write(6, 0); // 64 zeros.
+  for (let i = 0; i < 64; i++) w.write(1, 1); // 64 ones.
+  w.write(1, 0); // No inverse MTF.
+  w.write(4, 1); w.write(1, 0); // Two distance trees, no RLE.
+  w.simple(2, [0, 1]);
+  w.write(8, 0xf0); w.write(1, 0); // Context map 00001111, no inverse MTF.
+  w.simple(256, [97]); w.simple(256, [98]);
+  w.simple(704, [162, 2, 130]); // Insert4/copy4, implicit copy4, explicit copy4.
+  w.simple(64, [0]); w.simple(64, [1]);
+  w.write(1, 0); w.write(6, 0); // First command + three literal block switches.
+  w.write(2, 1); // Implicit last distance: no distance block fields here.
+  w.write(2, 3); w.write(2, 0); // Explicit distance + switch to second distance tree.
+  return w.finish();
+}
 
 // WPT compression/resources/decompression-input.js at the pinned WPT commit in
 // scripts/compression-spec-lock.json. Materialize the public vector at run time.
@@ -332,4 +443,147 @@ crlDistributionPoints = URI:https://status.wtools.test/intermediate.crl
 // PEM 블록 하나를 DER 바이트로 되돌린다.
 export function pemToDer(pem) {
   return Buffer.from(pem.replace(/-----[^-]+-----|\s/g, ''), 'base64');
+}
+
+// A file-backed stdin avoids pipe EOF stalls during concurrent browser/oracle jobs.
+function codecOracle(program, args, input, maxBuffer = 128 * 1024 * 1024) {
+  const directory = mkdtempSync(join(tmpdir(), 'wtools-codec-'));
+  const path = join(directory, 'input');
+  let fd;
+  try {
+    writeFileSync(path, input); fd = openSync(path, 'r');
+    return execFileSync(program, args, { stdio: [fd, 'pipe', 'pipe'], maxBuffer, timeout: 30000 });
+  } finally {
+    if (fd !== undefined) closeSync(fd);
+    rmSync(directory, { recursive: true, force: true });
+  }
+}
+
+// Independent native liblz4 oracle. Ubuntu's liblz4-1 (Playwright image) or Homebrew
+// liblz4 is used only by tests, never by the static application.
+export function nativeLz4(input, action = 'compress', options = {}) {
+  return codecOracle('python3', ['-c', `
+import ctypes as c, ctypes.util, json, sys
+from pathlib import Path
+path = ctypes.util.find_library('lz4') or next((str(p) for p in [Path('/opt/homebrew/lib/liblz4.dylib'), Path('/usr/local/lib/liblz4.dylib')] if p.exists()), None)
+if not path:
+    raise RuntimeError('Native LZ4 test oracle is missing (liblz4-1 or Homebrew lz4)')
+lib = c.CDLL(path)
+class Info(c.Structure):
+    _fields_ = [('blockSizeID', c.c_int), ('blockMode', c.c_int), ('contentChecksumFlag', c.c_int),
+                ('frameType', c.c_int), ('contentSize', c.c_ulonglong), ('dictID', c.c_uint), ('blockChecksumFlag', c.c_int)]
+class Preferences(c.Structure):
+    _fields_ = [('frameInfo', Info), ('compressionLevel', c.c_int), ('autoFlush', c.c_uint),
+                ('favorDecSpeed', c.c_uint), ('reserved', c.c_uint * 3)]
+def function(name, args):
+    f = getattr(lib, name); f.argtypes = args; f.restype = c.c_size_t
+    return f
+is_error = function('LZ4F_isError', [c.c_size_t])
+def check(value):
+    if is_error(value): raise ValueError('Invalid native LZ4 frame')
+    return value
+source = sys.stdin.buffer.read(); src = c.create_string_buffer(source)
+if sys.argv[1] == 'compress':
+    o = json.loads(sys.argv[2]); prefs = Preferences()
+    prefs.frameInfo.blockSizeID = o.get('blockSize', 4)
+    prefs.frameInfo.blockMode = int(o.get('independent', True))
+    prefs.frameInfo.contentChecksumFlag = int(o.get('contentChecksum', True))
+    prefs.frameInfo.blockChecksumFlag = int(o.get('blockChecksum', True))
+    prefs.frameInfo.contentSize = len(source) if o.get('contentSize', True) else 0
+    prefs.compressionLevel = o.get('level', 0)
+    bound = function('LZ4F_compressFrameBound', [c.c_size_t, c.POINTER(Preferences)])(len(source), c.byref(prefs))
+    dst = c.create_string_buffer(check(bound))
+    size = check(function('LZ4F_compressFrame', [c.c_void_p,c.c_size_t,c.c_void_p,c.c_size_t,c.POINTER(Preferences)])(
+        dst,len(dst),src,len(source),c.byref(prefs)))
+    sys.stdout.buffer.write(dst.raw[:size])
+else:
+    context = c.c_void_p()
+    check(function('LZ4F_createDecompressionContext', [c.POINTER(c.c_void_p), c.c_uint])(c.byref(context),100))
+    decode = function('LZ4F_decompress', [c.c_void_p,c.c_void_p,c.POINTER(c.c_size_t),c.c_void_p,c.POINTER(c.c_size_t),c.c_void_p])
+    cursor = 0; parts = []; output = 0; hint = 1
+    try:
+        while cursor < len(source):
+            dst = c.create_string_buffer(4*1024*1024)
+            available = c.c_size_t(len(source)-cursor); capacity = c.c_size_t(len(dst))
+            hint = check(decode(context,dst,c.byref(capacity),c.byref(src,cursor),c.byref(available),None))
+            if not available.value and not capacity.value: raise ValueError('Truncated LZ4')
+            cursor += available.value; output += capacity.value
+            if output > 128*1024*1024: raise ValueError('Oracle output limit')
+            parts.append(dst.raw[:capacity.value])
+        if hint: raise ValueError('Truncated LZ4')
+        sys.stdout.buffer.write(b''.join(parts))
+    finally:
+        function('LZ4F_freeDecompressionContext', [c.c_void_p])(context)
+`, action, JSON.stringify(options)], input);
+}
+
+export function makeBzip2(input, level = 9) {
+  return codecOracle('python3', ['-c',
+    'import bz2,sys;sys.stdout.buffer.write(bz2.compress(sys.stdin.buffer.read(),compresslevel=int(sys.argv[1])))', String(level)],
+  input, 16 * 1024 * 1024);
+}
+
+export function codecCorpus() {
+  let seed = 751;
+  const noise = Buffer.alloc(1048577);
+  for (let i = 0; i < noise.length; i++) { seed ^= seed << 13; seed ^= seed >>> 17; seed ^= seed << 5; noise[i] = seed & 255; }
+  return [Buffer.alloc(0), Buffer.from([0xff]), Buffer.from('한글·NUL\0·🌏\n'.repeat(100)),
+    Buffer.from(Array.from({ length: 256 }, (_, i) => i)),
+    ...[31, 32, 255, 256, 4095, 4096, 65535, 65536, 65537, 100001, 131072, 131073, 900001, 1048577].map((n) => noise.subarray(0, n)),
+    Buffer.alloc(1048577, 97), Buffer.from(noise.map((byte) => byte & 15)),
+    Buffer.from(noise.map((byte) => (byte & 15) + 128)),
+    Buffer.concat([noise.subarray(0, 70000), noise.subarray(0, 70000)])];
+}
+
+// No four-byte runs: Python's first RLE stage is an identity, so randomisation
+// can be applied before compression. Native bz2 validates the patched stream.
+export function randomizedBzip2(length = 600000) {
+  const plain = Buffer.from(Array.from({ length }, (_, i) => i % 251));
+  const scrambled = Buffer.from(plain);
+  let remaining = 0, index = 0;
+  for (let i = 0; i < length; i++) {
+    if (!remaining) { remaining = RANDOM_NUMBERS[index]; index = (index + 1) & 511; }
+    remaining--;
+    if (remaining === 1) scrambled[i] ^= 1;
+  }
+  const packed = execFileSync('python3', ['-c',
+    'import bz2,sys;sys.stdout.buffer.write(bz2.compress(sys.stdin.buffer.read(),compresslevel=9))'],
+  { input: scrambled, maxBuffer: 4 * 1024 * 1024 });
+  let crc = 0xffffffff;
+  for (const byte of plain) {
+    crc ^= byte << 24;
+    for (let i = 0; i < 8; i++) crc = (crc << 1) ^ ((crc & 0x80000000) ? 0x04c11db7 : 0);
+  }
+  crc = (~crc) >>> 0;
+  packed.writeUInt32BE(crc, 10);
+  packed[14] |= 0x80;
+  let bits = [...packed].map(byte => byte.toString(2).padStart(8, '0')).join('');
+  const end = bits.lastIndexOf('000101110111001001000101001110000101000010010000');
+  if (end < 0) throw new Error('Missing bzip2 footer');
+  bits = bits.slice(0, end + 48) + crc.toString(2).padStart(32, '0') + bits.slice(end + 80);
+  const bytes = Buffer.from(Array.from({ length: bits.length / 8 }, (_, i) => parseInt(bits.slice(i * 8, i * 8 + 8), 2)));
+  const native = execFileSync('python3', ['-c', 'import bz2,sys;sys.stdout.buffer.write(bz2.decompress(sys.stdin.buffer.read()))'],
+    { input: bytes, maxBuffer: 4 * 1024 * 1024 });
+  if (!native.equals(plain)) throw new Error('Native randomized bzip2 mismatch');
+  return { bytes, plain };
+}
+
+// ZSTD_decompress is strict about incomplete/trailing frames. Node's streaming
+// convenience wrapper accepts some truncated inputs, so it is not a malformed oracle.
+export function nativeZstdDecodeBatch(vectors, maxOutputLength = 65536) {
+  return JSON.parse(codecOracle('python3', ['-c', `
+import base64, ctypes as c, ctypes.util, json, sys
+from pathlib import Path
+path = ctypes.util.find_library('zstd') or next((str(p) for p in [Path('/opt/homebrew/lib/libzstd.dylib'),Path('/usr/local/lib/libzstd.dylib')] if p.exists()), None)
+if not path: raise RuntimeError('Native Zstandard test oracle is missing (libzstd1 or Homebrew zstd)')
+lib = c.CDLL(path); decode = lib.ZSTD_decompress
+decode.argtypes = [c.c_void_p,c.c_size_t,c.c_void_p,c.c_size_t]; decode.restype = c.c_size_t
+lib.ZSTD_isError.argtypes = [c.c_size_t]; lib.ZSTD_isError.restype = c.c_uint
+output = c.create_string_buffer(int(sys.argv[1])); results = []
+for encoded in json.load(sys.stdin):
+    source = base64.b64decode(encoded); src = c.create_string_buffer(source)
+    length = decode(output,len(output),src,len(source))
+    results.append(None if lib.ZSTD_isError(length) else base64.b64encode(output.raw[:length]).decode())
+json.dump(results,sys.stdout)
+`, String(maxOutputLength)], Buffer.from(JSON.stringify(vectors)), 16 * 1024 * 1024).toString());
 }

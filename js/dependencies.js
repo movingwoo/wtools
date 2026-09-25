@@ -9,7 +9,13 @@ globalThis.WTOOLS_DEPENDENCIES = {
       "integrity": "sha384-mgWScxWVKP8F7PBbpNp7i/aSb17kN0LcifBpahAplF3Mn0GR4/u1oMpWIm2rD8yY",
       "license": "MIT",
       "kind": "script",
-      "tools": ["js/main.js", "js/tools/cryptotools.js", "js/tools/encoding.js", "js/tools/hashing.js", "js/tools/pki.js"]
+      "tools": [
+        "js/main.js",
+        "js/tools/cryptotools.js",
+        "js/tools/encoding.js",
+        "js/tools/hashing.js",
+        "js/tools/pki.js"
+      ]
     },
     "jsrsasign": {
       "package": "jsrsasign",
@@ -18,7 +24,11 @@ globalThis.WTOOLS_DEPENDENCIES = {
       "integrity": "sha384-IdrNKmnO2MACDlM1h9Mxh3iC1hsUWqJtqPavxru0+RKPp533myjoFCv8nGIj4QLh",
       "license": "MIT",
       "kind": "script",
-      "tools": ["js/tools/cryptotools.js", "js/tools/encoding.js", "js/tools/pki.js"]
+      "tools": [
+        "js/tools/cryptotools.js",
+        "js/tools/encoding.js",
+        "js/tools/pki.js"
+      ]
     },
     "bcrypt": {
       "package": "bcryptjs",
@@ -27,7 +37,9 @@ globalThis.WTOOLS_DEPENDENCIES = {
       "integrity": "sha384-qGFE4FIJLgCFuYs3nzg39XpCtvT5AZUhaBdjB3e1+vpKQa03AkyWOyBSFb9OcQ/g",
       "license": "MIT",
       "kind": "script",
-      "tools": ["js/tools/cryptotools.js"]
+      "tools": [
+        "js/tools/cryptotools.js"
+      ]
     },
     "hashWasm": {
       "package": "hash-wasm",
@@ -36,7 +48,10 @@ globalThis.WTOOLS_DEPENDENCIES = {
       "integrity": "sha384-xqpAfTvjqeQXohcBXlcJLUDhn4Y4oFz8WBkp7H1Lak1kldyrkEwU8/q0pOfbYVn2",
       "license": "MIT",
       "kind": "script",
-      "tools": ["js/tools/cryptotools.js", "js/tools/hashing.js"]
+      "tools": [
+        "js/tools/cryptotools.js",
+        "js/tools/hashing.js"
+      ]
     },
     "tweetnacl": {
       "package": "tweetnacl",
@@ -45,7 +60,10 @@ globalThis.WTOOLS_DEPENDENCIES = {
       "integrity": "sha384-05+sicyRJQ56XpL4U9HJ8YbtSzFDvAg7apPKOGV6A0JsAJKFM68jp5oLnUjG5mEp",
       "license": "Unlicense",
       "kind": "script",
-      "tools": ["js/tools/cryptotools.js", "js/tools/pki.js"]
+      "tools": [
+        "js/tools/cryptotools.js",
+        "js/tools/pki.js"
+      ]
     }
   },
   "vendored": {
@@ -57,67 +75,10 @@ globalThis.WTOOLS_DEPENDENCIES = {
       "source": "https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.2.0/crypto-js.min.js",
       "sourceIntegrity": "sha384-mgWScxWVKP8F7PBbpNp7i/aSb17kN0LcifBpahAplF3Mn0GR4/u1oMpWIm2rD8yY",
       "license": "MIT",
-      "tools": ["js/tools/hashing.js", "js/workers/file-hash.js"]
-    },
-    "brotliDecompress": {
-      "package": "brotli",
-      "version": "1.3.3",
-      "path": "assets/vendor/brotli-decompress-1.3.3.mjs",
-      "integrity": "sha384-0DWt7KH3BB7UTY1iywY0tyM7NfJJ5SiWN8gt8kFf3izEeZptC+q0jr/8KjLrW7xf",
-      "source": "https://cdn.jsdelivr.net/npm/brotli@1.3.3/decompress.js/+esm",
-      "sourceIntegrity": "sha384-E6MAu//hrot7qFyeqjLGxqJ9wba48vL5j+ENc6G2vE6hM3Q9Zyxxc0Q9PrKl4tWb",
-      "license": "MIT",
-      "tools": ["js/tools/archive.js"]
-    },
-    "zstdCompress": {
-      "package": "@bokuweb/zstd-wasm",
-      "version": "0.0.27",
-      "path": "assets/vendor/zstd-compress-0.0.27.mjs",
-      "integrity": "sha384-8cxMCI54YYF3ngeYrlyAEtdYkzxeFrZWZp1BaGopdfxabrYGsS74ckgP2/YiPGpm",
-      "source": "https://cdn.jsdelivr.net/npm/@bokuweb/zstd-wasm@0.0.27/+esm",
-      "sourceIntegrity": "sha384-SmJLKQ1PpKIS3qBOQWPyc+U5ScUudslu3btMo7d9DHcOKxBz7Nz5Cp3QoS6IqhL/",
-      "license": "MIT",
-      "tools": ["js/tools/archive.js"]
-    },
-    "zstdWasm": {
-      "package": "@bokuweb/zstd-wasm",
-      "version": "0.0.27",
-      "path": "assets/vendor/zstd-wasm-0.0.27.wasm",
-      "integrity": "sha384-MIWnGpnIkQ7YxqaFxzhMjv9Kc6zOqfy77ZNJx+iQNrJlMlkLIA+JJVLDqGZ3rPW4",
-      "source": "https://cdn.jsdelivr.net/npm/@bokuweb/zstd-wasm@0.0.27/dist/web/zstd.wasm",
-      "sourceIntegrity": "sha384-MIWnGpnIkQ7YxqaFxzhMjv9Kc6zOqfy77ZNJx+iQNrJlMlkLIA+JJVLDqGZ3rPW4",
-      "license": "MIT",
-      "tools": ["js/tools/archive.js"]
-    },
-    "zstdDecompress": {
-      "package": "fzstd",
-      "version": "0.1.1",
-      "path": "assets/vendor/fzstd-0.1.1.mjs",
-      "integrity": "sha384-36JTXuypr3iXDZRIdK27FY0dfxYJNwlPtx4tbu2ErYD47ppPrXtObkp9kzqhhie+",
-      "source": "https://cdn.jsdelivr.net/npm/fzstd@0.1.1/+esm",
-      "sourceIntegrity": "sha384-36JTXuypr3iXDZRIdK27FY0dfxYJNwlPtx4tbu2ErYD47ppPrXtObkp9kzqhhie+",
-      "license": "MIT",
-      "tools": ["js/tools/archive.js"]
-    },
-    "bzip2Decompress": {
-      "package": "seek-bzip",
-      "version": "2.0.0",
-      "path": "assets/vendor/seek-bzip-2.0.0.mjs",
-      "integrity": "sha384-usIs/KK/0l3b5KOooBEmxKmlAkXn9vyWiFMIuDbYmMf29mlWi5hjlgpD4O5M0UrB",
-      "source": "https://cdn.jsdelivr.net/npm/seek-bzip@2.0.0/+esm",
-      "sourceIntegrity": "sha384-usIs/KK/0l3b5KOooBEmxKmlAkXn9vyWiFMIuDbYmMf29mlWi5hjlgpD4O5M0UrB",
-      "license": "MIT",
-      "tools": ["js/tools/archive.js"]
-    },
-    "lz4": {
-      "package": "lz4js",
-      "version": "0.2.0",
-      "path": "assets/vendor/lz4js-0.2.0.mjs",
-      "integrity": "sha384-1gyPa+NXP6qrwcxIm0AZ1qJ8VDd40VpPFdVp0FVLx3oYko16nZcVpzp0cJE7HXsI",
-      "source": "https://cdn.jsdelivr.net/npm/lz4js@0.2.0/+esm",
-      "sourceIntegrity": "sha384-1gyPa+NXP6qrwcxIm0AZ1qJ8VDd40VpPFdVp0FVLx3oYko16nZcVpzp0cJE7HXsI",
-      "license": "ISC",
-      "tools": ["js/tools/archive.js"]
+      "tools": [
+        "js/tools/hashing.js",
+        "js/workers/file-hash.js"
+      ]
     },
     "openpgp": {
       "package": "openpgp",
@@ -127,7 +88,9 @@ globalThis.WTOOLS_DEPENDENCIES = {
       "source": "https://cdn.jsdelivr.net/npm/openpgp@5.11.3/dist/openpgp.min.mjs",
       "sourceIntegrity": "sha384-NiknPeWCb1MqBPxyi4JE67L0QiTiFaVZi7scBC1HzhzZFTnG/e2TrY/qRScsXCQm",
       "license": "LGPL-3.0-or-later",
-      "tools": ["js/tools/cryptotools.js"]
+      "tools": [
+        "js/tools/cryptotools.js"
+      ]
     }
   },
   "tests": {

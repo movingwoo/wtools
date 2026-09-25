@@ -4,11 +4,13 @@
 import { test, expect, toolCases, openTool, ioSection, runIO, uploadFile, grabDownload } from '../helpers.js';
 import {
   brotliCompressSync, brotliDecompressSync, constants, deflateRawSync, deflateSync, gunzipSync, gzipSync,
-  inflateRawSync, inflateSync, zstdDecompressSync,
+  inflateRawSync, inflateSync, zstdCompressSync, zstdDecompressSync,
 } from 'node:zlib';
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { makeLzma, readLzma, lzmaCorpus, lzmaSpecVectors, brotliCorpus, brotliWptVector } from '../fixtures.js';
+import { makeLzma, readLzma, lzmaCorpus, lzmaSpecVectors, brotliCorpus, brotliWptVector,
+  nativeLz4, makeBzip2, codecCorpus, randomizedBzip2, nativeZstdDecodeBatch,
+  BrotliBits, brotliDictionaryStream, brotliStoredStream, brotliBlockSwitchStream } from '../fixtures.js';
 
 const MSG = 'hello wtools compression test\n'.repeat(3); // 90바이트
 // 원문 MSG를 다른 구현으로 압축한 벡터: node zlib(gzip/deflate/deflateRaw), python bz2/lzma(FORMAT_ALONE)
@@ -170,7 +172,7 @@ const cases = [
     name: 'lzma: 압축 결과는 props·사전 크기·원본 길이 헤더로 시작', tool: 'lzma', options: { '출력 형식': 'hex' }, inputs: MSG, action: '압축',
     output: /^5d000020005a00000000000000.*\n\n\/\/ 원본 90B → 55B \(38\.9% 감소\)$/s,
   },
-  { name: 'lz4: 압축 결과는 프레임 매직 04224d18로 시작', tool: 'lz4', options: { '출력 형식': 'hex' }, inputs: MSG, action: '압축', output: /^04224d18.*\n\n\/\/ 원본 90B → 56B \(37\.8% 감소\)$/s },
+  { name: 'lz4: 압축 결과는 프레임 매직 04224d18로 시작', tool: 'lz4', options: { '출력 형식': 'hex' }, inputs: MSG, action: '압축', output: /^04224d18.*\n\n\/\/ 원본 90B → \d+B \([0-9.]+% 감소\)$/s },
 
   /* ---------- 입출력 형식 ---------- */
   { name: 'gzip: Hex 입력도 같은 결과', tool: 'gzip', options: { '입력 형식': 'hex', '출력 형식': 'hex' }, inputs: '414243', action: '압축', output: /^1f8b08000000000000[0-9a-f]{2}/ },
@@ -180,18 +182,18 @@ const cases = [
   { name: 'gzip: 잘못된 데이터 해제는 에러', tool: 'gzip', options: { '입력 형식': 'base64' }, inputs: 'AAAA', action: '해제', error: '압축 데이터를 해제하지 못했습니다. 형식과 손상 여부를 확인하세요.' },
   { name: 'zlib: 잘못된 데이터 해제는 에러', tool: 'zlib', options: { '입력 형식': 'base64' }, inputs: 'AAAA', action: '해제', error: '압축 데이터를 해제하지 못했습니다. 형식과 손상 여부를 확인하세요.' },
   { name: 'raw-deflate: 잘린 데이터 해제는 에러', tool: 'raw-deflate', options: { '입력 형식': 'base64' }, inputs: 'y0jN', action: '해제', error: '압축 데이터를 해제하지 못했습니다. 형식과 손상 여부를 확인하세요.' },
-  { name: 'lz4: 매직 넘버가 아니면 에러', tool: 'lz4', options: { '입력 형식': 'base64' }, inputs: 'AAAA', action: '해제', error: 'invalid magic number' },
+  { name: 'lz4: 매직 넘버가 아니면 에러', tool: 'lz4', options: { '입력 형식': 'base64' }, inputs: 'AAAA', action: '해제', error: 'LZ4 바이트 0: 데이터가 잘렸습니다.' },
   { name: 'lzma: 잘린 입력은 에러', tool: 'lzma', options: { '입력 형식': 'base64' }, inputs: 'AAAA', action: '해제', error: 'LZMA 입력이 잘렸습니다. 최소 18바이트가 필요합니다.' },
-  { name: 'bzip2: bzip2 데이터가 아니면 에러', tool: 'bzip2', io: 0, options: { '입력 형식': 'base64' }, inputs: 'AAAA', action: '해제', error: 'Not bzip data: bad magic' },
+  { name: 'bzip2: bzip2 데이터가 아니면 에러', tool: 'bzip2', io: 0, options: { '입력 형식': 'base64' }, inputs: 'AAAA', action: '해제', error: 'Bzip2 비트 24: Bzip2 헤더가 올바르지 않습니다.' },
 
   { name: 'brotli: node zlib 벡터 해제', tool: 'brotli', options: B64, inputs: V.brotli, action: '해제', output: MSG },
   { name: 'brotli: 공개 WPT 벡터 해제', tool: 'brotli', options: B64,
     inputs: brotliWptVector().packed.toString('base64'), action: '해제', output: 'expected output' },
   { name: 'brotli: 잘못된 Hex 압축 입력 거부', tool: 'brotli', options: { '입력 형식': 'hex' },
     inputs: 'zz', action: '압축', error: '올바른 Hex 문자열이 아닙니다.' },
-  { name: 'brotli: 잘못된 데이터는 에러', tool: 'brotli', options: { '입력 형식': 'hex' }, inputs: '010203', action: '해제', error: '올바른 Brotli 데이터가 아니거나 지원하지 않는 형식입니다.' },
+  { name: 'brotli: 잘못된 데이터는 에러', tool: 'brotli', options: { '입력 형식': 'hex' }, inputs: '010203', action: '해제', error: 'Brotli 비트 10: 데이터가 잘렸습니다.' },
   { name: 'zstd: node zlib 벡터 해제', tool: 'zstd', options: B64, inputs: V.zstd, action: '해제', output: MSG },
-  { name: 'zstd: 잘못된 데이터는 에러', tool: 'zstd', options: { '입력 형식': 'hex' }, inputs: '010203', action: '해제', error: 'invalid zstd data' },
+  { name: 'zstd: 잘못된 데이터는 에러', tool: 'zstd', options: { '입력 형식': 'hex' }, inputs: '010203', action: '해제', error: 'Zstandard: 바이트 0: 데이터가 잘렸습니다.' },
 ];
 
 toolCases('archive', cases);
@@ -1358,9 +1360,9 @@ test('brotli: 입출력 모듈 로드 실패 후 재시도와 빈 결과 다운�
   expect(saved.bytes).toHaveLength(0);
 });
 
-test('brotli Worker: 과대 해제 결과는 전송·형식 변환 전에 거부', async ({ page }) => {
-  // Only 64 KiB expands here: demonstrate the existing decoder's post-decode
-  // ratio policy without allocating an actual memory-exhaustion payload.
+test('brotli Worker: 과대 해제 결과는 출력 할당·전송·형식 변환 전에 거부', async ({ page }) => {
+  // A small independent expansion vector exercises both Worker entry contracts;
+  // the direct decoder test below also observes allocation before rejection.
   const packed = brotliCompressSync(Buffer.alloc(65536)).toString('base64');
   await page.goto('/');
   const outputs = await page.evaluate(async (packed) => {
@@ -1369,8 +1371,7 @@ test('brotli Worker: 과대 해제 결과는 전송·형식 변환 전에 거부
     const run = (data) => new Promise((resolve, reject) => {
       worker.onmessage = ({ data }) => resolve(data);
       worker.onerror = reject;
-      worker.postMessage({ codec: 'brotli', action: 'decomp',
-        urls: { brotliDecompress: '/assets/vendor/brotli-decompress-1.3.3.mjs' }, ...data });
+      worker.postMessage({ codec: 'brotli', action: 'decomp', ...data });
     });
     try {
       return [await run({ bytes: b64ToBytes(packed) }),
@@ -1381,4 +1382,474 @@ test('brotli Worker: 과대 해제 결과는 전송·형식 변환 전에 거부
     expect(Object.keys(output)).toEqual(['error']);
     expect(output.error).toContain('안전 한도');
   }
+});
+
+test('brotli 자체 해제기: Node의 레벨·윈도·모드와 공개 WPT·메타데이터·블록 경계를 검증', async ({ page }) => {
+  test.setTimeout(60_000);
+  const switches = brotliBlockSwitchStream();
+  expect(brotliDecompressSync(switches).toString()).toBe('ababababababbaba');
+  const vectors = [brotliWptVector(), { packed: switches, plain: brotliDecompressSync(switches) }];
+  for (const [index, plain] of brotliCorpus().entries()) {
+    for (const quality of plain.length > 65536 ? [6] : [0, 1, 4, 6, 9, 11]) {
+      const postfix = index % 4;
+      const packed = brotliCompressSync(plain, { params: {
+        [constants.BROTLI_PARAM_QUALITY]: quality, [constants.BROTLI_PARAM_LGWIN]: 10 + index % 15,
+        [constants.BROTLI_PARAM_MODE]: index % 3, [constants.BROTLI_PARAM_NPOSTFIX]: postfix,
+        [constants.BROTLI_PARAM_NDIRECT]: (index % 16) << postfix,
+      } });
+      vectors.push({ packed, plain });
+    }
+  }
+  const parts = [Buffer.from('블록 사이 🌏'), brotliCorpus()[14].subarray(0, 65537)];
+  for (const metadata of [Buffer.alloc(0), Buffer.from('ignored metadata'), Buffer.alloc(300, 42)]) {
+    const packed = brotliStoredStream(parts, { metadata }), plain = Buffer.concat(parts);
+    expect(brotliDecompressSync(packed)).toEqual(plain);
+    vectors.push({ packed, plain });
+  }
+  await page.goto('/');
+  const results = await page.evaluate(async (vectors) => {
+    const { decompress } = await import('/js/lib/archive/brotli-decode.js');
+    const { b64ToBytes, bytesToB64 } = await import('/js/lib/common/base64.js');
+    const dictionary = new Uint8Array(await (await fetch('/assets/data/brotli-dictionary.bin')).arrayBuffer());
+    return vectors.map((value) => {
+      // A nonzero byte offset must not change the input interpretation or ownership.
+      const packed = b64ToBytes(value), view = new Uint8Array(packed.length + 2);
+      view.set(packed, 1);
+      try { return { plain: bytesToB64(decompress(view.subarray(1, -1), { dictionary })),
+        unchanged: packed.every((v, i) => view[i + 1] === v) }; }
+      catch (error) { return { error: error.message }; }
+    });
+  }, vectors.map(({ packed }) => packed.toString('base64')));
+  for (let i = 0; i < vectors.length; i++) {
+    const { packed, plain } = vectors[i];
+    if (plain.length > packed.length * 200) expect(results[i].error, `vector ${i}`).toContain('안전 한도');
+    else {
+      expect(results[i].error, `vector ${i}`).toBeUndefined();
+      expect(Buffer.from(results[i].plain, 'base64')).toEqual(plain);
+      expect(results[i].unchanged).toBe(true);
+    }
+  }
+});
+
+test('brotli 자체 해제기: 사전의 21개 길이·121개 변환과 모든 postfix를 Node와 교차 검증', async ({ page }) => {
+  test.setTimeout(60_000);
+  const vectors = [];
+  // RFC 7932 appendix A: first and last words also exercise non-ASCII transforms.
+  const depth = [10, 10, 11, 11, 10, 10, 10, 10, 10, 9, 9, 8, 7, 7, 8, 7, 7, 6, 6, 5, 5];
+  for (let length = 4; length <= 24; length++) {
+    for (let transform = 0; transform < 121; transform++) {
+      for (const index of [0, 2 ** depth[length - 4] - 1]) {
+        const postfix = transform % 4, direct = (transform % 16) << postfix;
+        const packed = brotliDictionaryStream({ length, transform, index, postfix, direct });
+        vectors.push({ packed, plain: brotliDecompressSync(packed) });
+      }
+    }
+  }
+  await page.goto('/');
+  const outputs = await page.evaluate(async (vectors) => {
+    const { decompress } = await import('/js/lib/archive/brotli-decode.js');
+    const { b64ToBytes, bytesToB64 } = await import('/js/lib/common/base64.js');
+    const dictionary = new Uint8Array(await (await fetch('/assets/data/brotli-dictionary.bin')).arrayBuffer());
+    return vectors.map((packed) => bytesToB64(decompress(b64ToBytes(packed), { dictionary })));
+  }, vectors.map(({ packed }) => packed.toString('base64')));
+  expect(outputs).toEqual(vectors.map(({ plain }) => plain.toString('base64')));
+});
+
+test('brotli 자체 해제기: 거짓 길이·압축 폭탄·누적 출력 상한은 메모리를 확보하기 전에 거부', async ({ page }) => {
+  const bomb = brotliCompressSync(Buffer.alloc(65536));
+  const declared = brotliStoredStream([Buffer.from([1])], { declaredExtra: 16777215 });
+  const blocks = brotliStoredStream([Buffer.from('abcd'), Buffer.from('efgh')]);
+  await page.goto('/');
+  const result = await page.evaluate(async ({ bomb, declared, blocks }) => {
+    const { decompress } = await import('/js/lib/archive/brotli-decode.js');
+    const { b64ToBytes } = await import('/js/lib/common/base64.js');
+    const inputs = [b64ToBytes(bomb), b64ToBytes(declared), b64ToBytes(blocks)];
+    const Native = window.Uint8Array, allocations = [];
+    window.Uint8Array = new Proxy(Native, { construct(target, args) {
+      if (typeof args[0] === 'number') allocations.push(args[0]);
+      return Reflect.construct(target, args);
+    } });
+    try {
+      const results = inputs.map((input, index) => {
+        allocations.length = 0;
+        try { decompress(input, index === 2 ? { maxOutputLength: 6 } : {}); return {}; }
+        catch (error) { return { error: error.message, allocations: allocations.slice() }; }
+      });
+      return results;
+    } finally { window.Uint8Array = Native; }
+  }, Object.fromEntries(Object.entries({ bomb, declared, blocks }).map(([key, value]) => [key, value.toString('base64')])));
+  for (const output of result) expect(output.error).toContain('안전 한도');
+  expect(result[0].allocations).toEqual([]);
+  expect(result[1].allocations).toEqual([]);
+  expect(result[2].allocations).toEqual([6]);
+  const bounds = await page.evaluate(async (blocks) => {
+    const { decompress } = await import('/js/lib/archive/brotli-decode.js');
+    const { b64ToBytes } = await import('/js/lib/common/base64.js');
+    const bytes = b64ToBytes(blocks);
+    const invalid = [
+      () => decompress('text'),
+      ...[-1, 1.5, Infinity, 134217729].map((maxOutputLength) => () => decompress(bytes, { maxOutputLength })),
+      ...[0, -1, NaN, Infinity, 201].map((maxExpansionRatio) => () => decompress(bytes, { maxExpansionRatio })),
+      () => decompress(bytes, { maxExpansionRatio: 0.1 }),
+    ];
+    return { exact: [...decompress(bytes, { maxOutputLength: 8 })],
+      empty: [...decompress(new Uint8Array([6]), { maxOutputLength: 0 })],
+      errors: invalid.map((run) => { try { run(); return ''; } catch (error) { return error.message; } }) };
+  }, blocks.toString('base64'));
+  expect(Buffer.from(bounds.exact).toString()).toBe('abcdefgh');
+  expect(bounds.empty).toEqual([]);
+  bounds.errors.forEach((error) => expect(error).toMatch(/Brotli/));
+});
+
+test('brotli 자체 해제기: 잘린 스트림·사전 참조·예약 비트·패딩·후행 데이터를 거부', async ({ page }) => {
+  const source = brotliCompressSync(Buffer.from('The quick brown fox jumps over the lazy dog. 사전 🌏'));
+  const invalid = [...Array.from({ length: source.length }, (_, length) => source.subarray(0, length)),
+    Buffer.from([0x11]), Buffer.from([0x86]), Buffer.concat([source, Buffer.from([0])]),
+    brotliDictionaryStream({ transform: 121 }), brotliDictionaryStream({ length: 3, declaredLength: 4 }),
+    brotliDictionaryStream({ declaredLength: 1 }),
+    brotliStoredStream([Buffer.from('abc')], { declaredExtra: 1 }),
+  ];
+  const reserved = new BrotliBits();
+  reserved.write(1, 0); reserved.write(1, 0); reserved.write(2, 3); reserved.write(1, 1);
+  invalid.push(reserved.finish());
+  const nonminimal = new BrotliBits();
+  nonminimal.write(1, 0); nonminimal.write(1, 0); nonminimal.write(2, 1); nonminimal.write(20, 0);
+  invalid.push(nonminimal.finish());
+  const duplicate = new BrotliBits();
+  duplicate.write(1, 0); duplicate.write(1, 1); duplicate.write(1, 0); duplicate.write(2, 0);
+  duplicate.write(16, 0); duplicate.write(13, 0); duplicate.simple(256, [42, 42]);
+  invalid.push(duplicate.finish());
+  await page.goto('/');
+  const errors = await page.evaluate(async (vectors) => {
+    const { decompress } = await import('/js/lib/archive/brotli-decode.js');
+    const { b64ToBytes } = await import('/js/lib/common/base64.js');
+    const dictionary = new Uint8Array(await (await fetch('/assets/data/brotli-dictionary.bin')).arrayBuffer());
+    return vectors.map((packed) => {
+      try { decompress(b64ToBytes(packed), { dictionary }); return ''; }
+      catch (error) { return error.message; }
+    });
+  }, invalid.map((packed) => packed.toString('base64')));
+  errors.forEach((error, index) => expect(error, `invalid ${index}`).toMatch(/Brotli 비트 \d+:/));
+});
+
+test('brotli 자체 해제기: 전체 페이로드 비트 변이를 Node와 비교한다', async ({ page }) => {
+  const source = brotliCompressSync(Buffer.from('The quick brown fox jumps over the lazy dog. 사전 🌏'));
+  const cases = [];
+  for (let bit = 0; bit < source.length * 8; bit++) {
+    const packed = Buffer.from(source); packed[bit >>> 3] ^= 1 << (bit & 7);
+    let plain = null;
+    try { plain = brotliDecompressSync(packed, { maxOutputLength: 65536 }); } catch { /* Invalid mutations are expected. */ }
+    cases.push({ packed, plain });
+  }
+  await page.goto('/');
+  const results = await page.evaluate(async (vectors) => {
+    const { decompress } = await import('/js/lib/archive/brotli-decode.js');
+    const { b64ToBytes, bytesToB64 } = await import('/js/lib/common/base64.js');
+    const dictionary = new Uint8Array(await (await fetch('/assets/data/brotli-dictionary.bin')).arrayBuffer());
+    return vectors.map((packed) => {
+      try { return { plain: bytesToB64(decompress(b64ToBytes(packed), { dictionary, maxOutputLength: 65536 })) }; }
+      catch (error) { return { error: error.message }; }
+    });
+  }, cases.map(({ packed }) => packed.toString('base64')));
+  for (let i = 0; i < cases.length; i++) {
+    if (!results[i].error) {
+      expect(cases[i].plain, `accepted bit ${i}`).not.toBeNull();
+      expect(results[i].plain).toBe(cases[i].plain.toString('base64'));
+    } else if (cases[i].plain && cases[i].plain.length <= cases[i].packed.length * 200) {
+      // Node accepts nonzero padding and ignores trailing bytes; RFC 7932 / the
+      // single-stream tool contract deliberately reject those cases.
+      expect(results[i].error, `rejected bit ${i}`).toMatch(/채움 비트|불필요한 데이터/);
+    }
+  }
+});
+
+test('brotli: 해제기 지연 로드·실패 후 재시도와 사전 다운로드를 검증', async ({ page }) => {
+  const requested = [];
+  page.on('request', (request) => requested.push(request.url()));
+  await openTool(page, 'brotli');
+  await page.reload();
+  expect(requested.some((url) => /brotli-decode|brotli-dictionary/.test(url))).toBe(false);
+  await page.route('**/js/lib/archive/brotli-decode.js', (route) => route.fulfill({
+    contentType: 'application/javascript', body: 'throw new Error("simulated decoder load failure");',
+  }));
+  const io = ioSection(page);
+  await io.getByLabel('입력 형식').selectOption('base64');
+  await io.getByLabel('출력 형식').selectOption('text');
+  const packed = brotliDictionaryStream({ length: 24, transform: 73 });
+  await io.locator('textarea.mono:not(.out)').fill(packed.toString('base64'));
+  await io.getByRole('button', { name: '해제', exact: true }).click();
+  await expect(io.locator('textarea.out')).toHaveValue(/Brotli 해제기를 불러오지 못했습니다/);
+  await page.unroute('**/js/lib/archive/brotli-decode.js');
+  await io.getByRole('button', { name: '해제', exact: true }).click();
+  await expect(io.locator('textarea.out')).toHaveValue(brotliDecompressSync(packed).toString());
+  expect(requested.some((url) => url.endsWith('/assets/data/brotli-dictionary.bin'))).toBe(true);
+  expect(requested.some((url) => /assets\/vendor\/brotli/.test(url))).toBe(false);
+});
+
+test.describe('Brotli 사전 무결성', () => {
+  // An intentionally corrupted SRI response can emit a browser network diagnostic.
+  test.use({ allowConsoleErrors: ['Failed to find a valid digest', 'Failed to load resource'] });
+  test('brotli: 잘못된 사전은 거부하고 다음 Worker에서 다시 불러온다', async ({ page }) => {
+    await page.route('**/assets/data/brotli-dictionary.bin', (route) => route.fulfill({
+      contentType: 'application/octet-stream', body: Buffer.alloc(122784),
+    }));
+    await openTool(page, 'brotli');
+    const io = ioSection(page), packed = brotliDictionaryStream();
+    await io.getByLabel('입력 형식').selectOption('base64');
+    await io.getByLabel('출력 형식').selectOption('text');
+    await io.locator('textarea.mono:not(.out)').fill(packed.toString('base64'));
+    await io.getByRole('button', { name: '해제', exact: true }).click();
+    await expect(io.locator('textarea.out')).toHaveValue(/Brotli 표준 사전을 불러오지 못했습니다/);
+    await expect(io.getByRole('button', { name: /전체 결과 다운로드/ })).toBeHidden();
+    await page.unroute('**/assets/data/brotli-dictionary.bin');
+    await io.getByRole('button', { name: '해제', exact: true }).click();
+    await expect(io.locator('textarea.out')).toHaveValue('timex');
+  });
+});
+
+for (const codec of ['lz4', 'bzip2', 'zstd']) {
+  test(`${codec} 자체 코덱: 독립 구현·블록 경계·레벨·빈 입력·큰 입력 교차 검증`, async ({ page }) => {
+    test.setTimeout(120000);
+    const corpus = codecCorpus(), vectors = [];
+    for (const [index, plain] of corpus.entries()) {
+      const modes = codec === 'lz4' ? [0, 1, 2, 3] : codec === 'bzip2' ? [1, 9] : [1, 3, 10, 19];
+      for (const mode of modes) {
+        const packed = codec === 'lz4' ? nativeLz4(plain, 'compress', {
+          blockSize: mode + 4, independent: !(mode & 1), contentChecksum: !(mode & 2),
+          blockChecksum: !!(mode & 2), contentSize: !(mode & 1), level: mode === 3 ? 9 : 0,
+        }) : codec === 'bzip2' ? makeBzip2(plain, mode) : zstdCompressSync(plain, { params: {
+          [constants.ZSTD_c_compressionLevel]: mode, [constants.ZSTD_c_checksumFlag]: 1,
+          [constants.ZSTD_c_contentSizeFlag]: mode === 10 ? 0 : 1,
+        } });
+        vectors.push({ index, mode, packed: packed.toString('base64'), plain: plain.toString('base64') });
+      }
+    }
+    await page.goto('/');
+    const results = await page.evaluate(async ({ codec, vectors }) => {
+      const decoder = await import(`/js/lib/archive/${codec === 'zstd' ? 'zstd-decode' : codec}.js`);
+      const encoder = codec === 'bzip2' ? null : codec === 'zstd' ? await import('/js/lib/archive/zstd-encode.js') : decoder;
+      const { b64ToBytes, bytesToB64 } = await import('/js/lib/common/base64.js');
+      const hash = async (bytes) => Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', bytes)),
+        (n) => n.toString(16).padStart(2, '0')).join('');
+      const results = [];
+      for (const { index, mode, packed, plain } of vectors) {
+        const input = b64ToBytes(plain);
+        const decoded = decoder.decompress(b64ToBytes(packed), { maxOutputLength: input.length });
+        results.push({ index, mode, hash: await hash(decoded), packed: encoder
+          ? bytesToB64(encoder.compress(input, { level: mode || 1 })) : null });
+      }
+      return results;
+    }, { codec, vectors });
+    for (const result of results) {
+      expect(result.hash, `${codec} ${result.index} / ${result.mode}`).toBe(createHash('sha256').update(corpus[result.index]).digest('hex'));
+      if (result.packed) {
+        const plain = codec === 'lz4' ? nativeLz4(Buffer.from(result.packed, 'base64'), 'decompress')
+          : zstdDecompressSync(Buffer.from(result.packed, 'base64'));
+        expect(plain).toEqual(corpus[result.index]);
+      }
+    }
+  });
+
+  test(`${codec} 자체 해제기: 모든 잘린 위치·CRC·누적 상한·부분 배열·잘못된 옵션`, async ({ page }) => {
+    const plain = Buffer.from(MSG), encode = codec === 'lz4' ? (input) => nativeLz4(input) : codec === 'bzip2'
+      ? makeBzip2 : (input) => zstdCompressSync(input, { params: { [constants.ZSTD_c_checksumFlag]: 1 } });
+    const packed = encode(plain), bomb = encode(Buffer.alloc(65536));
+    await page.goto('/');
+    const result = await page.evaluate(async ({ codec, packed, bomb }) => {
+      const { decompress } = await import(`/js/lib/archive/${codec === 'zstd' ? 'zstd-decode' : codec}.js`);
+      const { b64ToBytes, bytesToB64 } = await import('/js/lib/common/base64.js');
+      const input = b64ToBytes(packed), errors = [];
+      const reject = (bytes, options) => {
+        try { decompress(bytes, options); return false; } catch (error) { return /[가-힣]/.test(error.message); }
+      };
+      for (let i = 0; i < input.length; i++) errors.push(reject(input.subarray(0, i)));
+      const crc = input.slice(); crc[crc.length - (codec === 'bzip2' ? 2 : 1)] ^= 128;
+      errors.push(reject(crc), reject(b64ToBytes(bomb)), reject(input, { maxOutputLength: 89 }));
+      for (const maxOutputLength of [-1, 0.5, NaN, Infinity, 128 * 1024 * 1024 + 1]) errors.push(reject(input, { maxOutputLength }));
+      for (const bytes of [null, 'input', new Uint16Array(2)]) errors.push(reject(bytes));
+      const joined = new Uint8Array(input.length * 2); joined.set(input); joined.set(input, input.length);
+      errors.push(reject(joined, { maxOutputLength: 179 }));
+      const wrapper = new Uint8Array(input.length + 4); wrapper.set(input, 2);
+      return { errors, subview: bytesToB64(decompress(wrapper.subarray(2, -2))), joined: bytesToB64(decompress(joined)) };
+    }, { codec, packed: packed.toString('base64'), bomb: bomb.toString('base64') });
+    expect(result.errors.every(Boolean), `${codec} rejection index ${result.errors.indexOf(false)}`).toBe(true);
+    expect(Buffer.from(result.subview, 'base64')).toEqual(plain);
+    expect(Buffer.from(result.joined, 'base64')).toEqual(Buffer.concat([plain, plain]));
+  });
+
+  test(`${codec}: Worker 지연 로드 실패·재시도·화면·다운로드·취소·이탈`, async ({ page }) => {
+    await page.addInitScript(() => {
+      const NativeWorker = Worker;
+      window.__codecStops = 0;
+      window.Worker = class extends NativeWorker {
+        postMessage(...args) { this.pending = setTimeout(() => super.postMessage(...args), 250); }
+        terminate() { clearTimeout(this.pending); window.__codecStops++; super.terminate(); }
+      };
+    });
+    const requested = [];
+    page.on('request', (request) => requested.push(request.url()));
+    await openTool(page, codec); await page.reload();
+    const engine = codec === 'zstd' ? 'zstd-encode' : codec;
+    expect(requested.some((url) => url.endsWith(`/archive/${engine}.js`))).toBe(false);
+    const path = `**/js/lib/archive/${engine}.js`;
+    await page.route(path, (route) => route.fulfill({ contentType: 'application/javascript', body: 'throw new Error("load failure");' }));
+    const io = ioSection(page), action = codec === 'bzip2' ? '해제' : '압축';
+    const input = codec === 'bzip2' ? makeBzip2(Buffer.from(MSG)).toString('base64') : MSG;
+    await io.locator('textarea.mono:not(.out)').fill(input);
+    await io.getByRole('button', { name: action, exact: true }).click();
+    await expect(io.locator('textarea.out')).toHaveValue(/코덱을 불러오지 못했습니다/);
+    await page.unroute(path);
+    await page.setViewportSize({ width: 375, height: 812 });
+    for (const colorScheme of ['light', 'dark']) {
+      await page.emulateMedia({ colorScheme });
+      await runIO(io, { inputs: input, action });
+      const saved = await grabDownload(page, () => io.getByRole('button', { name: /전체 결과 다운로드/ }).click());
+      const plain = codec === 'bzip2' ? saved.bytes : codec === 'lz4'
+        ? nativeLz4(Buffer.from(saved.bytes.toString(), 'base64'), 'decompress')
+        : zstdDecompressSync(Buffer.from(saved.bytes.toString(), 'base64'));
+      expect(plain.toString()).toBe(MSG);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    }
+    const stopped = await page.evaluate(() => window.__codecStops);
+    await io.getByRole('button', { name: action, exact: true }).click();
+    await io.getByRole('button', { name: '취소', exact: true }).click();
+    await expect(io.locator('.io-status')).toHaveText('작업이 취소되었습니다.');
+    await io.getByRole('button', { name: action, exact: true }).click();
+    await page.evaluate(() => { location.hash = '#/tool/base64'; });
+    await expect(page.locator('.tool-header h1')).toHaveText('Base64 인코딩/디코딩');
+    expect(await page.evaluate(() => window.__codecStops)).toBe(stopped + 2);
+    expect(requested.some((url) => /assets\/vendor\/(lz4|zstd|fzstd|seek-bzip)/.test(url))).toBe(false);
+  });
+}
+
+test('lz4 자체 압축기: 여러 4 MiB 블록의 호환성과 압축 버퍼 보관 크기', async ({ page }) => {
+  const blockSize = 4 * 1024 * 1024;
+  const plain = Buffer.alloc(blockSize * 2 + 257);
+  plain.fill(97, 0, blockSize); plain.fill(98, blockSize, blockSize * 2);
+  for (let i = 0; i < 257; i++) plain[blockSize * 2 + i] = i & 255;
+  await page.goto('/');
+  const result = await page.evaluate(async (blockSize) => {
+    const { compress } = await import('/js/lib/archive/lz4.js');
+    const { bytesToB64 } = await import('/js/lib/common/base64.js');
+    const input = new Uint8Array(blockSize * 2 + 257), blocks = [];
+    input.fill(97, 0, blockSize); input.fill(98, blockSize, blockSize * 2);
+    for (let i = 0; i < 257; i++) input[blockSize * 2 + i] = i & 255;
+    const nativeSet = Uint8Array.prototype.set;
+    // Observe buffers still retained when blocks are copied into the final frame;
+    // their backing sizes expose oversized scratch views without relying on GC.
+    Uint8Array.prototype.set = function (source, offset = 0) {
+      if (offset >= 7 && this[0] === 4 && this[1] === 34 && this[2] === 77 && this[3] === 24) {
+        const view = new DataView(this.buffer, this.byteOffset, this.byteLength);
+        blocks.push({ stored: !!(view.getUint32(offset - 4, true) >>> 31), length: source.byteLength,
+          backing: source.buffer.byteLength, original: source.buffer === input.buffer });
+      }
+      return nativeSet.call(this, source, offset);
+    };
+    let packed;
+    try { packed = compress(input); } finally { Uint8Array.prototype.set = nativeSet; }
+    return { packed: bytesToB64(packed), blocks };
+  }, blockSize);
+  expect(nativeLz4(Buffer.from(result.packed, 'base64'), 'decompress')).toEqual(plain);
+  expect(result.blocks.map(({ stored, original }) => ({ stored, original }))).toEqual([
+    { stored: false, original: false }, { stored: false, original: false }, { stored: true, original: true },
+  ]);
+  const compressed = result.blocks.filter(({ stored }) => !stored);
+  expect(compressed.map(({ backing }) => backing)).toEqual(compressed.map(({ length }) => length));
+});
+
+test('bzip2 자체 해제기: 구형 랜덤화 블록의 전체 난수 표 순환', async ({ page }) => {
+  const { bytes, plain } = randomizedBzip2();
+  await page.goto('/');
+  const actual = await page.evaluate(async (packed) => {
+    const { decompress } = await import('/js/lib/archive/bzip2.js');
+    const { b64ToBytes, bytesToB64 } = await import('/js/lib/common/base64.js');
+    return bytesToB64(decompress(b64ToBytes(packed), { maxOutputLength: 600000 }));
+  }, bytes.toString('base64'));
+  expect(Buffer.from(actual, 'base64')).toEqual(plain);
+});
+
+test('zstd 자체 해제기: 전체 비트 변이를 독립 libzstd와 비교하고 프레임 상태를 격리', async ({ page }) => {
+  const packed = zstdCompressSync(Buffer.from(MSG), { params: { [constants.ZSTD_c_checksumFlag]: 1 } });
+  const variants = [];
+  for (let bit = 0; bit < packed.length * 8; bit++) {
+    const bytes = Buffer.from(packed); bytes[bit >>> 3] ^= 1 << (bit & 7);
+    variants.push({ packed: bytes.toString('base64') });
+  }
+  const expected = nativeZstdDecodeBatch(variants.map(({ packed }) => packed));
+  await page.goto('/');
+  const actual = await page.evaluate(async (variants) => {
+    const { decompress } = await import('/js/lib/archive/zstd-decode.js');
+    const { b64ToBytes, bytesToB64 } = await import('/js/lib/common/base64.js');
+    return variants.map(({ packed }) => {
+      try { return bytesToB64(decompress(b64ToBytes(packed), { maxOutputLength: 65536 })); } catch { return null; }
+    });
+  }, variants);
+  for (let i = 0; i < variants.length; i++) expect(actual[i], `bit ${i}`).toBe(expected[i]);
+});
+
+for (const codec of ['lz4', 'bzip2', 'zstd']) {
+  test(`${codec}: 큰 결과 변환·다운로드와 Worker 버퍼 소유권·출력 상한`, async ({ page }) => {
+    const plain = codecCorpus()[11], packed = codec === 'lz4' ? nativeLz4(plain) : codec === 'bzip2'
+      ? makeBzip2(plain) : zstdCompressSync(plain);
+    await page.addInitScript(() => {
+      const NativeWorker = Worker;
+      window.__codecPresentation = 0;
+      window.Worker = class extends NativeWorker {
+        postMessage(data, ...rest) {
+          if (data.presentation) window.__codecPresentation++;
+          super.postMessage(data, ...rest);
+        }
+      };
+    });
+    await openTool(page, codec);
+    const io = ioSection(page);
+    for (const format of ['base64', 'hex', 'text']) {
+      await runIO(io, { inputs: packed.toString('base64'), options: { '입력 형식': 'base64', '출력 형식': format }, action: '해제' });
+      expect((await io.locator('textarea.out').inputValue()).length).toBeLessThanOrEqual(32768);
+      const saved = await grabDownload(page, () => io.getByRole('button', { name: /전체 결과 다운로드/ }).click());
+      expect(saved.bytes.toString()).toBe(format === 'text' ? plain.toString('utf8') : plain.toString(format));
+    }
+    expect(await page.evaluate(() => window.__codecPresentation)).toBeGreaterThanOrEqual(3);
+    const result = await page.evaluate(async ({ codec, packed, length }) => {
+      const { b64ToBytes, bytesToB64 } = await import('/js/lib/common/base64.js');
+      const request = async (limit) => {
+        const bytes = b64ToBytes(packed), worker = new Worker('/js/workers/archive-codec.js', { type: 'module' });
+        try {
+          const pending = new Promise((resolve, reject) => { worker.onmessage = ({ data }) => resolve(data); worker.onerror = reject; });
+          worker.postMessage({ codec, action: 'decomp', bytes, maxOutputLength: limit }, [bytes.buffer]);
+          const detached = bytes.byteLength === 0, message = await pending;
+          return { detached, error: message.error, output: message.output ? bytesToB64(message.output) : null };
+        } finally { worker.terminate(); }
+      };
+      return [await request(length), await request(length - 1)];
+    }, { codec, packed: packed.toString('base64'), length: plain.length });
+    expect(result[0].detached).toBe(true);
+    expect(Buffer.from(result[0].output, 'base64')).toEqual(plain);
+    expect(result[1].detached).toBe(true);
+    expect(result[1].error).toMatch(/한도/);
+    expect(result[1].output).toBeNull();
+  });
+}
+
+test('zstd·lz4: 사전·예약 비트·거짓 크기·잘못된 참조·건너뛰기 프레임', async ({ page }) => {
+  await page.goto('/');
+  const result = await page.evaluate(async () => {
+    const zstd = await import('/js/lib/archive/zstd-decode.js'), lz4 = await import('/js/lib/archive/lz4.js');
+    const { xxhash32 } = await import('/js/lib/archive/xxhash32.js');
+    const hex = (value) => Uint8Array.from(value.match(/../g), (pair) => parseInt(pair, 16));
+    // Small hand-authored standard frames: raw "abc" and single RLE "a".
+    const zstdRaw = hex('28b52ffd2003190000616263'), zstdRle = hex('28b52ffd20031b000061');
+    const lz4Raw = hex('04224d186070730300008061626300000000');
+    const skipped = hex('502a4d1803000000010203'), errors = [];
+    const reject = (codec, bytes) => { try { codec.decompress(bytes); return false; } catch (error) { return /[가-힣]/.test(error.message); } };
+    errors.push(reject(zstd, hex('28b52ffda4ffffff7f')), reject(zstd, hex('28b52ffd210103010000')),
+      reject(zstd, hex('28b52ffd2800010000')), reject(zstd, hex('28b52ffd0008010000ff')));
+    const dict = hex('04224d186170000000000000'); dict[10] = (xxhash32(dict.subarray(4, 10)) >>> 8) & 255;
+    errors.push(reject(lz4, dict), reject(lz4, hex('04224d186870ffffffffffffffff00')));
+    const append = (a, b) => { const bytes = new Uint8Array(a.length + b.length); bytes.set(a); bytes.set(b, a.length); return bytes; };
+    return { errors, text: [zstd.decompress(zstdRaw), zstd.decompress(zstdRle), lz4.decompress(lz4Raw),
+      zstd.decompress(append(skipped, zstdRaw)), lz4.decompress(append(skipped, lz4Raw))].map((bytes) => new TextDecoder().decode(bytes)) };
+  });
+  expect(result.errors.every(Boolean)).toBe(true);
+  expect(result.text).toEqual(['abc', 'aaa', 'abc', 'abc', 'abc']);
 });

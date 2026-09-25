@@ -39,16 +39,23 @@ shape without network access. The monthly workflow fetches every pinned source a
 latest standard and WPT path commits; a change fails the review for a deliberate implementation and
 vector assessment rather than modifying the codec automatically.
 
-Brotli compression uses `js/lib/archive/brotli-encode.js`; decompression still uses the
-registered `brotli` dependency until its separate replacement. The monthly filter includes
+Brotli uses the first-party `js/lib/archive/brotli-encode.js` and `brotli-decode.js`.
+The monthly filter includes
 `brotli`/`Brotli` tests for the pinned public WPT vector, Node interoperability, block boundaries,
 generated input, cancellation, and offline use. RFC 7932 erratum 5948 is editorial; 6977 concerns
-implicit distances during distance block switches, neither of which this encoder emits.
+implicit distances during distance block switches. The decoder follows section 10: an
+implicit distance consumes neither a distance symbol nor a distance block count.
 Compression levels retain their numeric API but control this encoder's bounded match search;
 compressed bytes and ratios are deliberately not matched to Google's quality implementation.
 
-The Brotli encoder's prefix/length tables are fixed format definitions, not a periodically refreshed
-dataset. The monthly review also checks RFC 7932 JSON relationship metadata (new updates or obsoleting
+The Brotli prefix/length tables, static dictionary, context tables, and 121 transformations are
+fixed format definitions, not a periodically refreshed dataset. `scripts/generate_brotli_data.py`
+extracts normative data from the pinned RFC, checks its published lengths/CRCs, and reproduces
+`assets/data/brotli-dictionary.bin` and `js/lib/archive/brotli-tables.js`. Run it with `--check`
+to compare against the source without writing. Every PR validates their fixed SHA-256 hashes
+offline through the compression gate; Worker dictionary requests use a fixed SHA-384 SRI pin.
+The RFC-derived data is attributed and licensed in `THIRD_PARTY_NOTICES.md`.
+The monthly review also checks RFC 7932 JSON relationship metadata (new updates or obsoleting
 RFCs), RFC 9841 and its errata, all public Google Brotli release notes, and public repository security
 advisories. The JSON snapshots keep security-relevant release fields and bodies, including old releases,
 but exclude download counters and other volatile statistics. Malformed/empty release responses and a
@@ -59,11 +66,22 @@ RFC 9841 adds shared dictionaries, a large-window extension, and framing. It doe
 our ordinary RFC 7932 output; those optional formats remain outside the tool contract. The reviewed
 Google v1.2.0 release discusses output limits in its Python wrapper. Native/Python defects are not
 automatically defects in this JavaScript encoder, but the class of risk applies to decoder review.
-The retained npm `brotli` decoder is independently covered by the existing npm/OSV/GitHub dependency
-audit. The 2026-09-08 check found npm latest 1.3.3 and no registered advisory for that pin. This does
-not establish a streaming memory bound: the decoder still expands its output allocation before the
-Worker can reject the final result. The next decoder replacement must enforce limits before growth.
+The npm `brotli` runtime dependency has been removed. Its previously documented P1 intermediate
+output-allocation risk is addressed by checking each declared meta-block against the remaining
+128 MiB / 200:1 budget before reading its trees or allocating output pages. Header window sizes
+never cause an output allocation, and output page capacity stays within the configured budget.
+The final contiguous output copy and input are additional live memory; the bound is an output
+budget, not a guarantee about total browser process memory. See `js/lib/archive/brotli-decode.md`.
 Do not respond to upstream notices by automatically copying or updating a native encoder.
+
+The 2026-09-10 live audit detected XZ Utils 5.8.4 and the 2026-09-09
+[GHSA-5qpq-xqfv-j9pg advisory](https://tukaani.org/xz/invalid-write-after-reinit.html).
+It affects native `.lzma`/`.lz`/MicroLZMA decoder reinitialization after an allocation
+failure. W-Tools ships no liblzma, and `lzma.js` creates a new range decoder, model,
+and output for each invocation; Workers are discarded after completion or failure.
+The native stale-state sequence therefore does not apply to this implementation.
+The LZMA cases passed in the full Chromium run before the reviewed XZ page hash was
+updated. This is an applicability assessment, not a blanket claim about all decoder bugs.
 
 ZIP creation and extraction use the first-party classic ZIP implementation in `js/lib/archive/zip.js`.
 It shares the first-party DEFLATE codec, runs through a module Worker, and rejects ZIP64, encrypted entries,
@@ -124,3 +142,57 @@ creates or refreshes a review PR; it never merges that PR automatically. A remov
 unknown group, unexpected missing annotation, source format change, or size-budget violation stops the
 update for manual review. A normal stagger where a new Unicode release precedes matching CLDR annotations
 keeps the current compatible data without failing the monthly workflow.
+
+## First-party Zstandard, Bzip2 and LZ4
+
+The phase-3 runtime packages `@bokuweb/zstd-wasm`, `fzstd`, `seek-bzip` and `lz4js`
+are removed. Their format readers/writers live under `js/lib/archive/` and execute
+through `js/workers/archive-codec.js`. See `js/lib/archive/phase3-codecs.md` for
+contracts, format references, implementation choices, resource bounds and measurements.
+Run `tests/tools/archive.spec.js` with `-g 'zstd|bzip2|lz4'`, the service-worker tests,
+and the minimum-engine suite when updating these codecs. Python's `bz2`, system
+`liblz4` and `libzstd`, and Node 22's zlib provide independent test oracles. The official
+Ubuntu Playwright image includes `liblz4-1` and `libzstd1`; on macOS install the
+Homebrew `lz4` and `zstd` formulae to run these tests. None is a site dependency.
+The Bzip2 randomisation numbers and RFC Zstandard tables are fixed format data;
+retain the attribution in `THIRD_PARTY_NOTICES.md` when regenerating or moving them.
+
+The monthly `check_compression_specs.py --check-latest` audit also monitors RFC
+8878 and RFC 9659 text, errata IDs/statuses and complete errata pages, and both
+RFC metadata records (`updated_by`/`obsoleted_by`). RFC 9659's 8 MiB window
+requirement applies to HTTP content coding, not this standalone file interface;
+monitoring it does not silently impose a new file-size limit.
+
+`phase3Upstream` pins all published Zstandard/LZ4 GitHub release bodies and public
+security advisories, their development changelogs, and the official Bzip2 download
+page and CHANGES. Release download counters are excluded; old release-body edits
+are included. A full 100-entry GitHub response fails for pagination review rather
+than quietly losing older notices. Bzip2 has no equivalent upstream GitHub advisory
+feed: its official `bzip2-devel` index and every linked quarterly plain-text mailbox
+are combined into a snapshot. This detects new/removed quarters and edits to old
+messages. The audit rejects malformed/empty archives, network failures, more than
+128 archives, more than 4 MiB per archive or 16 MiB total. It never filters messages
+by CVE keywords or limits review to a moving time window.
+
+Reviewed 2026-09-25: RFC 8878 has verified errata 6441/6442/7297 and reported
+7567/8085/8195/8668; corrected table construction, repeat offsets and the six-literal
+minimum for four Huffman streams are already reflected in the implementation.
+RFC 9659 has no reported errata. Bzip2 remains released as 1.0.8; discussion of
+1.0.9 is not a release. The public
+[CVE-2026-42250 notice](https://sourceware.org/pipermail/bzip2-devel/2026q2/000284.html)
+concerns `bzip2recover` block arrays, and its
+[follow-up](https://sourceware.org/pipermail/bzip2-devel/2026q2/000293.html)
+concerns recovery/filesystem handling, neither shipped here. The
+[selector-count correction](https://sourceware.org/pipermail/bzip2-devel/2024q4/000223.html)
+is compatible with this decoder's full 15-bit selector count and checked indices.
+Zstandard 1.5.7's reused native compression-context issue and LZ4's native pointer,
+partial-decoding and external-dictionary changes do not match the fresh-call JS
+interfaces. These assessments do not imply that future decoder bugs are inapplicable.
+
+Fixed entropy/randomisation tables need no scheduled replacement. Review changed
+notices for matching format or validation paths, add applicable regressions, then
+deliberately update snapshots. Preserve the global `reviewed` date unless every
+compression source has been reviewed. When Node, Python, native liblz4/libzstd or
+the pinned Playwright images change, rerun the codec differential and browser
+suites, including the LZ4 multi-block memory regression. Ordinary static validation
+remains offline; no audit automatically changes runtime code or dependencies.

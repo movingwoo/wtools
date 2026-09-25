@@ -56,7 +56,7 @@ PEM·JWK처럼 키가 포함될 수 있는 값은 매번 추가 동의를 받아
 문법은 해당 도구의 로드를 중단하므로 여전히 허용하지 않지만, 한 모듈의 장애가 홈과 다른
 도구까지 중단시키지는 않습니다.
 
-WebAssembly를 쓰는 기능(비밀번호 해시의 Argon2, BLAKE/xxHash 해시, Zstandard 압축)은 Chrome 97, Firefox 102, Safari 16.4 이상이 필요하며 위 기준선이 이를 포함합니다.
+WebAssembly를 쓰는 기능(비밀번호 해시의 Argon2, BLAKE/xxHash 해시)은 Chrome 97, Firefox 102, Safari 16.4 이상이 필요하며 위 기준선이 이를 포함합니다.
 
 JSON Lines 파일 변환의 `디스크 직접 저장`은 File System Access API를 제공하는 브라우저에서만 표시된 경로로 스트리밍합니다. 지원하지 않는 Firefox·Safari에서는 모든 기능을 사용할 수 있지만 결과를 128 MiB 이하의 Blob으로 내려받는 호환 방식을 선택해야 합니다.
 
@@ -112,10 +112,15 @@ Linux CI에서 실행할 수 없어 같은 버전의 Playwright WebKit을 대리
 테스트 의존성까지 포함한 등록부와 월간 점검 절차는 [DEPENDENCY_UPDATE.md](DEPENDENCY_UPDATE.md)를 참고하세요.
 월간 작업은 런타임·로컬 고정·테스트 패키지를 npm·OSV·GitHub Advisory와 함께 감사하고,
 WHATWG 압축 표준·관련 WPT·RFC 1950/1951/1952/7932/9841 본문과 정오표·PKWARE ZIP APPNOTE·LZMA 규격을 최신 검토본과 대조하며,
+Zstandard RFC 8878/9659 본문·정오표·후속 RFC 관계, LZ4 프레임/블록 명세,
+Bzip2 매뉴얼과 구형 랜덤화 표 원본도 확인합니다. Zstandard·LZ4의 릴리즈·변경 이력·보안 공지와
+Bzip2 배포·변경 이력·공식 개발 메일의 전체 공개 아카이브를 비교해 과거 공지 수정도 감지합니다.
 LZMA SDK 규격 안내·7-Zip 릴리즈/보안 공지·XZ 형식 문서/보안 공지의 변경도 확인합니다.
 Brotli의 후속 RFC 관계·Google Brotli 릴리즈 본문과 보안 공지도 확인합니다. RFC 9841의
 공유 사전·큰 윈도·컨테이너 확장은 현재 도구의 지원 범위에 추가하지 않습니다.
-월간 대표 벡터에는 LZMA·Brotli 교차 검증과 대용량·다운로드 회귀 테스트가 포함됩니다.
+월간 대표 벡터에는 LZMA·Brotli·Zstandard·Bzip2·LZ4 교차 검증과 대용량·다운로드 회귀 테스트가 포함됩니다.
+Brotli의 표준 사전과 변환표는 RFC 7932에서 고정한 데이터이며 주기적으로 갱신하는 목록이 아닙니다.
+PR마다 로컬 데이터 해시를 검사하고, Worker는 사전 다운로드에 SHA-384 무결성 검사를 적용합니다.
 공지 변경은 담당자 검토를 요청하는 실패로 알리며 코덱이나 의존성을 자동 교체하지 않습니다.
 분기 검토 기한이 지난 User-Agent·IANA 참조표·브라우저/CI 기준선을 실패로 알립니다.
 릴리즈 산출물은 최근 8일 이내의 최소 브라우저 호환성 워크플로 성공 이력이 있어야 게시됩니다.
@@ -143,7 +148,11 @@ DEVELOPMENT_GUIDE.md 구현 구조, 크기 예산, 의존성 교체 및 릴리�
 ```
 
 jsrsasign 같은 classic script는 SRI로 검증하면서 해당 도구를 열 때 CDN에서 **지연 로드**합니다.  
-OpenPGP, GIF, Brotli 해제·Zstandard·Bzip2·LZ4의 동적 ESM/WASM은 하위 import까지 검토한 로컬 사본을 사용합니다. crypto-js만 페이지를 열 때 불러오며, Brotli 압축·LZMA·gzip·zlib·raw DEFLATE와 YAML·TOML·JSONPath·JMESPath·JSON Schema는 자체 엔진을 필요한 순간에 불러옵니다.
+OpenPGP의 동적 ESM은 하위 import까지 검토한 로컬 사본을 사용합니다. crypto-js만 페이지를 열 때 불러오며, Brotli·Zstandard·Bzip2·LZ4·LZMA·gzip·zlib·raw DEFLATE와 YAML·TOML·JSONPath·JMESPath·JSON Schema는 자체 엔진을 필요한 순간에 불러옵니다.
+Brotli는 해제 출력 메모리를 확보하기 전에 128 MiB·압축률 200:1 상한을 검사합니다. 표준 사전을 포함한
+일반 `.br` 스트림을 지원하며, 공유 사전·확장 윈도 형식은 지원하지 않습니다.
+Zstandard·Bzip2·LZ4도 자체 코덱과 취소 가능한 Worker를 사용하며, 해제 중 128 MiB·압축률 200:1
+상한과 형식별 체크섬을 검사합니다. Zstandard·LZ4 외부 사전은 지원하지 않습니다.
 
 ## 새 도구 추가
 

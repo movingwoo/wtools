@@ -2,6 +2,7 @@
 import { readFileSync } from 'node:fs';
 import { test as base, expect } from '@playwright/test';
 import { cdnCache } from './cdn-cache.js';
+import { brotliDictionaryStream } from './fixtures.js';
 
 const test = base.extend({ ...cdnCache });
 test.use({ allowServiceWorker: true });
@@ -42,19 +43,22 @@ async function waitForControl(page) {
   });
 }
 
-test('Brotli 제3자 압축기 캐시를 제거하고 자체 Worker가 오프라인에서 동작한다', async ({ page, context }) => {
-  const removed = '/assets/vendor/brotli-compress-1.3.3.mjs';
+test('Brotli 제3자 코덱 캐시를 제거하고 자체 코덱·사전이 오프라인에서 동작한다', async ({ page, context }) => {
+  const removed = ['/assets/vendor/brotli-compress-1.3.3.mjs', '/assets/vendor/brotli-decompress-1.3.3.mjs'];
   await page.goto('/404.html');
-  await page.evaluate(async (path) => {
+  await page.evaluate(async (paths) => {
     const cache = await caches.open('wtools-shell-obsolete-brotli');
-    await cache.put(path, new Response('obsolete Brotli encoder'));
+    for (const path of paths) await cache.put(path, new Response('obsolete Brotli codec'));
   }, removed);
   await page.goto('/');
   await waitForControl(page);
-  expect(await page.evaluate(async (path) => ({
-    removed: !!await caches.match(path), engine: !!await caches.match('/js/lib/archive/brotli-encode.js'),
+  expect(await page.evaluate(async (paths) => ({
+    removed: await Promise.all(paths.map(async (path) => !!await caches.match(path))),
+    engine: !!await caches.match('/js/lib/archive/brotli-encode.js'),
+    decoder: !!await caches.match('/js/lib/archive/brotli-decode.js'),
+    dictionary: !!await caches.match('/assets/data/brotli-dictionary.bin'),
     io: !!await caches.match('/js/lib/archive/codec-io.js'),
-  }), removed)).toEqual({ removed: false, engine: true, io: true });
+  }), removed)).toEqual({ removed: [false, false], engine: true, decoder: true, dictionary: true, io: true });
   await context.setOffline(true);
   await page.goto('/#/tool/brotli');
   const io = page.locator('#content .io').first();
@@ -67,6 +71,37 @@ test('Brotli 제3자 압축기 캐시를 제거하고 자체 Worker가 오프라
   await io.locator('textarea.mono:not(.out)').fill(packed);
   await io.getByRole('button', { name: '해제', exact: true }).click();
   await expect(io.locator('textarea.out')).toHaveValue('오프라인 Brotli 🎁');
+  await io.locator('textarea.mono:not(.out)').fill(brotliDictionaryStream().toString('base64'));
+  await io.getByRole('button', { name: '해제', exact: true }).click();
+  await expect(io.locator('textarea.out')).toHaveValue('timex');
+});
+
+test.describe('Brotli 오프라인 사전 무결성', () => {
+  // A deliberately corrupted cached response must fail Fetch's SRI check.
+  test.use({ allowConsoleErrors: ['Failed to find a valid digest', 'Failed to load resource'] });
+  test('변조된 사전 캐시를 거부하고 온라인 재시도로 복구한다', async ({ page, context }) => {
+    await page.goto('/#/tool/brotli');
+    await waitForControl(page);
+    await page.evaluate(async () => {
+      const name = (await caches.keys()).find((key) => key.startsWith('wtools-shell-'));
+      const cache = await caches.open(name);
+      await cache.put('/assets/data/brotli-dictionary.bin', new Response(new Uint8Array(122784)));
+    });
+    const io = page.locator('#content .io').first();
+    await io.getByLabel('입력 형식').selectOption('base64');
+    await io.getByLabel('출력 형식').selectOption('text');
+    await io.locator('textarea.mono:not(.out)').fill(brotliDictionaryStream().toString('base64'));
+    await context.setOffline(true);
+    await io.getByRole('button', { name: '해제', exact: true }).click();
+    await expect(io.locator('textarea.out')).toHaveValue(/Brotli 표준 사전을 불러오지 못했습니다/);
+    await expect(io.getByRole('button', { name: /전체 결과 다운로드/ })).toBeHidden();
+    await context.setOffline(false);
+    await io.getByRole('button', { name: '해제', exact: true }).click();
+    await expect(io.locator('textarea.out')).toHaveValue('timex');
+    await context.setOffline(true);
+    await io.getByRole('button', { name: '해제', exact: true }).click();
+    await expect(io.locator('textarea.out')).toHaveValue('timex');
+  });
 });
 
 test('LZMA CDN 캐시를 제거하고 자체 Worker 코덱이 오프라인에서 압축·해제한다', async ({ page, context }) => {
@@ -486,4 +521,34 @@ test('변조된 제3자 응답과 캐시를 폐기하고 한국어 오류를 반
   expect(result.fetchedDeleted).toBe(true);
   expect(result.putCalled).toBe(false);
   expect(result.integrityError).toBe(true);
+});
+
+test('3단계 제3자 코덱 캐시를 제거하고 자체 Zstandard·Bzip2·LZ4가 오프라인에서 동작한다', async ({ page, context }) => {
+  const removed = ['fzstd-0.1.1.mjs', 'lz4js-0.2.0.mjs', 'seek-bzip-2.0.0.mjs',
+    'zstd-compress-0.0.27.mjs', 'zstd-wasm-0.0.27.wasm'].map((name) => '/assets/vendor/' + name);
+  await page.goto('/404.html');
+  await page.evaluate(async (paths) => {
+    const cache = await caches.open('wtools-shell-phase3-obsolete');
+    for (const path of paths) await cache.put(path, new Response('obsolete codec'));
+  }, removed);
+  await page.goto('/'); await waitForControl(page);
+  expect(await page.evaluate(async (paths) => Promise.all(paths.map(async (path) => !!await caches.match(path))), removed))
+    .toEqual(removed.map(() => false));
+  await context.setOffline(true);
+  for (const codec of ['zstd', 'lz4', 'bzip2']) {
+    await page.goto(`/#/tool/${codec}`); await page.reload();
+    const io = page.locator('#content .io').first();
+    let packed = 'QlpoOTFBWSZTWc+dPa0AAA1RgAAQQAAKZ9yAIABQpgAAr/VKGNTGopTTa6VMMsvW0rWhDTbLimEpshx8h+LuSKcKEhnzp7Wg';
+    if (codec !== 'bzip2') {
+      await io.locator('textarea.mono:not(.out)').fill('오프라인 🎁');
+      await io.getByRole('button', { name: '압축', exact: true }).click();
+      await expect(io.locator('textarea.out')).toHaveValue(/원본/);
+      packed = (await io.locator('textarea.out').inputValue()).split('\n')[0];
+    }
+    await io.getByLabel('입력 형식').selectOption('base64');
+    await io.getByLabel('출력 형식').selectOption('text');
+    await io.locator('textarea.mono:not(.out)').fill(packed);
+    await io.getByRole('button', { name: '해제', exact: true }).click();
+    await expect(io.locator('textarea.out')).toHaveValue(codec === 'bzip2' ? 'hello wtools compression test\n'.repeat(3) : '오프라인 🎁');
+  }
 });

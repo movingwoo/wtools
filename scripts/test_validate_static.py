@@ -1,10 +1,63 @@
 import sys
+import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import validate_static
+
+
+class BrotliReleaseValidationTests(unittest.TestCase):
+  def setUp(self):
+    directory = tempfile.TemporaryDirectory()
+    self.addCleanup(directory.cleanup)
+    self.root = Path(directory.name).resolve()
+    for relative in ('assets/data/brotli-dictionary.bin', 'js/lib/archive/brotli-tables.js',
+                     'js/workers/archive-codec.js', 'sw.js'):
+      target = self.root / relative
+      target.parent.mkdir(parents=True, exist_ok=True)
+      target.write_bytes((validate_static.ROOT / relative).read_bytes())
+    root = patch.object(validate_static, 'ROOT', self.root)
+    root.start()
+    self.addCleanup(root.stop)
+
+  def validate(self):
+    validation = validate_static.Validation()
+    validate_static.validate_brotli_assets(validation)
+    return validation
+
+  def test_release_assets_are_valid_and_required_in_precache(self):
+    validation = self.validate()
+    self.assertEqual(validation.errors, [])
+    path = self.root / 'sw.js'
+    path.write_text(path.read_text().replace("  './assets/data/brotli-dictionary.bin',\n", ''))
+    validate_static.validate_app_shell(validation, set())
+    self.assertIn('sw.js APP_SHELL: required local asset is not cached: assets/data/brotli-dictionary.bin',
+                  validation.errors)
+
+  def test_corrupt_normative_assets_fail_release_validation(self):
+    for relative in ('assets/data/brotli-dictionary.bin', 'js/lib/archive/brotli-tables.js'):
+      path = self.root / relative
+      original = path.read_bytes()
+      with self.subTest(asset=relative):
+        path.write_bytes(original[:-1] + bytes([original[-1] ^ 1]))
+        self.assertTrue(any('integrity mismatch' in error for error in self.validate().errors))
+      path.write_bytes(original)
+
+  def test_missing_dictionary_fails_without_crashing(self):
+    (self.root / 'assets/data/brotli-dictionary.bin').unlink()
+    self.assertTrue(any('missing file' in error for error in self.validate().errors))
+
+  def test_wrong_or_removed_worker_pin_fails_release_validation(self):
+    path = self.root / 'js/workers/archive-codec.js'
+    original = path.read_text()
+    for changed in (original.replace('integrity:', 'removedIntegrity:'),
+                    original.replace('sha384-', 'sha256-')):
+      with self.subTest(worker=changed):
+        path.write_text(changed)
+        self.assertTrue(any('matching SHA-384 SRI pin' in error for error in self.validate().errors))
 
 
 class WorkflowYamlValidationTests(unittest.TestCase):

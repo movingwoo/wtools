@@ -19,18 +19,7 @@ REGISTRY_PATTERN = re.compile(
   r'globalThis\.WTOOLS_DEPENDENCIES = (\{.*?\});\n\nObject\.freeze',
   re.DOTALL,
 )
-TRANSFORMS = {
-  'brotliDecompress': (
-    ('from"/npm/base64-js@1.5.1/+esm"', 'from"../../js/lib/common/base64.js"'),
-  ),
-  'zstdCompress': (
-    (
-      'new URL("./zstd.wasm",new URL("/npm/@bokuweb/zstd-wasm@0.0.27/'
-      'dist/web/index.web.js",import.meta.url).href).href',
-      'new URL("./zstd-wasm-0.0.27.wasm",import.meta.url).href',
-    ),
-  ),
-}
+TRANSFORMS = {}
 
 
 def sri(data: bytes) -> str:

@@ -120,6 +120,14 @@ in the strict differential corpus. Native libzstd tolerates some unused literal
 bits that both this decoder and old fzstd reject; strict stream consumption is
 preserved.
 
+The bit-mutation regression also asserts the sequence-header reserved-bit rule
+from RFC 8878 section 3.1.1.3.2.1 independently of the native oracle: libzstd 1.5.5
+accepts nonzero reserved bits, whereas 1.5.7 rejects them. Both bits individually
+and together must produce the reserved-bit error. All other mutations still
+require exact agreement with the native decoder, followed by a valid frame to
+check recovery. This avoids making expected rejection depend on the CI host's
+native library version.
+
 Browser regressions cover deferred engine loading, failed load/retry, direct URL
 reload, narrow/light/dark layouts, full downloads, cancellation, navigation
 cleanup, buffer detachment and absent vendor requests. Service-worker tests

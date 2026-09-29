@@ -1769,22 +1769,43 @@ test('bzip2 자체 해제기: 구형 랜덤화 블록의 전체 난수 표 순�
 });
 
 test('zstd 자체 해제기: 전체 비트 변이를 독립 libzstd와 비교하고 프레임 상태를 격리', async ({ page }) => {
-  const packed = zstdCompressSync(Buffer.from(MSG), { params: { [constants.ZSTD_c_checksumFlag]: 1 } });
+  // Use the existing native vector's fixed layout, independent of encoder-version choices:
+  // 6-byte frame header, 3-byte block header, raw-literal header + 30 bytes, sequence count.
+  const frame = Buffer.from(V.zstd, 'base64'), modesOffset = 6 + 3 + 1 + 30 + 1;
+  const native = zstdCompressSync(Buffer.from(MSG), { params: { [constants.ZSTD_c_checksumFlag]: 1 } });
+  frame[4] |= 4;
+  const packed = Buffer.concat([frame, native.subarray(-4)]);
+  expect(packed[modesOffset]).toBe(0);
+  expect(zstdDecompressSync(packed).toString()).toBe(MSG);
   const variants = [];
   for (let bit = 0; bit < packed.length * 8; bit++) {
     const bytes = Buffer.from(packed); bytes[bit >>> 3] ^= 1 << (bit & 7);
-    variants.push({ packed: bytes.toString('base64') });
+    variants.push({ packed: bytes.toString('base64'), label: `bit ${bit}`,
+      reserved: (bit >>> 3) === modesOffset && (bit & 7) < 2 });
   }
+  const bothReserved = Buffer.from(packed); bothReserved[modesOffset] |= 3;
+  variants.push({ packed: bothReserved.toString('base64'), label: 'reserved 0b11', reserved: true });
+  variants.push({ packed: packed.toString('base64'), label: 'valid frame after mutations', reserved: false });
   const expected = nativeZstdDecodeBatch(variants.map(({ packed }) => packed));
+  expect(expected.at(-1)).toBe(Buffer.from(MSG).toString('base64'));
   await page.goto('/');
   const actual = await page.evaluate(async (variants) => {
     const { decompress } = await import('/js/lib/archive/zstd-decode.js');
     const { b64ToBytes, bytesToB64 } = await import('/js/lib/common/base64.js');
     return variants.map(({ packed }) => {
-      try { return bytesToB64(decompress(b64ToBytes(packed), { maxOutputLength: 65536 })); } catch { return null; }
+      try { return { output: bytesToB64(decompress(b64ToBytes(packed), { maxOutputLength: 65536 })) }; }
+      catch (error) { return { output: null, error: error.message }; }
     });
   }, variants);
-  for (let i = 0; i < variants.length; i++) expect(actual[i], `bit ${i}`).toBe(expected[i]);
+  for (let i = 0; i < variants.length; i++) {
+    const { label, reserved } = variants[i];
+    // RFC 8878 §3.1.1.3.2.1 requires zero sequence reserved bits. libzstd 1.5.5
+    // accepts them; 1.5.7 rejects them. Assert the format rule for these cases only.
+    if (reserved) {
+      expect(actual[i].output, label).toBeNull();
+      expect(actual[i].error, label).toContain('시퀀스 예약 비트');
+    } else expect(actual[i].output, label).toBe(expected[i]);
+  }
 });
 
 for (const codec of ['lz4', 'bzip2', 'zstd']) {

@@ -1,7 +1,7 @@
 // 압축 / 아카이브
 import {
   tool, makeIO, h, formLabel, kvTable, strToBytes, bytesToStr, bytesToB64, b64ToBytes,
-  bytesToHex, hexToBytes, decodeInput, loadModule, vendorUrl, download,
+  bytesToHex, hexToBytes, decodeInput, download,
   createAsyncRunner, throwIfAborted, formatBytes,
 } from '../core.js';
 
@@ -198,12 +198,6 @@ tool({
 });
 
 /* ---------- Worker 기반 Brotli / Zstandard 및 Bzip2 해제 ---------- */
-const CODEC_URLS = {
-  brotliDecompress: vendorUrl('brotliDecompress'),
-  zstdCompress: vendorUrl('zstdCompress'),
-  zstdDecompress: vendorUrl('zstdDecompress'),
-  bzip2Decompress: vendorUrl('bzip2Decompress'),
-};
 const CODEC_WORKER_URL = new URL('../workers/archive-codec.js', import.meta.url);
 
 function runCodecWorker(codec, action, bytes, level, signal, tasks, maxOutputLength, presentation) {
@@ -237,27 +231,51 @@ function runCodecWorker(codec, action, bytes, level, signal, tasks, maxOutputLen
       finish(new Error(event.message || '압축 Worker를 실행하지 못했습니다.'));
     });
     try {
-      worker.postMessage({ codec, action, bytes: input, level, maxOutputLength, urls: CODEC_URLS, presentation },
+      worker.postMessage({ codec, action, bytes: input, level, maxOutputLength, presentation },
         input ? [input.buffer] : []);
     } catch (error) { finish(error); }
   });
+}
+
+function codecTextIO(root, config, id, tasks, emptyNoop = false) {
+  let resultBlob = null, resultName = '';
+  const save = h('button', { class: 'btn small hidden', type: 'button', onclick: () => {
+    if (resultBlob) download(resultName, resultBlob);
+  } }, '전체 결과 다운로드');
+  const previewNote = h('div', { class: 'note hidden', role: 'status' });
+  const clearResult = () => {
+    resultBlob = null;
+    save.classList.add('hidden');
+    previewNote.classList.add('hidden');
+  };
+  const io = makeIO(root, {
+    ...config, autorun: false, cancelable: true,
+    async process(text, options, action, signal) {
+      clearResult();
+      if (emptyNoop && !text.trim()) return '';
+      const result = await runCodecWorker(id, action, null, +(options.level || 3), signal, tasks, undefined,
+        { text, ifmt: options.ifmt, ofmt: options.ofmt });
+      throwIfAborted(signal);
+      resultBlob = result.blob;
+      resultName = `${id}-${action === 'comp' ? 'compressed' : 'decompressed'}.${options.ofmt}.txt`;
+      save.textContent = `전체 결과 다운로드 (${options.ofmt === 'text' ? '텍스트' : options.ofmt === 'hex' ? 'Hex' : 'Base64'})`;
+      save.classList.remove('hidden');
+      previewNote.textContent = result.truncated
+        ? `결과가 커서 앞부분 ${result.preview.length.toLocaleString()}자만 표시합니다. 복사 버튼도 이 미리보기만 복사합니다. 전체 ${result.characters.toLocaleString()}자는 다운로드하세요.` : '';
+      previewNote.classList.toggle('hidden', !result.truncated);
+      return result.preview + (action === 'comp' ? `\n\n// ${ratio(result.inputLength, result.outputLength)}` : '');
+    },
+  });
+  io.out.before(previewNote);
+  io.out.after(save);
+  return { io, clearResult };
 }
 
 function codecRender({ id, name, ext, levels, note }) {
   return function render(root) {
       const tasks = new Set();
       root.append(h('h3', null, '텍스트 / Base64 / Hex'));
-      let resultBlob = null, resultName = '';
-      const save = id === 'brotli' ? h('button', { class: 'btn small hidden', type: 'button', onclick: () => {
-        if (resultBlob) download(resultName, resultBlob);
-      } }, '전체 결과 다운로드') : null;
-      const previewNote = id === 'brotli' ? h('div', { class: 'note hidden', role: 'status' }) : null;
-      const clearResult = () => {
-        resultBlob = null;
-        save?.classList.add('hidden');
-        previewNote?.classList.add('hidden');
-      };
-      const io = makeIO(root, {
+      const { io, clearResult } = codecTextIO(root, {
         inputs: [{ id: 'input', label: '입력', rows: 6, value: `${name} 테스트 `.repeat(5) }],
         options: [
           { id: 'ifmt', label: '입력 형식', type: 'select', values: [['text', '텍스트'], ['base64', 'Base64'], ['hex', 'Hex']] },
@@ -265,35 +283,8 @@ function codecRender({ id, name, ext, levels, note }) {
           { id: 'level', label: '압축 레벨', type: 'select', values: levels },
         ],
         actions: [{ id: 'comp', label: '압축' }, { id: 'decomp', label: '해제' }],
-        autorun: false, cancelable: true,
-        async process(text, options, action, signal) {
-          if (id === 'brotli') {
-            clearResult();
-            const result = await runCodecWorker(id, action, null, +options.level, signal, tasks, undefined,
-              { text, ifmt: options.ifmt, ofmt: options.ofmt });
-            throwIfAborted(signal);
-            resultBlob = result.blob;
-            resultName = `brotli-${action === 'comp' ? 'compressed' : 'decompressed'}.${options.ofmt}.txt`;
-            save.textContent = `전체 결과 다운로드 (${options.ofmt === 'text' ? '텍스트' : options.ofmt === 'hex' ? 'Hex' : 'Base64'})`;
-            save.classList.remove('hidden');
-            previewNote.textContent = result.truncated
-              ? `결과가 커서 앞부분 ${result.preview.length.toLocaleString()}자만 표시합니다. 복사 버튼도 이 미리보기만 복사합니다. 전체 ${result.characters.toLocaleString()}자는 다운로드하세요.` : '';
-            previewNote.classList.toggle('hidden', !result.truncated);
-            return result.preview + (action === 'comp' ? `\n\n// ${ratio(result.inputLength, result.outputLength)}` : '');
-          }
-          const input = decodeInput(text, options.ifmt);
-          const inputLength = input.length;
-          const result = await runCodecWorker(id, action, input, +options.level, signal, tasks);
-          if (action === 'decomp') enforceArchiveBudget([{ name: '해제 결과', size: result.length }], inputLength);
-          return outBytes(result, options.ofmt)
-            + (action === 'comp' ? `\n\n// ${ratio(inputLength, result.length)}` : '');
-        },
         note: note || '압축·해제는 Web Worker에서 처리하며 입력 데이터는 브라우저 밖으로 전송되지 않습니다.',
-      });
-      if (save) {
-        io.out.before(previewNote);
-        io.out.after(save);
-      }
+      }, id, tasks);
 
       root.append(h('h3', { style: { marginTop: '26px' } }, '파일 압축/해제'));
       const fileOut = h('div');
@@ -311,8 +302,8 @@ function codecRender({ id, name, ext, levels, note }) {
       const handle = (action) => runner.run(async (task) => {
           const file = picker.files[0];
           if (!file) throw new Error('파일을 먼저 선택하세요.');
-          if (id === 'brotli' && file.size > ARCHIVE_LIMITS.maxTotalBytes)
-            throw new Error('Brotli 입력 파일이 안전 한도 256 MiB를 넘습니다.');
+          if (file.size > ARCHIVE_LIMITS.maxTotalBytes)
+            throw new Error('입력 파일이 안전 한도 256 MiB를 넘습니다.');
           const input = new Uint8Array(await file.arrayBuffer());
           const inputLength = input.length;
           const result = await runCodecWorker(id, action, input, +io.optEls.level.value, task.signal, tasks);
@@ -345,12 +336,13 @@ tool({
   render: codecRender({
     id: 'brotli', name: 'Brotli 압축/해제', ext: '.br',
     levels: [['6', '6 (기본)'], ['11', '11 (깊은 탐색)'], ['1', '1 (빠른 탐색)']],
-    note: '자체 Brotli 압축기를 취소 가능한 Web Worker에서 실행하며 입력은 브라우저 밖으로 전송되지 않습니다. '
-      + '입력 최대 256 MiB이며, 해제 결과는 완료 후 128 MiB·압축률 200:1 한도를 검사합니다. '
-      + '현재 해제기는 처리 중 메모리 사용량을 제한하지 못합니다. 레벨은 일치 탐색 깊이를 조절하며, '
+    note: '자체 Brotli 코덱을 취소 가능한 Web Worker에서 실행하며 입력은 브라우저 밖으로 전송되지 않습니다. '
+      + '입력 최대 256 MiB이며, 해제 중 출력 메모리를 확보하기 전에 128 MiB·압축률 200:1 한도를 검사합니다. '
+      + '표준 .br 스트림과 정적 사전을 지원하며 공유 사전·확장 윈도 형식은 지원하지 않습니다. 레벨은 일치 탐색 깊이를 조절하며, '
       + '압축 결과와 압축률은 구현에 따라 다릅니다. 높은 레벨이 항상 더 작은 결과를 보장하지는 않습니다. '
       + '결과는 최대 32,768자까지 미리 보며 전체 결과는 선택한 출력 형식으로 다운로드할 수 있습니다. '
-      + '텍스트는 UTF-8로 해석하므로 바이너리 보존에는 Base64·Hex를 사용하세요.',
+      + '텍스트는 UTF-8로 해석하므로 바이너리 보존에는 Base64·Hex를 사용하세요. '
+      + '.br 형식에는 체크섬이 없어 모든 손상을 검출할 수는 없습니다.',
   }),
 });
 tool({
@@ -359,7 +351,8 @@ tool({
   keywords: 'zstd zstandard zst compress decompress 압축 해제 worker',
   render: codecRender({
     id: 'zstd', name: 'Zstandard 압축/해제', ext: '.zst',
-    levels: [['3', '3 (기본)'], ['10', '10 (높음)'], ['19', '19 (최대)'], ['1', '1 (빠름)']],
+    levels: [['3', '3 (기본)'], ['10', '10 (깊은 탐색)'], ['19', '19 (최대 탐색)'], ['1', '1 (빠른 탐색)']],
+    note: '자체 Zstandard 코덱을 취소 가능한 Worker에서 실행합니다. 표준 프레임의 raw·RLE·FSE/Huffman 블록, 연결·건너뛰기 프레임과 체크섬을 지원합니다. 외부 사전은 지원하지 않습니다. 입력 최대 256 MiB, 해제·윈도 최대 128 MiB, 압축률 200:1입니다. 레벨은 일치 탐색 깊이를 조절하며 압축률과 결과는 구현에 따라 다릅니다. 결과는 최대 32,768자까지 미리 보며 전체 결과를 다운로드할 수 있습니다.',
   }),
 });
 
@@ -370,23 +363,15 @@ tool({
   render(root) {
     const tasks = new Set();
     root.append(h('h3', null, 'Base64 / Hex 해제'));
-    const io = makeIO(root, {
+    const { io, clearResult } = codecTextIO(root, {
       inputs: [{ id: 'input', label: 'Bzip2 데이터', rows: 5, placeholder: 'Base64 또는 Hex' }],
       options: [
         { id: 'ifmt', label: '입력 형식', type: 'select', values: [['base64', 'Base64'], ['hex', 'Hex']] },
         { id: 'ofmt', label: '출력 형식', type: 'select', values: [['text', '텍스트'], ['base64', 'Base64'], ['hex', 'Hex']] },
       ],
       actions: [{ id: 'decomp', label: '해제' }],
-      autorun: false, cancelable: true,
-      async process(text, options, _, signal) {
-        if (!text.trim()) return '';
-        const input = decodeInput(text, options.ifmt);
-        const result = await runCodecWorker('bzip2', 'decomp', input, 0, signal, tasks);
-        enforceArchiveBudget([{ name: '해제 결과', size: result.length }], input.length);
-        return outBytes(result, options.ofmt);
-      },
-      note: 'Bzip2 압축 후보인 순수 JavaScript 구현은 GPL이며 대용량에서 매우 느려 추가하지 않았습니다. 해제는 Worker에서 처리합니다.',
-    });
+      note: '자체 Bzip2 해제기를 취소 가능한 Worker에서 실행합니다. 연결 스트림과 구형 랜덤화 블록을 지원하며 블록·스트림 CRC를 검증합니다. 입력 최대 256 MiB, 해제 최대 128 MiB·압축률 200:1입니다. 결과는 최대 32,768자까지 미리 보며 전체 결과를 다운로드할 수 있습니다.',
+    }, 'bzip2', tasks, true);
 
     root.append(h('h3', { style: { marginTop: '26px' } }, '파일 해제'));
     const fileOut = h('div');
@@ -399,6 +384,7 @@ tool({
     picker.addEventListener('change', () => runner.run(async (task) => {
       const file = picker.files[0];
       if (!file) throw new Error('해제할 Bzip2 파일을 선택하세요.');
+        if (file.size > ARCHIVE_LIMITS.maxTotalBytes) throw new Error('Bzip2 입력 파일이 안전 한도 256 MiB를 넘습니다.');
         const input = new Uint8Array(await file.arrayBuffer());
         const result = await runCodecWorker('bzip2', 'decomp', input, 0, task.signal, tasks);
         enforceArchiveBudget([{ name: file.name, size: result.length }], file.size);
@@ -413,6 +399,7 @@ tool({
     }));
     root.append(section);
     return () => {
+      clearResult();
       runner.cleanup();
       io.cancel();
       for (const cancel of [...tasks]) cancel();
@@ -422,31 +409,24 @@ tool({
 
 tool({
   id: 'lz4', cat: CAT, name: 'LZ4 압축/해제',
-  desc: 'LZ4 블록 포맷으로 압축하거나 해제합니다.',
+  desc: 'LZ4 프레임 포맷으로 압축하거나 체크섬을 검증하며 해제합니다.',
   keywords: 'lz4 compress fast',
   render(root) {
-    makeIO(root, {
+    const tasks = new Set();
+    const { io, clearResult } = codecTextIO(root, {
       inputs: [{ id: 'input', label: '입력', rows: 6, value: 'LZ4 fast compression test '.repeat(5) }],
       options: [
         { id: 'ifmt', label: '입력 형식', type: 'select', values: [['text', '텍스트'], ['base64', 'Base64'], ['hex', 'Hex']] },
         { id: 'ofmt', label: '출력 형식', type: 'select', values: [['base64', 'Base64'], ['hex', 'Hex'], ['text', '텍스트']] },
       ],
       actions: [{ id: 'comp', label: '압축' }, { id: 'decomp', label: '해제' }],
-      autorun: false,
-      async process(text, o, action) {
-        const mod = await loadModule(vendorUrl('lz4'));
-        const lz4 = mod.default && mod.default.compress ? mod.default : mod;
-        const input = decodeInput(text, o.ifmt);
-        if (action === 'decomp') {
-          const res = lz4.decompress(input);
-          enforceArchiveBudget([{ name: '해제 결과', size: res.length }], input.length);
-          return outBytes(new Uint8Array(res), o.ofmt);
-        }
-        const res = lz4.compress(input);
-        return outBytes(new Uint8Array(res), o.ofmt) + `\n\n// ${ratio(input.length, res.length)}`;
-      },
-      note: 'lz4js의 프레임 포맷을 사용합니다.',
-    });
+      note: '자체 LZ4 프레임 코덱을 취소 가능한 Worker에서 실행합니다. 독립·연결 블록, 연결·건너뛰기 프레임과 체크섬을 지원합니다. 외부 사전·레거시 프레임·원시 블록은 지원하지 않습니다. 입력 최대 256 MiB, 해제 최대 128 MiB·압축률 200:1입니다. 결과는 최대 32,768자까지 미리 보며 전체 결과를 다운로드할 수 있습니다.',
+    }, 'lz4', tasks);
+    return () => {
+      clearResult();
+      io.cancel();
+      for (const cancel of [...tasks]) cancel();
+    };
   },
 });
 

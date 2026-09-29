@@ -16,6 +16,8 @@ import urllib.request
 from collections import Counter
 from pathlib import Path
 
+from generate_brotli_data import validate_local as validate_brotli_data
+
 
 ROOT = Path(__file__).resolve().parents[1]
 LOCAL_REF = re.compile(r"""(?:src|href)=["']([^"'#]+)["']""")
@@ -181,6 +183,24 @@ def validate_imports(validation: Validation) -> None:
       target = local_path(ref, path.parent)
       if target:
         validation.require_file(target, str(path.relative_to(ROOT)))
+
+
+def validate_brotli_assets(validation: Validation) -> None:
+  dictionary = ROOT / 'assets/data/brotli-dictionary.bin'
+  tables = ROOT / 'js/lib/archive/brotli-tables.js'
+  for path in (dictionary, tables):
+    validation.require_file(path, 'Brotli normative data')
+  try:
+    validate_brotli_data(dictionary, tables)
+    worker = (ROOT / 'js/workers/archive-codec.js').read_text(encoding='utf-8')
+    request = re.search(
+      r"fetch\(new URL\('\.\./\.\./assets/data/brotli-dictionary\.bin', import\.meta\.url\), \{"
+      r"\s*integrity: '([^']+)'", worker,
+    )
+    if not request or request.group(1) != sha384(dictionary.read_bytes()):
+      validation.error('archive-codec.js: Brotli dictionary request must use the matching SHA-384 SRI pin')
+  except (OSError, ValueError) as error:
+    validation.error(f'Brotli normative data: {error}')
 
 
 def validate_architecture_boundaries(validation: Validation) -> None:
@@ -813,6 +833,7 @@ def main() -> int:
   validation = Validation()
   validate_tools(validation)
   validate_imports(validation)
+  validate_brotli_assets(validation)
   validate_architecture_boundaries(validation)
   validate_document_assets(validation)
   vendored_paths = validate_dependencies(validation)

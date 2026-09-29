@@ -1,5 +1,7 @@
 import { test as base, expect } from '@playwright/test';
 import { cdnCache } from './cdn-cache.js';
+import { brotliDictionaryStream } from './fixtures.js';
+import { brotliDecompressSync } from 'node:zlib';
 
 // 모든 테스트에서 콘솔 에러와 처리되지 않은 예외를 수집하고, 테스트 끝에 0건임을 확인한다.
 const test = base.extend({
@@ -31,7 +33,7 @@ test('홈 화면이 렌더링된다', async ({ page, pageErrors }) => {
   expect(await page.locator('#nav a[data-id]').count()).toBeGreaterThan(30);
 });
 
-test('Brotli 자체 압축기가 모든 브라우저에서 레벨별 Unicode를 보존한다', async ({ page }) => {
+test('Brotli 자체 코덱이 모든 브라우저에서 레벨별 Unicode와 표준 사전을 처리한다', async ({ page }) => {
   await page.goto('/#/tool/brotli');
   const io = page.locator('#content .io').first();
   for (const level of ['1', '6', '11']) {
@@ -55,6 +57,10 @@ test('Brotli 자체 압축기가 모든 브라우저에서 레벨별 Unicode를 
   const chunks = [];
   for await (const chunk of await saved.createReadStream()) chunks.push(chunk);
   expect(Buffer.concat(chunks).toString()).toBe('Brotli 브라우저 호환 🌏'.repeat(20));
+  const dictionary = brotliDictionaryStream({ length: 24, index: 31, transform: 44 });
+  await io.locator('textarea.mono:not(.out)').fill(dictionary.toString('base64'));
+  await io.getByRole('button', { name: '해제', exact: true }).click();
+  await expect(io.locator('textarea.out')).toHaveValue(new TextDecoder().decode(brotliDecompressSync(dictionary)));
 });
 
 test('LZMA 자체 Worker가 공개 벡터를 해제하고 Unicode를 압축한다', async ({ page }) => {

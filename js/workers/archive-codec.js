@@ -1,11 +1,4 @@
-function localModuleUrl(value) {
-  const url = new URL(value, self.location.href);
-  if (url.origin !== self.location.origin)
-    throw new Error('검증되지 않은 외부 압축 모듈은 실행할 수 없습니다.');
-  return url.href;
-}
-
-self.onmessage = async ({ data: { codec, action, bytes, level, maxOutputLength, urls, presentation } }) => {
+self.onmessage = async ({ data: { codec, action, bytes, level, maxOutputLength, presentation } }) => {
   try {
     let result;
     if (['gzip', 'zlib', 'raw-deflate'].includes(codec)) {
@@ -56,19 +49,23 @@ self.onmessage = async ({ data: { codec, action, bytes, level, maxOutputLength, 
         result = module.compress(bytes, { quality: level });
       } else if (action === 'decomp') {
         let module;
-        try { module = await import(localModuleUrl(urls.brotliDecompress)); }
+        try { module = await import('../lib/archive/brotli-decode.js'); }
         catch (error) {
           throw new Error('Brotli 해제기를 불러오지 못했습니다. 연결 상태를 확인하고 다시 실행하세요.', { cause: error });
         }
-        const decompress = module.default || module.decompress || module;
-        try { result = decompress(bytes); }
-        catch (error) {
-          throw new Error('올바른 Brotli 데이터가 아니거나 지원하지 않는 형식입니다.', { cause: error });
+        let dictionary;
+        try {
+          const response = await fetch(new URL('../../assets/data/brotli-dictionary.bin', import.meta.url), {
+            integrity: 'sha384-vgm9zVi3hfqZC+cctW9pHKRtXEAzj2paW80JDiNwCQ4tU3DjQE7Axn9q1eAF/oTr',
+          });
+          if (!response.ok) throw new Error(`HTTP ${response.status}`);
+          dictionary = new Uint8Array(await response.arrayBuffer());
+          if (dictionary.length !== 122784) throw new Error('Invalid dictionary length');
         }
-        // The legacy decoder has no streaming limit API. Reject before transfer
-        // or formatting; enforcing the limit during decoding needs its replacement.
-        if (result.length > 128 * 1024 * 1024 || result.length > inputLength * 200)
-          throw new Error('Brotli 해제 결과가 안전 한도(128 MiB·압축률 200:1)를 넘습니다.');
+        catch (error) {
+          throw new Error('Brotli 표준 사전을 불러오지 못했습니다. 연결 상태를 확인하고 다시 실행하세요.', { cause: error });
+        }
+        result = module.decompress(bytes, { dictionary, maxOutputLength });
       } else throw new Error('지원하지 않는 Brotli 작업입니다.');
       if (presentation) {
         self.postMessage({ presentation: {
@@ -77,18 +74,32 @@ self.onmessage = async ({ data: { codec, action, bytes, level, maxOutputLength, 
         } });
         return;
       }
-    } else if (codec === 'zstd') {
-      if (action === 'comp') {
-        const module = await import(localModuleUrl(urls.zstdCompress));
-        await module.init();
-        result = module.compress(bytes, level);
-      } else {
-        const module = await import(localModuleUrl(urls.zstdDecompress));
-        result = module.decompress(bytes);
+    } else if (['zstd', 'bzip2', 'lz4'].includes(codec)) {
+      const name = { zstd: 'Zstandard', bzip2: 'Bzip2', lz4: 'LZ4' }[codec];
+      let io, module;
+      try {
+        if (presentation) io = await import('../lib/archive/codec-io.js');
+        if (codec === 'zstd') module = action === 'comp'
+          ? await import('../lib/archive/zstd-encode.js') : await import('../lib/archive/zstd-decode.js');
+        else if (codec === 'bzip2') module = await import('../lib/archive/bzip2.js');
+        else module = await import('../lib/archive/lz4.js');
+      } catch (error) {
+        throw new Error(`${name} 코덱을 불러오지 못했습니다. 연결 상태를 확인하고 다시 실행하세요.`, { cause: error });
       }
-    } else if (codec === 'bzip2' && action === 'decomp') {
-      const module = await import(localModuleUrl(urls.bzip2Decompress));
-      result = (module.default || module).decode(bytes);
+      if (presentation) bytes = io.decodeCodecInput(presentation.text, presentation.ifmt, undefined, name);
+      if (!(bytes instanceof Uint8Array) || bytes.length > 256 * 1024 * 1024)
+        throw new Error(`${name} 입력은 256 MiB 이하의 바이트 배열이어야 합니다.`);
+      const inputLength = bytes.length;
+      if (action === 'comp' && codec !== 'bzip2') result = module.compress(bytes, { level });
+      else if (action === 'decomp') result = module.decompress(bytes, { maxOutputLength });
+      else throw new Error(`지원하지 않는 ${name} 작업입니다.`);
+      if (presentation) {
+        self.postMessage({ presentation: {
+          ...io.formatCodecOutput(result, presentation.ofmt, name),
+          inputLength, outputLength: result.length,
+        } });
+        return;
+      }
     } else throw new Error('지원하지 않는 압축 작업입니다.');
     const output = result instanceof Uint8Array ? result
       : result instanceof ArrayBuffer ? new Uint8Array(result)

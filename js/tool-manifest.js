@@ -1565,7 +1565,7 @@ export const TOOL_MANIFESTS = Object.freeze([
     "desc": "Gzip으로 데이터나 파일을 압축하거나 해제합니다.",
     "keywords": "gzip gz compress file",
     "module": "./tools/archive.js",
-    "externalLibrary": true
+    "externalLibrary": false
   },
   {
     "id": "raw-deflate",
@@ -1574,7 +1574,7 @@ export const TOOL_MANIFESTS = Object.freeze([
     "desc": "zlib 헤더 없는 raw deflate/inflate를 수행합니다.",
     "keywords": "deflate inflate raw zlib",
     "module": "./tools/archive.js",
-    "externalLibrary": true
+    "externalLibrary": false
   },
   {
     "id": "zlib",
@@ -1583,7 +1583,7 @@ export const TOOL_MANIFESTS = Object.freeze([
     "desc": "zlib(deflate) 형식으로 압축하거나 해제합니다.",
     "keywords": "zlib deflate compress",
     "module": "./tools/archive.js",
-    "externalLibrary": true
+    "externalLibrary": false
   },
   {
     "id": "lzma",
@@ -1592,7 +1592,7 @@ export const TOOL_MANIFESTS = Object.freeze([
     "desc": "LZMA 단독(.lzma) 형식으로 데이터를 브라우저 안에서 압축하거나 해제합니다.",
     "keywords": "lzma alone compress decompress 압축 해제 worker",
     "module": "./tools/archive.js",
-    "externalLibrary": true
+    "externalLibrary": false
   },
   {
     "id": "brotli",
@@ -1601,7 +1601,7 @@ export const TOOL_MANIFESTS = Object.freeze([
     "desc": "Brotli(.br) 데이터를 품질 레벨을 지정해 압축하거나 해제합니다.",
     "keywords": "brotli br compress decompress web content-encoding 압축 해제 worker",
     "module": "./tools/archive.js",
-    "externalLibrary": true
+    "externalLibrary": false
   },
   {
     "id": "zstd",
@@ -1610,7 +1610,7 @@ export const TOOL_MANIFESTS = Object.freeze([
     "desc": "Zstandard(.zst) 데이터를 레벨을 지정해 압축하거나 해제합니다.",
     "keywords": "zstd zstandard zst compress decompress 압축 해제 worker",
     "module": "./tools/archive.js",
-    "externalLibrary": true
+    "externalLibrary": false
   },
   {
     "id": "bzip2",
@@ -1619,16 +1619,16 @@ export const TOOL_MANIFESTS = Object.freeze([
     "desc": "Bzip2(.bz2) 데이터를 Worker에서 해제합니다. 압축은 브라우저 비용과 라이선스 문제로 제공하지 않습니다.",
     "keywords": "bzip2 bz2 decompress worker",
     "module": "./tools/archive.js",
-    "externalLibrary": true
+    "externalLibrary": false
   },
   {
     "id": "lz4",
     "cat": "압축 / 아카이브",
     "name": "LZ4 압축/해제",
-    "desc": "LZ4 블록 포맷으로 압축하거나 해제합니다.",
+    "desc": "LZ4 프레임 포맷으로 압축하거나 체크섬을 검증하며 해제합니다.",
     "keywords": "lz4 compress fast",
     "module": "./tools/archive.js",
-    "externalLibrary": true
+    "externalLibrary": false
   },
   {
     "id": "zip",
@@ -1637,7 +1637,7 @@ export const TOOL_MANIFESTS = Object.freeze([
     "desc": "여러 파일을 ZIP으로 묶거나, ZIP 파일의 내용을 나열하고 추출합니다.",
     "keywords": "zip archive unzip compress extract",
     "module": "./tools/archive.js",
-    "externalLibrary": true
+    "externalLibrary": false
   },
   {
     "id": "tar",
@@ -1646,6 +1646,6 @@ export const TOOL_MANIFESTS = Object.freeze([
     "desc": "여러 파일을 tar로 묶거나 tar/tar.gz의 내용을 나열합니다.",
     "keywords": "tar archive gzip tgz",
     "module": "./tools/archive.js",
-    "externalLibrary": true
+    "externalLibrary": false
   }
 ]);

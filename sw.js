@@ -4,7 +4,7 @@ importScripts('./js/sw-integrity.js');
 
 const CACHE_PREFIX = 'wtools-';
 // scripts/update_cache_version.py가 앱 셸 내용의 SHA-256 앞 12자리와 일치시킨다.
-const CACHE_REVISION = 'adfb6cbbd178';
+const CACHE_REVISION = '7165b5138093';
 const CACHE_NAME = CACHE_PREFIX + 'shell-' + CACHE_REVISION;
 const EXTERNAL_CACHE_PREFIX = CACHE_PREFIX + 'external-';
 const EXTERNAL_CACHE_NAME = EXTERNAL_CACHE_PREFIX + 'v17';
@@ -32,6 +32,7 @@ const APP_SHELL = [
   './assets/favicon-512-maskable.png',
   './assets/data/emoji.json',
   './assets/data/network-reference.json',
+  './assets/data/brotli-dictionary.bin',
   './assets/data/figlet/Banner.flf',
   './assets/data/figlet/Big.flf',
   './assets/data/figlet/Block.flf',
@@ -44,18 +45,22 @@ const APP_SHELL = [
   './assets/data/figlet/Standard.flf',
   './assets/vendor/crypto-js-4.2.0.min.js',
   './assets/eff-short-wordlist-1.txt',
-  './assets/vendor/brotli-decompress-1.3.3.mjs',
-  './assets/vendor/fzstd-0.1.1.mjs',
-  './assets/vendor/lz4js-0.2.0.mjs',
   './assets/vendor/openpgp-5.11.3.min.mjs',
-  './assets/vendor/seek-bzip-2.0.0.mjs',
-  './assets/vendor/zstd-compress-0.0.27.mjs',
-  './assets/vendor/zstd-wasm-0.0.27.wasm',
   './js/core.js',
   './js/dependencies.js',
   './js/lib/common/base64.js',
   './js/lib/archive/brotli-encode.js',
+  './js/lib/archive/brotli-decode.js',
+  './js/lib/archive/brotli-tables.js',
   './js/lib/archive/codec-io.js',
+  './js/lib/archive/bzip2.js',
+  './js/lib/archive/bzip2-random.js',
+  './js/lib/archive/lz4.js',
+  './js/lib/archive/xxhash32.js',
+  './js/lib/archive/xxhash64.js',
+  './js/lib/archive/zstd-encode.js',
+  './js/lib/archive/zstd-decode.js',
+  './js/lib/archive/zstd-entropy.js',
   './js/lib/archive/deflate.js',
   './js/lib/archive/lzma.js',
   './js/lib/archive/lzma-io.js',

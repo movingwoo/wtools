@@ -66,11 +66,17 @@ test('구형 기준 엔진에서 자체 DEFLATE·ZIP과 압축 Worker가 동작�
     const brotliPacked = await request({ codec: 'brotli', action: 'comp', bytes: source.slice(), level: 11 });
     const brotliText = await request({ codec: 'brotli', action: 'decomp',
       presentation: { text: bytesToB64(brotliPacked), ifmt: 'base64', ofmt: 'text' },
-      urls: { brotliDecompress: '/assets/vendor/brotli-decompress-1.3.3.mjs' },
     });
     const brotliOutput = await request({ codec: 'brotli', action: 'decomp', bytes: brotliPacked,
-      urls: { brotliDecompress: '/assets/vendor/brotli-decompress-1.3.3.mjs' },
     }, [brotliPacked.buffer]);
+    const additional = {};
+    for (const codec of ['zstd', 'lz4']) {
+      const packed = await request({ codec, action: 'comp', bytes: source.slice(), level: 3 });
+      additional[codec] = decoder.decode(await request({ codec, action: 'decomp', bytes: packed,
+        maxOutputLength: source.length }));
+    }
+    const bzip2 = Uint8Array.from(atob('QlpoOTFBWSZTWc+dPa0AAA1RgAAQQAAKZ9yAIABQpgAAr/VKGNTGopTTa6VMMsvW0rWhDTbLimEpshx8h+LuSKcKEhnzp7Wg'), (char) => char.charCodeAt(0));
+    additional.bzip2 = decoder.decode(await request({ codec: 'bzip2', action: 'decomp', bytes: bzip2 }));
     worker.terminate();
 
     const { runZipWorker } = await import('/js/lib/archive/zip-worker-client.js');
@@ -80,7 +86,7 @@ test('구형 기준 엔진에서 자체 DEFLATE·ZIP과 압축 Worker가 동작�
     });
     const [zipEntry] = await runZipWorker('extract', { bytes: archive });
     return {
-      formats,
+      formats, additional,
       worker: decoder.decode(unpacked),
       lzma: decoder.decode(lzmaOutput),
       brotli: decoder.decode(brotliOutput),
@@ -94,6 +100,7 @@ test('구형 기준 엔진에서 자체 DEFLATE·ZIP과 압축 Worker가 동작�
   const expected = '최소 브라우저 DEFLATE 왕복 '.repeat(100);
   expect(result).toEqual({
     formats: { gzip: expected, zlib: expected, 'raw-deflate': expected },
+    additional: { zstd: expected, lz4: expected, bzip2: 'hello wtools compression test\n'.repeat(3) },
     worker: expected,
     lzma: expected,
     brotli: expected,

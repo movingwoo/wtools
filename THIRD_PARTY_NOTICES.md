@@ -40,6 +40,96 @@ Banner는 Ryan Youck, Doom은 Frans P. de Vries, Ghost는 myflix, Speed는 Claud
 SHA-384는 `scripts/emoji-data-lock.json`에, 변환·검증·공식 안정판 갱신 과정은
 `scripts/generate_emoji_data.py`에 기록되어 있습니다.
 
+## Brotli 표준 사전·문맥·변환 데이터
+
+- 포함 파일: `assets/data/brotli-dictionary.bin`, `js/lib/archive/brotli-tables.js`
+- 원본: IETF [RFC 7932](https://www.rfc-editor.org/rfc/rfc7932) 7.1절, 부록 A·B
+- 저자: Jyrki Alakuijala, Zoltan Szabadka
+- 변경: 표준의 16진수 사전을 바이트 파일로, 문맥·변환표를 ES 모듈 배열로 재구성
+- 재현: `scripts/generate_brotli_data.py`가 고정 RFC 해시와 표준에 실린 길이·CRC를 검사
+
+이 자료는 표준 형식을 읽기 위한 고정 데이터입니다. 해제 알고리즘은 W-Tools의 자체 구현이며,
+제3자 해제기 코드를 포함하지 않습니다. RFC 코드 구성요소에 적용되는 IETF Trust의 BSD 조건을
+아래에 재현합니다. RFC가 사용한 “Simplified BSD” 명칭은 IETF Trust가 “Revised BSD”로
+정정했으며, [조건의 본문은 동일합니다](https://trustee.ietf.org/documents/trust-legal-provisions/tlp-5/).
+
+Copyright (c) 2016 IETF Trust and the persons identified as authors of the code.
+All rights reserved.
+
+Redistribution and use in source and binary forms, with or without modification,
+are permitted provided that the following conditions are met:
+
+1. Redistributions of source code must retain the above copyright notice, this
+   list of conditions and the following disclaimer.
+2. Redistributions in binary form must reproduce the above copyright notice,
+   this list of conditions and the following disclaimer in the documentation
+   and/or other materials provided with the distribution.
+3. Neither the name of Internet Society, IETF or IETF Trust, nor the names of
+   specific contributors, may be used to endorse or promote products derived
+   from this software without specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS “AS IS” AND
+ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT,
+INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
+BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA,
+OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
+WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+POSSIBILITY OF SUCH DAMAGE.
+
+## Zstandard 형식 테이블
+
+`js/lib/archive/zstd-entropy.js`의 기본 확률·길이 테이블은
+[RFC 8878](https://www.rfc-editor.org/rfc/rfc8878)의 고정 형식 데이터입니다.
+Copyright (c) 2021 IETF Trust and the persons identified as authors of the code.
+All rights reserved. 위의 IETF Trust BSD 조건이 적용됩니다. 코덱 알고리즘은 자체 구현입니다.
+
+## Bzip2 구형 랜덤화 데이터
+
+`js/lib/archive/bzip2-random.js`의 512개 정수는 bzip2 1.0.8 `randtable.c`에 정의된
+고정 형식 데이터입니다. ES 모듈 배열로 변환했으며, 해제 알고리즘은 자체 구현입니다.
+원본 bzip2 프로그램·라이브러리 코드는 포함하지 않습니다.
+
+This program, "bzip2", the associated library "libbzip2", and all
+documentation, are copyright (C) 1996-2019 Julian R Seward.  All
+rights reserved.
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions
+are met:
+
+1. Redistributions of source code must retain the above copyright
+   notice, this list of conditions and the following disclaimer.
+
+2. The origin of this software must not be misrepresented; you must 
+   not claim that you wrote the original software.  If you use this 
+   software in a product, an acknowledgment in the product 
+   documentation would be appreciated but is not required.
+
+3. Altered source versions must be plainly marked as such, and must
+   not be misrepresented as being the original software.
+
+4. The name of the author may not be used to endorse or promote 
+   products derived from this software without specific prior written 
+   permission.
+
+THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS
+OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+ARE DISCLAIMED.  IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY
+DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE
+GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
+WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
+NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+Julian Seward, jseward@acm.org
+bzip2/libbzip2 version 1.0.8 of 13 July 2019
+
 ## 로컬 고정 ESM/WASM
 
 동적 모듈과 하위 자산은 공급망 무결성을 위해 SHA-384로 고정한 검토본을
@@ -49,17 +139,9 @@ SHA-384는 `scripts/emoji-data-lock.json`에, 변환·검증·공식 안정판 �
 | 패키지 | 버전 | 라이선스 | 사용 범위 |
 |---|---:|---|---|
 | CryptoJS | 4.2.0 | MIT | 파일 해시 Worker |
-| brotli | 1.3.3 | MIT | Brotli 해제 |
-| @bokuweb/zstd-wasm | 0.0.27 | MIT | Zstandard 압축 및 WASM |
-| fzstd | 0.1.1 | MIT | Zstandard 해제 |
-| seek-bzip | 2.0.0 | MIT | Bzip2 해제 |
-| lz4js | 0.2.0 | ISC | LZ4 압축·해제 |
 | OpenPGP.js | 5.11.3 | LGPL-3.0-or-later | PGP 키·암복호화 |
 
-각 파일은 위 패키지의 배포본을 기준으로 사용합니다. 단, Brotli 해제 모듈의
-`base64-js` import는 W-Tools 공통 Base64 모듈로 바꾸고 Zstandard 모듈의 WASM 상대
-경로를 로컬 자산에 맞게 바꿉니다. 원본 해시와 변환 결과 해시를 모두 등록부에서
-검증합니다.
+각 파일은 위 패키지의 배포본을 사용하며, 원본과 로컬 파일의 해시를 등록부에서 검증합니다.
 
 ## 테스트 전용 의존성
 

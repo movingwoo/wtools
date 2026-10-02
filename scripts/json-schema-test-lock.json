@@ -38,9 +38,9 @@
   },
   "suiteRepository": "json-schema-org/JSON-Schema-Test-Suite",
   "suiteBranch": "main",
-  "suiteCommit": "1872afdb1199cc9661157e3ef90b2d436a01e173",
-  "suiteUrl": "https://codeload.github.com/json-schema-org/JSON-Schema-Test-Suite/tar.gz/1872afdb1199cc9661157e3ef90b2d436a01e173",
-  "suiteSha384": "sha384-O405GRO9hjGl+hDmhThpJYZXWRaAQWTvuWKUoN1tCphJd9QSj05FC742ANAXtPAu",
+  "suiteCommit": "5b0ee1613e45fcc2bddac00e07c19cd49b00d8a8",
+  "suiteUrl": "https://codeload.github.com/json-schema-org/JSON-Schema-Test-Suite/tar.gz/5b0ee1613e45fcc2bddac00e07c19cd49b00d8a8",
+  "suiteSha384": "sha384-OyKMGHST9Xy3Q9FPAZa/je9eXbMDAqzqYeCxCi8t02wWYhpy0afXRhNjSp3ylWUd",
   "excludedFiles": [
     "dynamicRef.json",
     "recursiveRef.json",
@@ -83,5 +83,5 @@
   },
   "supportedGroups": 1090,
   "supportedCases": 4172,
-  "reviewed": "2026-09-04"
+  "reviewed": "2026-10-02"
 }

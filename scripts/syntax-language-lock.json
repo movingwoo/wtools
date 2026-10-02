@@ -6,12 +6,12 @@
     "javascript": { "version": "ECMAScript 2027 Draft", "source": "https://tc39.es/ecma262/" },
     "typescript": { "version": "7.0", "source": "https://devblogs.microsoft.com/typescript/announcing-typescript-7-0/" },
     "python": { "version": "3.14", "source": "https://docs.python.org/3.14/reference/lexical_analysis.html" },
-    "java": { "version": "Java SE 26", "source": "https://docs.oracle.com/en/java/javase/26/docs/specs/jls/jls-3.html" },
+    "java": { "version": "Java SE 27", "source": "https://docs.oracle.com/en/java/javase/27/docs/specs/jls/jls-3.html" },
     "c": { "version": "C23 (ISO/IEC 9899:2024)", "source": "https://www.open-std.org/jtc1/sc22/wg14/www/docs/n3096.pdf" },
     "cpp": { "version": "C++23", "source": "https://isocpp.org/std/the-standard" },
     "csharp": { "version": "14", "source": "https://learn.microsoft.com/en-us/dotnet/csharp/language-reference/keywords/" },
     "go": { "version": "1.27", "source": "https://go.dev/ref/spec" },
-    "rust": { "version": "1.98 / Edition 2024", "source": "https://doc.rust-lang.org/stable/reference/keywords.html" },
+    "rust": { "version": "1.99 / Edition 2024", "source": "https://doc.rust-lang.org/stable/reference/keywords.html" },
     "kotlin": { "version": "2.4", "source": "https://kotlinlang.org/docs/keyword-reference.html" },
     "swift": { "version": "6.3", "source": "https://docs.swift.org/swift-book/ReferenceManual/LexicalStructure.html" },
     "php": { "version": "8.5", "source": "https://www.php.net/manual/en/reserved.keywords.php" },
@@ -54,7 +54,7 @@
     "sql:postgresql": {
       "url": "https://www.postgresql.org/docs/release/",
       "pattern": "PostgreSQL\\s+(\\d+)(?:\\.\\d+)?",
-      "expected": "18",
+      "expected": "19",
       "selection": "first"
     },
     "sql:mysql": {
@@ -90,7 +90,7 @@
     "java": {
       "url": "https://jdk.java.net/",
       "pattern": "JDK\\s+(\\d+)",
-      "expected": "26",
+      "expected": "27",
       "selection": "first"
     },
     "csharp": {
@@ -108,7 +108,7 @@
     "rust": {
       "url": "https://static.rust-lang.org/dist/channel-rust-stable.toml",
       "pattern": "\\[pkg\\.rustc\\][\\s\\S]{0,300}?version = \"(\\d+\\.\\d+)(?:\\.\\d+)?",
-      "expected": "1.98",
+      "expected": "1.99",
       "selection": "first"
     },
     "kotlin": {

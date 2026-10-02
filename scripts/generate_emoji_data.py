@@ -222,7 +222,12 @@ def build(lock: dict[str, object], sources: dict[str, bytes] | None = None) -> b
 
 
 def parse_ucd_version(text: str) -> str:
-  match = re.search(r'Version (\d+\.\d+\.\d+) of the Unicode Standard', text)
+  # Unicode 18.0.0 reworded the ReadMe from "Version X of the Unicode Standard" to
+  # "version X of the Unicode Character Database", wrapped across two lines.
+  match = re.search(
+    r'[Vv]ersion\s+(\d+\.\d+\.\d+)\s+of\s+the\s+Unicode\s+(?:Standard|Character\s+Database)\b',
+    text,
+  )
   if not match:
     raise ValueError('latest Unicode version not found')
   return match.group(1)

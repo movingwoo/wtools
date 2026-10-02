@@ -12,6 +12,13 @@ class EmojiDataTest(unittest.TestCase):
       emoji_data.parse_ucd_version('data for Version 17.0.0 of the Unicode Standard.'),
       '17.0.0',
     )
+    self.assertEqual(
+      emoji_data.parse_ucd_version(
+        'This directory contains final data files for version 18.0.0 of the\n'
+        'Unicode Character Database.\n'
+      ),
+      '18.0.0',
+    )
     self.assertEqual(emoji_data.parse_cldr_tag({'tag_name': 'release-48-2'}), 'release-48-2')
     self.assertEqual(emoji_data.cldr_version('release-49'), '49')
     self.assertEqual(emoji_data.cldr_version('release-49-1-2'), '49.1.2')
@@ -19,6 +26,8 @@ class EmojiDataTest(unittest.TestCase):
   def test_version_parsers_reject_unknown_formats(self):
     with self.assertRaises(ValueError):
       emoji_data.parse_ucd_version('Unicode latest')
+    with self.assertRaises(ValueError):
+      emoji_data.parse_ucd_version('For documentation, see https://www.unicode.org/versions/Unicode18.0.0/')
     with self.assertRaises(ValueError):
       emoji_data.parse_cldr_tag({'tag_name': 'v48.2'})
 

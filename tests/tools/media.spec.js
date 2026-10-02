@@ -629,9 +629,9 @@ test('image-convert: 포맷 한계와 재인코딩 방식을 UI에 표시', asyn
   await expect(format.locator('option[value="image/svg+xml"]')).toHaveText('SVG (PNG 포함)');
   const note = content.locator('.image-convert-note');
   await expect(note).toHaveCount(1);
-  await expect(note).toContainText('EXIF 방향 정보는 파일을 읽을 때 픽셀에 한 번 적용');
-  await expect(note).toContainText('애니메이션 입력도 정지 이미지 한 장으로 바뀝니다.');
-  await expect(note).toContainText('벡터화가 아니라 PNG 이미지를 포함한 SVG 파일입니다.');
+  await expect(note).toContainText('EXIF 방향은 자동으로 적용');
+  await expect(note).toContainText('EXIF·GPS 정보가 제거됩니다.');
+  await expect(note).toContainText('애니메이션은 정지 이미지로, SVG는 PNG를 포함한 파일로 저장됩니다.');
   await expect(content.getByLabel('JPEG/GIF/BMP 배경색')).toHaveValue('#ffffff');
 });
 

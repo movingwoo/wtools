@@ -87,7 +87,7 @@ function deflateTool({ id, name, desc, keywords, fileExt }) {
           }
           return outBytes(result, o.ofmt) + `\n\n// ${ratio(inputLength, result.length)}`;
         },
-        note: '레벨 6은 지원 브라우저의 Compression Streams API를 우선 사용합니다. 레벨 1·9는 자체 코덱의 일치 탐색 깊이를 조절하며, 높은 값이 항상 더 작은 결과를 보장하지는 않습니다.',
+        note: '압축 레벨이 높아도 결과가 더 작아지지 않을 수 있습니다.',
       });
 
       // 파일 압축/해제
@@ -182,10 +182,8 @@ tool({
         return result.preview
           + (action === 'comp' ? `\n\n// ${ratio(result.inputLength, result.outputLength)}` : '');
       },
-      note: '자체 LZMA 코덱을 Web Worker에서 실행합니다. .lzma 단독 스트림을 지원하며 .xz·LZMA2는 지원하지 않습니다. '
-        + '입력 최대 256 MiB, 해제 최대 128 MiB·압축률 200:1입니다. 레벨은 사전 크기와 일치 탐색 깊이를 조절하며 압축 결과는 구현에 따라 달라집니다. '
-        + '결과는 최대 32,768자까지 미리 보며, 전체 결과는 선택한 출력 형식으로 다운로드할 수 있습니다. 텍스트는 UTF-8로 해석하므로 바이너리 보존에는 Base64·Hex를 사용하세요. '
-        + '.lzma 형식에는 체크섬이 없어 모든 손상을 검출할 수는 없습니다.',
+      note: '.lzma만 지원하며 .xz·LZMA2는 지원하지 않습니다. 입력 최대 256 MiB, 해제 최대 128 MiB·압축률 200:1입니다. '
+        + '바이너리는 Base64·Hex로 출력하세요. 체크섬이 없어 파일 손상을 감지하지 못할 수 있습니다.',
     });
     io.out.before(previewNote);
     io.out.after(save);
@@ -283,7 +281,7 @@ function codecRender({ id, name, ext, levels, note }) {
           { id: 'level', label: '압축 레벨', type: 'select', values: levels },
         ],
         actions: [{ id: 'comp', label: '압축' }, { id: 'decomp', label: '해제' }],
-        note: note || '압축·해제는 Web Worker에서 처리하며 입력 데이터는 브라우저 밖으로 전송되지 않습니다.',
+        note,
       }, id, tasks);
 
       root.append(h('h3', { style: { marginTop: '26px' } }, '파일 압축/해제'));
@@ -336,13 +334,8 @@ tool({
   render: codecRender({
     id: 'brotli', name: 'Brotli 압축/해제', ext: '.br',
     levels: [['6', '6 (기본)'], ['11', '11 (깊은 탐색)'], ['1', '1 (빠른 탐색)']],
-    note: '자체 Brotli 코덱을 취소 가능한 Web Worker에서 실행하며 입력은 브라우저 밖으로 전송되지 않습니다. '
-      + '입력 최대 256 MiB이며, 해제 중 출력 메모리를 확보하기 전에 128 MiB·압축률 200:1 한도를 검사합니다. '
-      + '표준 .br 스트림과 정적 사전을 지원하며 공유 사전·확장 윈도 형식은 지원하지 않습니다. 레벨은 일치 탐색 깊이를 조절하며, '
-      + '압축 결과와 압축률은 구현에 따라 다릅니다. 높은 레벨이 항상 더 작은 결과를 보장하지는 않습니다. '
-      + '결과는 최대 32,768자까지 미리 보며 전체 결과는 선택한 출력 형식으로 다운로드할 수 있습니다. '
-      + '텍스트는 UTF-8로 해석하므로 바이너리 보존에는 Base64·Hex를 사용하세요. '
-      + '.br 형식에는 체크섬이 없어 모든 손상을 검출할 수는 없습니다.',
+    note: '공유 사전·확장 윈도 형식은 지원하지 않습니다. 입력 최대 256 MiB, 해제 최대 128 MiB·압축률 200:1입니다. '
+      + '바이너리는 Base64·Hex로 출력하세요. 체크섬이 없어 파일 손상을 감지하지 못할 수 있습니다.',
   }),
 });
 tool({
@@ -352,13 +345,13 @@ tool({
   render: codecRender({
     id: 'zstd', name: 'Zstandard 압축/해제', ext: '.zst',
     levels: [['3', '3 (기본)'], ['10', '10 (깊은 탐색)'], ['19', '19 (최대 탐색)'], ['1', '1 (빠른 탐색)']],
-    note: '자체 Zstandard 코덱을 취소 가능한 Worker에서 실행합니다. 표준 프레임의 raw·RLE·FSE/Huffman 블록, 연결·건너뛰기 프레임과 체크섬을 지원합니다. 외부 사전은 지원하지 않습니다. 입력 최대 256 MiB, 해제·윈도 최대 128 MiB, 압축률 200:1입니다. 레벨은 일치 탐색 깊이를 조절하며 압축률과 결과는 구현에 따라 다릅니다. 결과는 최대 32,768자까지 미리 보며 전체 결과를 다운로드할 수 있습니다.',
+    note: '외부 사전은 지원하지 않습니다. 입력 최대 256 MiB, 해제·윈도 최대 128 MiB, 압축률 200:1입니다.',
   }),
 });
 
 tool({
   id: 'bzip2', cat: CAT, name: 'Bzip2 해제',
-  desc: 'Bzip2(.bz2) 데이터를 Worker에서 해제합니다. 압축은 브라우저 비용과 라이선스 문제로 제공하지 않습니다.',
+  desc: 'Bzip2(.bz2) 데이터를 해제합니다. 압축은 지원하지 않습니다.',
   keywords: 'bzip2 bz2 decompress worker',
   render(root) {
     const tasks = new Set();
@@ -370,7 +363,7 @@ tool({
         { id: 'ofmt', label: '출력 형식', type: 'select', values: [['text', '텍스트'], ['base64', 'Base64'], ['hex', 'Hex']] },
       ],
       actions: [{ id: 'decomp', label: '해제' }],
-      note: '자체 Bzip2 해제기를 취소 가능한 Worker에서 실행합니다. 연결 스트림과 구형 랜덤화 블록을 지원하며 블록·스트림 CRC를 검증합니다. 입력 최대 256 MiB, 해제 최대 128 MiB·압축률 200:1입니다. 결과는 최대 32,768자까지 미리 보며 전체 결과를 다운로드할 수 있습니다.',
+      note: '입력 최대 256 MiB, 해제 최대 128 MiB·압축률 200:1입니다.',
     }, 'bzip2', tasks, true);
 
     root.append(h('h3', { style: { marginTop: '26px' } }, '파일 해제'));
@@ -420,7 +413,7 @@ tool({
         { id: 'ofmt', label: '출력 형식', type: 'select', values: [['base64', 'Base64'], ['hex', 'Hex'], ['text', '텍스트']] },
       ],
       actions: [{ id: 'comp', label: '압축' }, { id: 'decomp', label: '해제' }],
-      note: '자체 LZ4 프레임 코덱을 취소 가능한 Worker에서 실행합니다. 독립·연결 블록, 연결·건너뛰기 프레임과 체크섬을 지원합니다. 외부 사전·레거시 프레임·원시 블록은 지원하지 않습니다. 입력 최대 256 MiB, 해제 최대 128 MiB·압축률 200:1입니다. 결과는 최대 32,768자까지 미리 보며 전체 결과를 다운로드할 수 있습니다.',
+      note: '외부 사전·레거시 프레임·원시 블록은 지원하지 않습니다. 입력 최대 256 MiB, 해제 최대 128 MiB·압축률 200:1입니다.',
     }, 'lz4', tasks);
     return () => {
       clearResult();
@@ -535,7 +528,7 @@ tool({
           class: 'copy-mini', type: 'button',
           onclick: () => download(entry.name.split('/').pop() || 'file', new Blob([entry.data])),
         }, '저장')))));
-      unzipOut.replaceChildren(h('p', { class: 'note', tabindex: -1 }, `${rows.length}개 항목의 CRC와 안전 한도를 확인했습니다.`),
+      unzipOut.replaceChildren(h('p', { class: 'note', tabindex: -1 }, `${rows.length}개 항목을 해제했습니다.`),
         h('table', { class: 'grid' },
           h('thead', null, h('tr', null, ['파일명', '형식', '크기', ''].map((x) => h('th', { scope: 'col' }, x)))),
           tableBody));
@@ -645,7 +638,7 @@ tool({
           class: 'copy-mini', type: 'button',
           onclick: () => download(entry.name.split('/').pop() || 'file', new Blob([entry.data])),
         }, '저장')))));
-      out.replaceChildren(h('p', { class: 'note', tabindex: -1 }, `${entries.length}개 항목의 헤더와 안전 한도를 확인했습니다.`),
+      out.replaceChildren(h('p', { class: 'note', tabindex: -1 }, `${entries.length}개 항목을 해제했습니다.`),
         h('table', { class: 'grid' },
           h('thead', null, h('tr', null, ['파일명', '형식', '크기', ''].map((x) => h('th', { scope: 'col' }, x)))),
           tableBody));

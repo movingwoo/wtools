@@ -120,7 +120,7 @@ tool({
             h('summary', { style: { cursor: 'pointer', fontWeight: '600' } }, '통합 diff 보기'),
             h('pre', { class: 'unified-diff', style: { whiteSpace: 'pre-wrap', wordBreak: 'break-all' } }, patch)));
       },
-      note: '비교 버튼을 누르면 전용 Worker에서 계산하며 실행 중 취소할 수 있습니다. 공백 차이 무시는 라인 비교와 통합 diff에서는 각 줄 앞뒤 공백을, 문자 비교에서는 모든 공백 문자를 비교 대상에서 제외합니다. 단어 비교는 원래 공백 간격을 구분하지 않습니다.',
+      note: '‘공백 차이 무시’는 라인·통합 diff에서 줄 앞뒤 공백, 문자 비교에서 모든 공백을 무시합니다. 단어 비교는 공백 간격을 구분하지 않습니다.',
     });
   },
 });
@@ -260,7 +260,7 @@ tool({
     }
     const cheats = h('details', { style: { marginTop: '16px' } },
       h('summary', { style: { cursor: 'pointer', fontWeight: '700' } }, `정규식 치트시트 (${REGEX_CHEATS.length}개)`),
-      h('div', { class: 'note', style: { marginTop: '10px' } }, 'JavaScript 정규식 기준입니다. 문법 버튼은 패턴에 예시를 삽입하고, 플래그 버튼은 플래그 입력에 추가합니다. 후방 탐색은 ES2018+, v 플래그는 최신 브라우저 지원이 필요합니다.'),
+      h('div', { class: 'note', style: { marginTop: '10px' } }, 'JavaScript 정규식 기준입니다. 문법·플래그 버튼을 누르면 입력에 추가됩니다. v 플래그는 최신 브라우저가 필요합니다.'),
       search, result);
     search.addEventListener('input', drawCheats);
     root.append(cheats);

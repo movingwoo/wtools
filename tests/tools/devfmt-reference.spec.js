@@ -138,7 +138,7 @@ test('crontab: 시간대 전환 UI와 지원 범위를 안내', async ({ page })
   await expect(timezone).toHaveValue('UTC');
   await expect(io.locator('.cron-next h4')).toHaveText('다음 실행 시각 5회 (UTC)');
   await expect(io.locator('.cron-next table.kv tr')).toHaveCount(5);
-  await expect(io).toContainText('Quartz/AWS의 초·연도 필드와 ?, L, W, # 확장은 별도 범위');
+  await expect(io).toContainText('초·연도 필드와 ?, L, W, # 확장은 지원하지 않습니다.');
 
   await timezone.fill('Not/A-Time-Zone');
   await expect(io.locator('.out-html .error')).toContainText('지원하지 않는 시간대입니다: Not/A-Time-Zone');

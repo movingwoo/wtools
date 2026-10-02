@@ -308,7 +308,6 @@ tool({
         { id: 'to', label: '변환 후 단위', type: 'select', values: unitValues(initial), value: initial.to },
       ],
       outputHTML: true, runOnLoad: true,
-      note: '선택한 변환 결과와 입력값을 같은 분류의 모든 단위로 환산한 표를 함께 표시합니다.',
       process(text, o) {
         const raw = text.trim().replace(/,/g, '');
         if (!raw) throw new Error('변환할 값을 입력하세요.');

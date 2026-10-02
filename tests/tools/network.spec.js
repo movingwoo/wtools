@@ -205,7 +205,7 @@ test('user-agent: 외부 ua-parser 스크립트를 요청하지 않는다', asyn
     await route.abort();
   });
   await openTool(page, 'user-agent');
-  await expect(page.locator('#content .note[role="status"]')).toContainText('마지막 검토 2026-08-25');
+  await expect(page.locator('#content .note[role="status"]')).toContainText('UA만으로 Windows 11, iPadOS 세부 버전');
   const io = ioSection(page);
   await fillInputs(io, 'Mozilla/5.0 (Macintosh; Intel Mac OS X 13_5_2) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Safari/605.1.15');
   await expect.poll(() => kvValue(io, '브라우저')).toBe('Safari 16.6');

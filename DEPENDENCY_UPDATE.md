@@ -108,6 +108,23 @@ then deliberately update the reviewed hashes/date. Do not automatically import n
 runtime dependencies. The 2026-09-07 snapshot includes SDK 26.03, the 7-Zip 26.03/26.02 notices, and
 the XZ security section; future changes remain review items, not automatic vulnerability conclusions.
 
+## 2026-10-02 monthly review record
+
+- JSONPath Compliance Test Suite `9d1a415` adds three cases (a `null` array element selected by
+  index, and slices starting at the last index and at the array length). The engine passed all 650
+  supported cases without a code change; the IANA function registry and RFC 9535 errata are unchanged.
+- JSON Schema Test Suite `5b0ee16` changes only `optional/format/` and `tests/v1/` files, which are
+  outside the pinned root-level draft corpus. The supported inventory stays at 4172 cases in 1090 groups.
+- Unicode 18.0.0 reworded the UCD `ReadMe.txt` version sentence, which stopped the Emoji update as a
+  source format change. The parser now accepts the reviewed 17.0.0 and 18.0.0 sentences only. CLDR 48.2
+  does not yet annotate every new Emoji 18.0 sequence, so the Emoji 17.0 data stays pinned.
+- Java SE 27 leaves the JLS chapter 3 text unchanged, and the Rust 1.99 keyword reference adds only
+  test links. PostgreSQL 19 adds the non-reserved keywords `LSN`, `REPACK`, and `WAIT`, and makes
+  `IGNORE` and `RESPECT` non-reserved for `IGNORE NULLS`/`RESPECT NULLS`. None is added to the
+  formatter or highlighter keyword lists: all five remain valid identifiers, and the formatter
+  preserves unknown words as written. Only these three release deltas were reviewed, so `reviewedOn`
+  keeps its 2026-08-28 date, which records the last full manual grammar review of every profile.
+
 ## 2026-09-04 security update
 
 - Upgraded the CDN pin from fflate 0.8.2 to 0.8.3 for GHSA-px8p-9vwx-vf98, including a freshly computed

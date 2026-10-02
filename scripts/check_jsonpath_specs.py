@@ -56,7 +56,7 @@ def validate_lock(data: dict) -> None:
     raise ValueError('JSONPath suite repository, branch, commit, or URL is invalid')
   if not SRI_PATTERN.fullmatch(data['suiteSha384']):
     raise ValueError('JSONPath suite SHA-384 is invalid')
-  if (data['totalCases'] != 703 or data['supportedCases'] != 647
+  if (data['totalCases'] != 706 or data['supportedCases'] != 650
       or data['excludedTags'] != ['match', 'search']
       or data['supportedFunctions'] != ['count', 'length', 'value']):
     raise ValueError('JSONPath supported case and function inventory is invalid')

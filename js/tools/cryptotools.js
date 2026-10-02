@@ -373,7 +373,7 @@ tool({
           ciphertext: bytesToB64(ciphertext),
         }, o.ofmt);
       },
-      note: '기본 방식은 AES-GCM(128비트 인증 태그)과 PBKDF2-HMAC-SHA256 600,000회입니다. 자체 포함 결과에는 알고리즘·키 크기·salt·IV·인증 태그가 함께 저장됩니다. 지원 브라우저 간 호환을 위해 GCM은 128/256비트를 사용하며 192비트는 레거시 모드에서만 제공합니다. 암호문만 결과는 상호 운용용이며 직접 키와 명시적 IV가 필요합니다. CBC/CTR/CFB/OFB는 변조를 검증하지 못하고 ECB는 패턴을 숨기지 못하므로 새 데이터 보호에는 사용하지 마세요.',
+      note: '새 데이터에는 AES-GCM을 사용하세요. ‘자체 포함’ 결과는 복호화에 필요한 설정을 함께 저장합니다. ‘암호문만’은 직접 키와 IV가 필요합니다. CBC/CTR/CFB/OFB는 변조를 검증하지 못하고 ECB는 패턴을 숨기지 못합니다.',
     });
   },
 });
@@ -816,7 +816,7 @@ tool({
     const btn = h('button', { class: 'btn primary', type: 'button' }, '키 생성');
     const wrap = h('div', { class: 'io' },
       h('div', { class: 'opt-row' }, h('span', { class: 'opt-item' }, formLabel(sizeSel, '키 크기'), sizeSel), btn),
-      h('p', { class: 'note' }, '새 키는 2048비트 이상만 생성합니다. 1024비트 키는 기존 자료 분석·복호화·검증 용도로만 다른 도구에서 읽을 수 있습니다.'),
+      h('p', { class: 'note' }, '키 생성은 2048비트 이상만 지원합니다.'),
       status,
       h('div', { style: { marginTop: '12px' } },
         h('div', { class: 'out-head' }, formLabel(privTa, '개인키 (PKCS#8 PEM)', { class: 'io-label' }), copyBtn(() => privTa.value)), privTa,
@@ -1119,16 +1119,16 @@ tool({
         entropyInfo.replaceChildren(
           h('strong', null, `각 결과의 추정 엔트로피: ${shown}비트${conservative ? ' 이상(보수적 하한)' : ''}`),
           h('div', null, entropyAdvice(entropy)),
-          h('div', null, '무작위 생성 과정의 선택 공간 추정치이며, 서비스의 저장·해시 방식이나 비밀 유출·재사용 위험은 반영하지 않습니다.'),
+          h('div', null, '추정치는 저장·해시 방식이나 유출·재사용 위험을 반영하지 않습니다.'),
         );
         return out.join('\n');
       },
       note: h('span', null,
-        '모든 결과는 crypto.getRandomValues와 편향 없는 거절 샘플링으로 브라우저 안에서 생성됩니다. 패스프레이즈는 ',
+        '결과는 브라우저에서만 생성됩니다. 패스프레이즈 단어 출처: ',
         h('a', { href: 'https://www.eff.org/files/2016/09/08/eff_short_wordlist_1.txt', target: '_blank', rel: 'noopener noreferrer' }, 'EFF 짧은 단어 목록 1'),
-        '(1,296개, ',
+        ' (',
         h('a', { href: 'https://creativecommons.org/licenses/by/4.0/', target: '_blank', rel: 'noopener noreferrer' }, 'CC BY 4.0'),
-        ')을 사용합니다.'),
+        ').'),
     });
     root.append(entropyInfo);
     const tokenOnly = ['len', 'charset', 'custom', 'avoidAmbiguous', 'minUpper', 'minLower', 'minDigit', 'minSymbol'];

@@ -181,7 +181,7 @@ tool({
           throw new Error(engine.formatError(error));
         }
       },
-      note: 'JSONPath는 RFC 9535의 이름·와일드카드·재귀·인덱스·슬라이스·필터와 length/count/value 함수를 지원하며 match/search 정규식 함수와 임의 JavaScript 평가는 지원하지 않습니다. JMESPath는 투영·필터·슬라이스·파이프·다중 선택과 표준 내장 함수를 지원합니다. 두 문법 모두 입력과 출력은 각각 UTF-8 16 MiB까지이며, JMESPath 중간 문자열에도 같은 상한을 적용합니다. 비유한 숫자와 안전 정수 범위 밖의 정수를 거부하고 256 KiB 이상 입력은 취소 가능한 Worker에서 처리합니다.',
+      note: 'JSONPath의 match/search 함수와 JavaScript 식은 지원하지 않습니다. 입출력은 각각 UTF-8 16 MiB까지이며, 안전 정수 범위를 벗어난 정수는 거부합니다.',
     });
   },
 });
@@ -335,7 +335,7 @@ tool({
         if (action === 'sample') return response.sample;
         return schemaValidationOutput(response.result);
       },
-      note: 'JSON Schema 공식 Test Suite의 Draft 4/6/7과 2019-09/2020-12 핵심 검증 벡터 4,172건을 통과한 자체 엔진입니다. type/enum/const, 숫자·문자열·배열·객체 제약, properties/patternProperties/additionalProperties, dependencies/dependent*, allOf/anyOf/oneOf/not/if-then-else, contains/minContains/maxContains, 로컬 JSON Pointer·앵커 $ref를 지원합니다. format/content*는 주석으로만 처리하며 외부 $ref, 중첩 `$id` 리소스, $vocabulary, $dynamic*/$recursive*, unevaluated*, contentSchema는 명시적으로 거부합니다. $schema를 생략하면 2020-12로 처리합니다. 스키마는 UTF-8 1 MiB, 검증 JSON은 16 MiB, 샘플은 노드 10만 개·UTF-8 1 MiB까지이며 모든 작업을 취소 가능한 Worker에서 처리하고 10초 시간·중첩·노드·평가 횟수 상한을 적용합니다.',
+      note: '$schema를 생략하면 2020-12로 검증합니다. format·content*는 검증하지 않으며, 외부 $ref·동적 참조·unevaluated* 등은 지원하지 않습니다. 스키마는 UTF-8 1 MiB, JSON은 16 MiB까지 입력할 수 있습니다.',
     });
   },
 });
@@ -1118,7 +1118,7 @@ tool({
           case 'env': return toEnv(data);
         }
       },
-      note: 'YAML 입력은 YAML 1.2 핵심 스키마의 단일 문서와 안전한 표준 태그만 처리하며, 앵커·별칭·merge와 블록 문자열을 지원합니다. TOML은 1.0 문법의 날짜·시간, dotted key, 테이블 배열과 네 가지 문자열을 처리하고 64 KiB 이상은 취소 가능한 Worker에서 실행합니다. CSV 구분자·헤더 옵션은 입력 또는 출력 포맷이 CSV일 때 적용됩니다. 따옴표는 표준 CSV 방식(셀 전체를 감싸고 내부 따옴표는 ""로 이스케이프)으로 처리합니다. ENV 값은 숫자나 true/false처럼 보여도 문자열로 유지됩니다.',
+      note: 'YAML은 한 문서만 입력할 수 있습니다. CSV 옵션은 CSV 변환에만 적용됩니다. ENV 값은 항상 문자열로 처리합니다.',
     });
   },
 });
@@ -1174,7 +1174,7 @@ tool({
       type: 'file', accept: '.ndjson,.jsonl,.json,.csv,.tsv,.yaml,.yml,text/plain,application/json,application/x-ndjson,text/csv,application/yaml',
       'aria-label': '변환할 레코드 파일 선택',
       'data-file-max-file': String(RECORD_FILE_MAX_BYTES),
-      'data-file-budget-note': 'NDJSON·JSON 배열·CSV는 512 KiB 청크로 읽습니다. YAML 입력은 최대 32 MiB입니다.',
+      'data-file-budget-note': 'YAML 입력은 최대 32 MiB입니다.',
     });
     const inputFormat = h('select', null, formats.map(([value, label]) => h('option', { value }, label)));
     inputFormat.value = 'ndjson';
@@ -1197,7 +1197,7 @@ tool({
         h('span', { class: 'opt-item' }, formLabel(csvHeader, 'CSV 헤더 포함'), csvHeader),
         h('span', { class: 'opt-item' }, formLabel(saveMode, '저장 방식'), saveMode)),
       h('div', { class: 'btn-row' }, runButton),
-      h('div', { class: 'note' }, 'NDJSON·JSON 배열·CSV는 파일 전체를 메모리에 올리지 않고 레코드 단위로 검사합니다. YAML 문서는 구조상 전체 파싱하며 32 MiB로 제한합니다. 디스크 직접 저장은 File System Access API를 지원하는 브라우저에서 결과를 Blob에 모으지 않고 기록합니다.'),
+      h('div', { class: 'note' }, '128 MiB를 넘는 결과는 지원 브라우저에서 ‘디스크 직접 저장’을 선택하세요.'),
       out);
     const runner = createAsyncRunner(wrap, {
       controls: () => [file, inputFormat, outputFormat, csvDelim, csvHeader, saveMode, runButton],

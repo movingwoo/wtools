@@ -628,7 +628,7 @@ tool({
               h('td', { class: 'mono', 'data-label': 'SHA-256 지문' }, record.fingerprint),
               h('td', { 'data-label': '비교' }, record.spki === records[0].spki ? '기준과 일치' : '불일치'))))));
       },
-      note: '공개키의 표준 SPKI DER 바이트를 비교하므로 PEM 줄바꿈이나 헤더 차이에 영향을 받지 않습니다. 개인키와 패스프레이즈는 브라우저 밖으로 전송되지 않습니다.',
+      note: 'PEM 줄바꿈이나 헤더가 달라도 같은 공개키인지 확인할 수 있습니다. 개인키와 패스프레이즈는 외부로 전송되지 않습니다.',
     });
   },
 });
@@ -1104,7 +1104,7 @@ tool({
           kvTable([['키 종류', `${jwk.kty}${jwk.crv ? ' / ' + jwk.crv : ''}`], ['PEM 종류', isPrivate ? 'PRIVATE KEY' : 'PUBLIC KEY'], ['지문 (kid)', jwk.kid]]),
           h('h3', null, 'JWK'), h('pre', { class: 'out-html', 'data-transfer-key': true }, JSON.stringify(jwk, null, 2)));
       },
-      note: 'PEM에는 알고리즘 정보가 충분하지 않아 RSA와 EC(P-256/384/521), Ed25519를 차례로 시도합니다. "alg" 항목은 원본 JWK에 있을 때만 유지됩니다.',
+      note: 'RSA, EC(P-256/384/521), Ed25519를 지원합니다. alg 값은 원본 JWK에 있을 때만 유지됩니다.',
     });
   },
 });

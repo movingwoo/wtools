@@ -703,8 +703,8 @@ tool({
           h('span', { class: 'opt-item' }, formLabel(noUpscale, '확대하지 않기'), noUpscale)),
         h('h4', { style: { marginBottom: '8px' } }, '공통 편집 설정'), commonEdit.node,
         h('div', { class: 'note image-convert-note' },
-          h('p', { style: { margin: '0 0 6px' } }, 'EXIF 방향 정보는 파일을 읽을 때 픽셀에 한 번 적용되며 미리보기와 다운로드 결과가 같은 방향을 사용합니다. 자르기는 EXIF 방향 적용 후, 사용자 회전·반전 전에 수행됩니다. 여러 파일에서는 공통 편집 설정을 기본으로 사용하고, 파일별 설정을 켠 파일은 회전·반전·자르기 설정 전체를 개별 값으로 대체합니다. 출력 포맷·품질·크기는 항상 공통입니다.'),
-          h('p', { style: { margin: 0 } }, '원본 포맷 유지를 선택해도 결과는 캔버스로 다시 인코딩되어 EXIF·GPS 등 메타데이터가 제거됩니다. 화질을 유지한 채 메타데이터만 삭제하려면 EXIF 뷰어 / 메타데이터 제거 도구를 사용하세요. WebP 인코딩을 지원하지 않는 브라우저에서는 PNG 대체 파일을 잘못된 .webp 이름으로 저장하지 않고 PNG 선택을 안내합니다. GIF 출력은 단일 프레임이며 애니메이션 입력도 정지 이미지 한 장으로 바뀝니다. SVG 출력은 벡터화가 아니라 PNG 이미지를 포함한 SVG 파일입니다.')),
+          h('p', { style: { margin: '0 0 6px' } }, 'EXIF 방향은 자동으로 적용되며, 자르기는 회전·반전 전에 수행됩니다. 파일별 설정을 켜면 회전·반전·자르기 설정을 개별 값으로 대체합니다. 포맷·품질·크기는 모든 파일에 공통으로 적용됩니다.'),
+          h('p', { style: { margin: 0 } }, '원본 포맷 유지도 다시 인코딩하며 EXIF·GPS 정보가 제거됩니다. 화질 변경 없이 메타데이터만 지우려면 ‘EXIF 뷰어 / 메타데이터 제거’를 사용하세요. 애니메이션은 정지 이미지로, SVG는 PNG를 포함한 파일로 저장됩니다.')),
         fileEdits,
         h('div', { class: 'btn-row' }, cancelButton), convertStatus, out));
     return () => {
@@ -1178,7 +1178,7 @@ tool({
     });
     const wrap = h('div', { class: 'io' },
       formLabel(file, '사진 선택 (여러 장 가능, 브라우저 밖으로 전송되지 않습니다)', { class: 'io-label' }), file,
-      h('p', { class: 'note' }, '메타데이터 세그먼트만 삭제하고 픽셀 데이터는 건드리지 않으므로 화질이 그대로 유지됩니다.'), out);
+      h('p', { class: 'note' }, '메타데이터만 제거하므로 화질은 유지됩니다.'), out);
     const runner = createAsyncRunner(wrap, { controls: () => [file], errorOut: out });
     file.addEventListener('change', () => runner.run(async (task) => {
       const list = [...file.files];

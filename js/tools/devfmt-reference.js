@@ -222,7 +222,7 @@ tool({
             h('h4', null, `다음 실행 시각 5회 (${timeZone})`),
             kvTable(nextRuns.map((timestamp, index) => [`${index + 1}회`, formatCronRun(timestamp, timeZone)]))));
       },
-      note: '기본 5필드 cron만 지원합니다. Quartz/AWS의 초·연도 필드와 ?, L, W, # 확장은 별도 범위이며 현재 계산하지 않습니다.',
+      note: '5필드 cron만 지원합니다. 초·연도 필드와 ?, L, W, # 확장은 지원하지 않습니다.',
     });
     root.append(
       h('div', { class: 'btn-row' },

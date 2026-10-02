@@ -606,7 +606,6 @@ tool({
     });
     const file = h('input', {
       type: 'file', multiple: true,
-      'data-file-budget-note': '청크를 2 MiB씩 Worker로 보내므로 파일 전체를 한 번에 메모리에 올리지 않습니다.',
     });
     const expected = h('textarea', {
       class: 'mono', rows: 5,
@@ -661,7 +660,7 @@ tool({
       formLabel(file, '파일 선택 (여러 개 가능, 브라우저 밖으로 전송되지 않습니다)', { class: 'io-label' }),
       file,
       h('div', { class: 'note' },
-        '선택 사항: 기대 체크섬을 직접 붙여넣거나 GNU/BSD 형식의 체크섬 파일을 불러오면 일치 여부를 함께 검증합니다.'),
+        '체크섬을 붙여넣거나 GNU/BSD 체크섬 파일을 불러오면 일치 여부를 검증합니다.'),
       formLabel(expected, '기대 체크섬 또는 체크섬 목록 (선택)', { class: 'io-label' }),
       expected,
       formLabel(manifest, '체크섬 파일 가져오기 (선택, 최대 1MB)', { class: 'io-label' }),
@@ -778,7 +777,6 @@ tool({
       inputs: [{ id: 'input', label: '입력', rows: 5, value: '123456789' }],
       options: [{ id: 'ifmt', label: '입력 형식', type: 'select', values: FMT_IN }],
       outputHTML: true, runOnLoad: true,
-      note: '기본값 "123456789"는 CRC 알고리즘 검증용 표준 입력(check value)입니다.',
       process(text, o) { return table(decodeInput(text, o.ifmt)); },
     });
     // 파일 체크섬

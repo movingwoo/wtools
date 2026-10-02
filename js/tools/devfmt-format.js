@@ -248,7 +248,7 @@ tool({
           case 'yaml': return runYamlFormatter(text, action, size, signal);
         }
       },
-      note: 'SQL은 SQL:2023 공통 DML·DDL과 CTE·조인·집합 연산·CASE·윈도 함수 범위를 포맷합니다. 선택한 SQL 종류에 맞춰 인용문·주석·연산자·파라미터를 보존하며, MySQL 연결의 SQL 모드와 옵션을 같게 설정해야 합니다. 각 SQL 종류의 전체 문법을 검사하지는 않습니다. SQL·JavaScript·CSS·HTML·YAML은 외부 요청 없이 자체 엔진으로 처리하고, 2천 자 이상은 취소 가능한 Worker를 사용하며 입력은 최대 4,194,304자, 결과는 최대 16,777,216자입니다.',
+      note: 'MySQL 옵션은 실제 연결의 SQL 모드와 맞추세요. SQL 문법 오류를 모두 검사하지는 않습니다. 입력은 최대 4,194,304자입니다.',
     });
     const sqlOnly = ['sqlDialect', 'mysqlBackslashEscapes', 'mysqlAnsiQuotes'];
     const updateSqlOptions = () => {
@@ -321,7 +321,7 @@ tool({
         return h('div', null, pre,
           h('div', { class: 'note syntax-highlight-note' }, '감지된 언어: ' + detected));
       },
-      note: '코드는 브라우저 안에서 처리하며 외부 라이브러리를 요청하지 않습니다. 자동 감지는 확신도가 낮으면 일반 텍스트로 표시하며, 입력은 최대 1,000,000자까지 처리합니다.',
+      note: '자동 감지가 어려우면 언어를 직접 선택하세요. 입력은 최대 1,000,000자입니다.',
     });
   },
 });
@@ -407,7 +407,7 @@ tool({
         }
         return h('pre', { style: { margin: 0, whiteSpace: 'pre-wrap' } }, html);
       },
-      note: '표·작업 목록을 포함한 GFM 문법과 raw HTML을 지원합니다. 입력은 최대 4,194,304자이며, 큰 입력은 취소 가능한 Worker에서 처리합니다. 미리보기는 스크립트 권한이 없는 샌드박스에서 렌더링되지만, 변환 결과는 HTML sanitizer가 아닙니다. 신뢰할 수 없는 Markdown의 결과를 웹 페이지에 직접 삽입하지 마세요.',
+      note: '변환 결과에서 위험한 HTML은 제거되지 않습니다. 신뢰할 수 없는 Markdown의 결과를 웹 페이지에 직접 삽입하지 마세요. 입력은 최대 4,194,304자입니다.',
     });
   },
 });

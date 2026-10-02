@@ -219,7 +219,7 @@ tool({
         withSum.set(sha256d(bytes).slice(0, 4), bytes.length);
         return b58Encode(withSum, alphabet);
       },
-      note: 'Base58Check는 페이로드 뒤에 SHA-256을 두 번 건 값의 앞 4바이트를 붙입니다. 비트코인 주소·WIF 키가 이 형식입니다.',
+      note: 'Base58Check를 켜면 인코딩 시 체크섬을 추가하고, 디코딩 시 검증합니다.',
     });
   },
 });
@@ -529,7 +529,7 @@ tool({
           `혼합 스크립트 라벨은 피싱에 악용될 수 있으므로 철자를 다시 확인하세요: ${mixed.join(', ')}`));
         return box;
       },
-      note: '브라우저 URL 표준의 UTS #46 매핑과 IDNA 길이·금지 문자·NFC 정규화를 적용합니다. 혼합 스크립트는 변환하되 피싱 위험을 경고합니다.',
+      note: '여러 문자 체계가 섞인 도메인은 피싱 위험이 있으니 원문을 확인하세요.',
     });
   },
 });

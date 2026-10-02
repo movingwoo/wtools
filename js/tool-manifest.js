@@ -1616,7 +1616,7 @@ export const TOOL_MANIFESTS = Object.freeze([
     "id": "bzip2",
     "cat": "압축 / 아카이브",
     "name": "Bzip2 해제",
-    "desc": "Bzip2(.bz2) 데이터를 Worker에서 해제합니다. 압축은 브라우저 비용과 라이선스 문제로 제공하지 않습니다.",
+    "desc": "Bzip2(.bz2) 데이터를 해제합니다. 압축은 지원하지 않습니다.",
     "keywords": "bzip2 bz2 decompress worker",
     "module": "./tools/archive.js",
     "externalLibrary": false

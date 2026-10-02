@@ -165,7 +165,7 @@ tool({
         if (!text.trim()) return '';
         return action === 'toCurl' ? fetchToCurl(text) : curlToFetch(text);
       },
-      note: '안전하게 코드를 생성만 하며 실제 네트워크 요청은 보내지 않습니다. 기본 옵션, 헤더, 본문, Basic 인증을 지원합니다.',
+      note: '코드만 생성하며 실제 네트워크 요청은 보내지 않습니다.',
     });
   },
 });
@@ -434,7 +434,7 @@ tool({
         if (!text.trim()) return '';
         return action === 'toRun' ? composeToDockerRun(text, signal) : dockerRunToCompose(text, signal);
       },
-      note: 'Compose 값은 실행 가능한 셸 인자로 안전하게 인용해 출력합니다. 지원 범위는 image, command, ports, volumes, environment와 화면에 표시된 공통 옵션입니다.',
+      note: 'image, command, ports, volumes, environment와 화면에 표시된 공통 옵션만 지원합니다.',
     });
   },
 });

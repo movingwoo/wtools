@@ -348,7 +348,7 @@ tool({
     const support = h('div', { class: 'note', role: 'status' }, 'User-Agent 지원 범위를 불러오는 중입니다.');
     root.append(support);
     loadUserAgentModule().then(({ USER_AGENT_SUPPORT }) => {
-      support.textContent = `${USER_AGENT_SUPPORT.scope} · 마지막 검토 ${USER_AGENT_SUPPORT.reviewed}. ${USER_AGENT_SUPPORT.limitations}`;
+      support.textContent = USER_AGENT_SUPPORT.limitations;
     }).catch((error) => {
       support.textContent = error.message;
       support.classList.add('error');

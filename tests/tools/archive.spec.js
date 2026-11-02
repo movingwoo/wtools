@@ -796,7 +796,8 @@ test('gzip: 자체 Worker를 사용하고 취소 시 Worker를 종료하며 pako
         super(url, options);
         window.__archiveWorkers.push(new URL(url, location.href).pathname);
       }
-      postMessage(...args) { setTimeout(() => super.postMessage(...args), 200); }
+      // Keep this request pending so cancellation does not race a fixed timer.
+      postMessage() {}
       terminate() {
         window.__archiveWorkerTerminations++;
         return super.terminate();

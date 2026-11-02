@@ -108,6 +108,51 @@ then deliberately update the reviewed hashes/date. Do not automatically import n
 runtime dependencies. The 2026-09-07 snapshot includes SDK 26.03, the 7-Zip 26.03/26.02 notices, and
 the XZ security section; future changes remain review items, not automatic vulnerability conclusions.
 
+## 2026-11-02 monthly review record
+
+- CLDR tagged its latest release `release-49` without a minor version, and the Emoji lock validator
+  required a dotted `cldrVersion`, so the Emoji update stopped. CLDR versions now accept a major-only
+  value; Emoji and Unicode versions still require a dot. With the fix, the update builds Emoji 18.0
+  data from CLDR 49, and the scheduled workflow opens that data change as its own review pull request.
+- JSONPath Compliance Test Suite `20ebdcc` adds nine cases: supplementary-plane and hyphenated
+  member-name shorthands, a trailing comma in a selector list, ordering comparisons with booleans, and
+  lowercase-hex and control-character escapes in name selectors. The engine passed all 659 supported
+  cases without a code change; the IANA function registry and RFC 9535 errata are unchanged.
+- JSON Schema Test Suite `3f05891` removes duplicate `uniqueItems` cases and adds one 2020-12
+  `patternProperties` case at the root level; its other changes are in `optional/format/`, `tests/v1/`,
+  and draft 3 files outside the pinned corpus. The supported inventory moves from 4172 to 4153 cases in
+  1090 groups, and every supported case passes. `draft-ietf-jsonschema-json-schema-04` (2026-10-14)
+  strengthens `format` requirements and requests an IANA format registry. It describes an unpublished
+  dialect that this validator does not implement, so no validator change is needed.
+- The WHATWG Compression Standard commit `94b4251` changes only repository metadata; `index.bs` is
+  byte-identical. RFC 8878 errata 9223, 9227, and 9228 (Reported) cover reserved Dictionary_ID ranges,
+  reserved Symbol_Compression_Modes bits, and Content_Checksum verification. `zstd-decode.js` already
+  rejects every dictionary ID and reserved mode bits, and it verifies the checksum.
+- The LZ4 frame format 1.6.5 adds a zero-size end marker for legacy frames only. `lz4.js` rejects legacy
+  frames, so its frame 1.6.4 references still describe the supported subset. The block format edits
+  clarify overlapping copies and the unused low nibble of the last token; the decoder copies overlapping
+  matches byte by byte and ignores that nibble, and the encoder writes zero. LZ4 NEWS for v1.11.0 lists
+  native API and CLI fixes only, and the bzip2-devel 2026q4 archive holds a pkg-config report, an
+  infrastructure notice, and spam.
+- 7-Zip 26.04 and 26.05 announce fixed vulnerabilities without identifiers. The SDK sources for
+  `LzmaDec.c`, `LzmaEnc.c`, and `LzFind.c` are unchanged from 26.03; the related change is an XZ
+  multithreaded memory-limit fix, and XZ is not shipped.
+- Google Brotli v1.2.1, v1.1.1, and v1.0.10 fix CVE-2026-111497, an out-of-bounds write when a stream
+  requires a block switch in a category with a single block type. The JavaScript decoder never switches a
+  single-type category (`remaining` stays `Infinity`), checks every write against the meta-block length,
+  and rejects commands that consume no bits and produce no output. Unlike libbrotli 1.2.1, it still
+  accepts a meta-block that needs more than 2^24 elements of a single-type category, where the RFC 7932
+  section 9.3 pseudocode would read a block type code that does not exist. That divergence cannot write
+  out of bounds here, so it is recorded rather than changed in this review.
+- Node interoperability checks against native lz4, zstd, brotli, and xz passed. Browser codec vectors
+  were not rerun because no codec changed.
+- Python 3.15 adds the soft keyword `lazy` (PEP 810). The highlighter's Python list already holds every
+  soft keyword (`_`, `case`, `match`, `type`), so `lazy` joins it. The Python release check accepts the
+  new `Python 3.15.2 documentation` title. SQLite 3.54 keeps the same 147 keywords. Ruby's releases page
+  lists only `4.1.0-preview1`; the Ruby check now ignores preview and release-candidate versions, so the
+  4.0 profile stays until 4.1.0 is released. `reviewedOn` keeps 2026-08-28, so the 100-day age check
+  requests the next full manual grammar review from 2026-12-07.
+
 ## 2026-10-02 monthly review record
 
 - JSONPath Compliance Test Suite `9d1a415` adds three cases (a `null` array element selected by

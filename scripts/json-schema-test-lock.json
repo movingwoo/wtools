@@ -31,16 +31,16 @@
   },
   "ietfDraft": {
     "name": "draft-ietf-jsonschema-json-schema",
-    "revision": "03",
-    "updated": "2026-08-26",
+    "revision": "04",
+    "updated": "2026-10-14",
     "url": "https://datatracker.ietf.org/doc/draft-ietf-jsonschema-json-schema/",
     "apiUrl": "https://datatracker.ietf.org/api/v1/doc/document/draft-ietf-jsonschema-json-schema/"
   },
   "suiteRepository": "json-schema-org/JSON-Schema-Test-Suite",
   "suiteBranch": "main",
-  "suiteCommit": "5b0ee1613e45fcc2bddac00e07c19cd49b00d8a8",
-  "suiteUrl": "https://codeload.github.com/json-schema-org/JSON-Schema-Test-Suite/tar.gz/5b0ee1613e45fcc2bddac00e07c19cd49b00d8a8",
-  "suiteSha384": "sha384-OyKMGHST9Xy3Q9FPAZa/je9eXbMDAqzqYeCxCi8t02wWYhpy0afXRhNjSp3ylWUd",
+  "suiteCommit": "3f05891cac5d51ffa068d7076d1372130e00c829",
+  "suiteUrl": "https://codeload.github.com/json-schema-org/JSON-Schema-Test-Suite/tar.gz/3f05891cac5d51ffa068d7076d1372130e00c829",
+  "suiteSha384": "sha384-NwvTEXKHNYQG76igY6CciUcSMRIx5iP+wZhDxUXTc1LJrLBRZUYV2Qgngj4NqVMj",
   "excludedFiles": [
     "dynamicRef.json",
     "recursiveRef.json",
@@ -62,11 +62,11 @@
     "unevaluatedProperties"
   ],
   "drafts": {
-    "draft4": { "rootFiles": 30, "totalGroups": 160, "totalCases": 618, "groups": 146, "cases": 589, "skippedGroups": 14, "skippedCases": 29 },
-    "draft6": { "rootFiles": 36, "totalGroups": 233, "totalCases": 841, "groups": 210, "cases": 792, "skippedGroups": 23, "skippedCases": 49 },
-    "draft7": { "rootFiles": 37, "totalGroups": 258, "totalCases": 929, "groups": 231, "cases": 872, "skippedGroups": 27, "skippedCases": 57 },
-    "draft2019-09": { "rootFiles": 46, "totalGroups": 373, "totalCases": 1261, "groups": 253, "cases": 951, "skippedGroups": 120, "skippedCases": 310 },
-    "draft2020-12": { "rootFiles": 46, "totalGroups": 384, "totalCases": 1301, "groups": 250, "cases": 968, "skippedGroups": 134, "skippedCases": 333 }
+    "draft4": { "rootFiles": 30, "totalGroups": 160, "totalCases": 614, "groups": 146, "cases": 585, "skippedGroups": 14, "skippedCases": 29 },
+    "draft6": { "rootFiles": 36, "totalGroups": 233, "totalCases": 837, "groups": 210, "cases": 788, "skippedGroups": 23, "skippedCases": 49 },
+    "draft7": { "rootFiles": 37, "totalGroups": 258, "totalCases": 925, "groups": 231, "cases": 868, "skippedGroups": 27, "skippedCases": 57 },
+    "draft2019-09": { "rootFiles": 46, "totalGroups": 373, "totalCases": 1257, "groups": 253, "cases": 947, "skippedGroups": 120, "skippedCases": 310 },
+    "draft2020-12": { "rootFiles": 46, "totalGroups": 384, "totalCases": 1298, "groups": 250, "cases": 965, "skippedGroups": 134, "skippedCases": 333 }
   },
   "skippedReasons": {
     "$recursiveAnchor": { "groups": 1, "cases": 2 },
@@ -82,6 +82,6 @@
     "unevaluatedProperties": { "groups": 4, "cases": 6 }
   },
   "supportedGroups": 1090,
-  "supportedCases": 4172,
-  "reviewed": "2026-10-02"
+  "supportedCases": 4153,
+  "reviewed": "2026-11-02"
 }

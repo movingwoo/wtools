@@ -354,7 +354,7 @@ test('syntax-highlight: 최신 언어 프로필의 어휘와 문자열 형식을
   const samples = {
     javascript: ['enum implements interface package private protected public', [['enum', 'keyword'], ['public', 'keyword']]],
     typescript: ['using resource = open();\naccessor value: string;', [['using', 'keyword'], ['accessor', 'keyword']]],
-    python: ['type Point = tuple[int, int]\nmatch value:\n  case _:\n    text = f"""hello {value}"""', [['type', 'keyword'], ['_', 'keyword'], ['f"""hello {value}"""', 'string']]],
+    python: ['lazy import json\ntype Point = tuple[int, int]\nmatch value:\n  case _:\n    text = f"""hello {value}"""', [['lazy', 'keyword'], ['type', 'keyword'], ['_', 'keyword'], ['f"""hello {value}"""', 'string']]],
     java: ['non-sealed class App { Object _; boolean ok = value instanceof int when true; String text = """hello"""; }', [['non-sealed', 'keyword'], ['_', 'keyword'], ['when', 'keyword'], ['"""hello"""', 'string']]],
     c: ['alignas(16) bool ok = true; constexpr int n = 1; typeof(n) copy; void *p = nullptr; _BitInt(32) wide;', [['alignas', 'keyword'], ['bool', 'type'], ['constexpr', 'keyword'], ['typeof', 'keyword'], ['nullptr', 'literal'], ['_BitInt', 'type']]],
     cpp: ['export module demo; import <string>; char8_t c; bool same = a and_eq b; auto raw = R"tag(a " b)tag";', [['module', 'keyword'], ['import', 'keyword'], ['char8_t', 'type'], ['and_eq', 'keyword'], ['R"tag(a " b)tag"', 'string']]],

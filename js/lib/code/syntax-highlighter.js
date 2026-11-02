@@ -26,7 +26,7 @@ const CONFIGS = {
     lineComments: ['//'], blockComments: [['/*', '*/']], quotes: ['\'', '"', '`'], regex: true,
   },
   python: {
-    keywords: words('_ and as assert async await break case class continue def del elif else except finally for from global if import in is lambda match nonlocal not or pass raise return try type while with yield'),
+    keywords: words('_ and as assert async await break case class continue def del elif else except finally for from global if import in is lambda lazy match nonlocal not or pass raise return try type while with yield'),
     literals: words('True False None Ellipsis NotImplemented'),
     builtins: words('abs all any bool bytearray bytes callable chr dict dir enumerate eval filter float format frozenset getattr hasattr hash help hex id input int isinstance issubclass iter len list map max memoryview min next object oct open ord pow print property range repr reversed round set setattr slice sorted str sum super tuple type vars zip __name__'),
     lineComments: ['#'], blockComments: [], quotes: ['\'', '"'], triples: ["'''", '"""'], pythonStrings: true,

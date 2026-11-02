@@ -94,16 +94,16 @@ def validate_lock(data: dict) -> None:
   if data['excludedSchemaFeatures'] != expected_features:
     raise ValueError('JSON Schema excluded feature inventory is invalid')
   expected_drafts = {
-    'draft4': {'rootFiles': 30, 'totalGroups': 160, 'totalCases': 618,
-               'groups': 146, 'cases': 589, 'skippedGroups': 14, 'skippedCases': 29},
-    'draft6': {'rootFiles': 36, 'totalGroups': 233, 'totalCases': 841,
-               'groups': 210, 'cases': 792, 'skippedGroups': 23, 'skippedCases': 49},
-    'draft7': {'rootFiles': 37, 'totalGroups': 258, 'totalCases': 929,
-               'groups': 231, 'cases': 872, 'skippedGroups': 27, 'skippedCases': 57},
-    'draft2019-09': {'rootFiles': 46, 'totalGroups': 373, 'totalCases': 1261,
-                     'groups': 253, 'cases': 951, 'skippedGroups': 120, 'skippedCases': 310},
-    'draft2020-12': {'rootFiles': 46, 'totalGroups': 384, 'totalCases': 1301,
-                     'groups': 250, 'cases': 968, 'skippedGroups': 134, 'skippedCases': 333},
+    'draft4': {'rootFiles': 30, 'totalGroups': 160, 'totalCases': 614,
+               'groups': 146, 'cases': 585, 'skippedGroups': 14, 'skippedCases': 29},
+    'draft6': {'rootFiles': 36, 'totalGroups': 233, 'totalCases': 837,
+               'groups': 210, 'cases': 788, 'skippedGroups': 23, 'skippedCases': 49},
+    'draft7': {'rootFiles': 37, 'totalGroups': 258, 'totalCases': 925,
+               'groups': 231, 'cases': 868, 'skippedGroups': 27, 'skippedCases': 57},
+    'draft2019-09': {'rootFiles': 46, 'totalGroups': 373, 'totalCases': 1257,
+                     'groups': 253, 'cases': 947, 'skippedGroups': 120, 'skippedCases': 310},
+    'draft2020-12': {'rootFiles': 46, 'totalGroups': 384, 'totalCases': 1298,
+                     'groups': 250, 'cases': 965, 'skippedGroups': 134, 'skippedCases': 333},
   }
   expected_skipped = {
     '$recursiveAnchor': {'groups': 1, 'cases': 2},
@@ -119,7 +119,7 @@ def validate_lock(data: dict) -> None:
     'unevaluatedProperties': {'groups': 4, 'cases': 6},
   }
   if data['drafts'] != expected_drafts or data['skippedReasons'] != expected_skipped \
-      or data['supportedGroups'] != 1090 or data['supportedCases'] != 4172:
+      or data['supportedGroups'] != 1090 or data['supportedCases'] != 4153:
     raise ValueError('JSON Schema supported case inventory is invalid')
   try:
     reviewed = date.fromisoformat(data['reviewed'])

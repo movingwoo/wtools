@@ -3,11 +3,11 @@
   "standardUrl": "https://www.rfc-editor.org/rfc/rfc9535.html",
   "suiteRepository": "jsonpath-standard/jsonpath-compliance-test-suite",
   "suiteBranch": "main",
-  "suiteCommit": "9d1a415a53f5dfb291bc874823892e49174e38eb",
-  "suiteUrl": "https://raw.githubusercontent.com/jsonpath-standard/jsonpath-compliance-test-suite/9d1a415a53f5dfb291bc874823892e49174e38eb/cts.json",
-  "suiteSha384": "sha384-jcIQCudBQ0Kpi+AuIkWGeC5ekaUVUfB1odljRGs9dfy3SxsU4C9pT5ICK0HirHkd",
-  "totalCases": 706,
-  "supportedCases": 650,
+  "suiteCommit": "20ebdcce5008c8a777ee9c80ad853ecf606950b5",
+  "suiteUrl": "https://raw.githubusercontent.com/jsonpath-standard/jsonpath-compliance-test-suite/20ebdcce5008c8a777ee9c80ad853ecf606950b5/cts.json",
+  "suiteSha384": "sha384-k9K8aK+1JSoUkpq7N9pXw0NFvvWgxmAGpKNIF7Fxt1zP8GX1uwfnOQti863+g2CB",
+  "totalCases": 715,
+  "supportedCases": 659,
   "excludedTags": ["match", "search"],
   "supportedFunctions": ["count", "length", "value"],
   "ianaRegistryUrl": "https://www.iana.org/assignments/jsonpath/function-extensions.csv",
@@ -20,5 +20,5 @@
     {"id": 8354, "status": "Held for Document Update"},
     {"id": 8779, "status": "Held for Document Update"}
   ],
-  "reviewed": "2026-10-02"
+  "reviewed": "2026-11-02"
 }

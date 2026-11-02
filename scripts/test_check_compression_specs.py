@@ -214,7 +214,7 @@ class CompressionSpecLockTests(unittest.TestCase):
     self.assertEqual(lock['rfcs']['8878']['format'], 'zstd')
     self.assertEqual(lock['rfcs']['9659']['format'], 'zstd-http')
     self.assertEqual([entry['id'] for entry in lock['rfcs']['8878']['errata']],
-                     [6441, 6442, 7297, 7567, 8085, 8195, 8668])
+                     [6441, 6442, 7297, 7567, 8085, 8195, 8668, 9223, 9227, 9228])
     for number in compression.ZSTD_RFCS:
       for field in ['errataSha384', 'errataUrl']:
         changed = copy.deepcopy(lock)

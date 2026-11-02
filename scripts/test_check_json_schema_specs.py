@@ -11,11 +11,11 @@ class JsonSchemaSpecLockTests(unittest.TestCase):
     lock = json_schema_specs.load_lock()
     self.assertEqual(lock['suiteRepository'], 'json-schema-org/JSON-Schema-Test-Suite')
     self.assertEqual(lock['supportedGroups'], 1090)
-    self.assertEqual(lock['supportedCases'], 4172)
+    self.assertEqual(lock['supportedCases'], 4153)
     self.assertEqual(lock['drafts']['draft2020-12']['skippedCases'], 333)
     self.assertEqual(lock['skippedReasons']['nested-$id-resource']['groups'], 18)
     self.assertEqual(lock['currentDialect'], '2020-12')
-    self.assertEqual(lock['ietfDraft']['revision'], '03')
+    self.assertEqual(lock['ietfDraft']['revision'], '04')
     self.assertEqual(list(lock['metaSchemas']), json_schema_specs.META_SCHEMA_URLS)
     self.assertEqual(list(lock['drafts']), json_schema_specs.DRAFTS)
     self.assertTrue(json_schema_specs.sha384_sri(b'json-schema').startswith('sha384-'))
@@ -54,7 +54,7 @@ class JsonSchemaSpecLockTests(unittest.TestCase):
         return b'The current version is <em>2020-12</em>'
       if url == lock['ietfDraft']['apiUrl']:
         return json.dumps({
-          'name': lock['ietfDraft']['name'], 'rev': '04',
+          'name': lock['ietfDraft']['name'], 'rev': '05',
           'time': '2026-09-01T00:00:00Z', 'rfc': None,
         }).encode()
       if url == next(iter(lock['metaSchemas'])):

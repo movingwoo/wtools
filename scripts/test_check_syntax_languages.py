@@ -30,6 +30,19 @@ class SyntaxLanguageLockTests(unittest.TestCase):
     self.assertEqual(syntax_languages.extract_version(text, first), '3.3')
     self.assertEqual(syntax_languages.extract_version(text, maximum), '4.0')
 
+  def test_python_check_reads_both_reviewed_title_formats(self):
+    check = self.lock['releaseChecks']['python']
+    self.assertEqual(syntax_languages.extract_version('<title>3.14.0 Documentation</title>', check), '3.14')
+    self.assertEqual(syntax_languages.extract_version('<title>Python 3.15.2 documentation</title>', check), '3.15')
+    with self.assertRaisesRegex(ValueError, 'did not match'):
+      syntax_languages.extract_version('<title>Python 3.15.2 docs</title>', check)
+
+  def test_ruby_check_ignores_preview_and_candidate_releases(self):
+    check = self.lock['releaseChecks']['ruby']
+    rows = '<td>Ruby 4.1.0-preview1</td><td>Ruby 4.0.8</td><td>Ruby 4.1.0-rc1</td><td>Ruby 3.4.11</td>'
+    self.assertEqual(syntax_languages.extract_version(rows, check), '4.0')
+    self.assertEqual(syntax_languages.extract_version(rows + '<td>Ruby 4.1.0</td>', check), '4.1')
+
   def test_latest_check_reports_changed_release(self):
     lock = copy.deepcopy(self.lock)
     lock['releaseChecks'] = {

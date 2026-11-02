@@ -83,7 +83,7 @@
     },
     "python": {
       "url": "https://docs.python.org/3/",
-      "pattern": "<title>(\\d+\\.\\d+)(?:\\.\\d+)? Documentation</title>",
+      "pattern": "<title>(?:Python )?(\\d+\\.\\d+)(?:\\.\\d+)? Documentation</title>",
       "expected": "3.14",
       "selection": "first"
     },
@@ -125,7 +125,7 @@
     },
     "ruby": {
       "url": "https://www.ruby-lang.org/en/downloads/releases/",
-      "pattern": "Ruby\\s+(\\d+\\.\\d+)(?:\\.\\d+)?",
+      "pattern": "Ruby\\s+(\\d+\\.\\d+)\\.\\d+(?![-\\w.])",
       "expected": "4.0",
       "selection": "max-version"
     },

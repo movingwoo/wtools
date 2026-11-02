@@ -89,14 +89,14 @@ build step.
 - Readable source may be larger than minified third-party code, but it must not increase the initial load or
   make unrelated tools download more code.
 
-The service worker currently precaches every tool and large third-party asset as part of the app shell.
-Before merging the first first-party engine larger than 64 KiB, split the cache into two tiers:
+The service worker uses two cache tiers. Preserve this separation when adding engines:
 
 1. `shell`: precache only the home page, router, theme, CSS, icons, and tool metadata at installation time.
 2. `runtime`: cache tool UI, first-party engines, Workers, and large data after the first successful use.
 
-The core application will then remain available offline immediately after installation, while a heavy tool
-will become available offline after it has been opened once online. If an uncached engine is requested while
+The core application remains available offline immediately after installation. Tool modules and engines
+become available offline after their first successful online use. `RUNTIME_ASSETS` is also the release
+inventory: include it in archive construction and in the content-derived cache revision. If an uncached engine is requested while
 offline, show a data-free Korean explanation and a retry action. Update the README offline contract and
 service-worker regression tests when this architecture changes.
 

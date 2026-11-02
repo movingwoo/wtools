@@ -258,3 +258,14 @@ compression source has been reviewed. When Node, Python, native liblz4/libzstd o
 the pinned Playwright images change, rerun the codec differential and browser
 suites, including the LZ4 multi-block memory regression. Ordinary static validation
 remains offline; no audit automatically changes runtime code or dependencies.
+
+
+## First-party CryptoJS replacement
+
+CryptoJS 4.2.0 is removed from the CDN and vendored registries. Its historical npm maintenance warning
+above remains a record of the August review; jsrsasign is the remaining unmaintained runtime component
+from that pair. Hashes, HMAC, AES compatibility modes, DES/3DES, Blowfish and OpenSSL envelopes now use
+WebCrypto plus `js/lib/crypto/`. See [crypto.md](js/lib/crypto/crypto.md) for standards, frozen oracle
+provenance, deliberate malformed-input changes, limits, review evidence, and size measurements.
+The removed library is a test oracle only; `scripts/freeze_crypto_vectors.mjs` requires a separately
+supplied file with the historical SRI hash and never downloads or ships it.

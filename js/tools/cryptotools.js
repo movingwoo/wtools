@@ -5,6 +5,9 @@ import {
   vendorUrl, LIB, copyBtn, createAsyncRunner, requireFeature,
 } from '../core.js';
 
+import { runCrypto, hmacBytes } from '../lib/crypto/worker-client.js';
+import { equal } from '../lib/crypto/bytes.js';
+
 const CAT = '암호화 / 복호화';
 let qrModule = null;
 
@@ -138,161 +141,6 @@ tool({
 });
 
 /* ---------- AES ---------- */
-const AES_PBKDF2_ITERATIONS = 600_000;
-const AES_KEY_SIZES = new Set([128, 192, 256]);
-const AES_MODES = new Set(['GCM', 'CBC', 'CFB', 'CTR', 'OFB', 'ECB']);
-
-function randomBytes(length) {
-  return crypto.getRandomValues(new Uint8Array(length));
-}
-
-function aesIvLength(mode) {
-  if (mode === 'GCM') return 12;
-  if (mode === 'ECB') return 0;
-  return 16;
-}
-
-function parseAesKey(text, format, bits) {
-  if (!AES_KEY_SIZES.has(bits)) throw new Error('AES 키 크기는 128, 192, 256비트 중 하나여야 합니다.');
-  if (!text.trim()) throw new Error('키를 입력하세요.');
-  const key = decodeInput(text, format);
-  const expected = bits / 8;
-  if (key.length !== expected)
-    throw new Error(`AES-${bits} 키는 ${expected}바이트여야 합니다. (현재 ${key.length}바이트)`);
-  return key;
-}
-
-function parseAesIv(text, mode, required) {
-  const length = aesIvLength(mode);
-  if (!length) {
-    if (text.trim()) throw new Error('ECB 모드는 IV를 사용하지 않습니다. IV 입력을 비워 주세요.');
-    return new Uint8Array();
-  }
-  if (!text.trim()) {
-    if (required) throw new Error(`${mode} 모드의 IV/nonce를 Hex로 입력하세요 (${length}바이트).`);
-    return randomBytes(length);
-  }
-  const iv = hexToBytes(text);
-  if (iv.length !== length)
-    throw new Error(`${mode} 모드의 IV/nonce는 ${length}바이트여야 합니다. (현재 ${iv.length}바이트)`);
-  return iv;
-}
-
-async function pbkdf2AesKey(password, salt, bits, iterations) {
-  if (!password) throw new Error('비밀번호를 입력하세요.');
-  const base = await crypto.subtle.importKey('raw', strToBytes(password), 'PBKDF2', false, ['deriveBits']);
-  const derived = await crypto.subtle.deriveBits({
-    name: 'PBKDF2', hash: 'SHA-256', salt, iterations,
-  }, base, bits);
-  return new Uint8Array(derived);
-}
-
-function cryptoJsAesConfig(mode, iv) {
-  return {
-    mode: CryptoJS.mode[mode],
-    padding: ['CTR', 'CFB', 'OFB'].includes(mode) ? CryptoJS.pad.NoPadding : CryptoJS.pad.Pkcs7,
-    ...(iv.length ? { iv: CryptoJS.lib.WordArray.create(iv) } : {}),
-  };
-}
-
-function cryptoJsAesEncrypt(text, key, iv, mode) {
-  const enc = CryptoJS.AES.encrypt(text, CryptoJS.lib.WordArray.create(key), cryptoJsAesConfig(mode, iv));
-  return hexToBytes(enc.ciphertext.toString(CryptoJS.enc.Hex));
-}
-
-function cryptoJsAesDecrypt(ciphertext, key, iv, mode) {
-  if (['CBC', 'ECB'].includes(mode) && (!ciphertext.length || ciphertext.length % 16))
-    throw new Error(`${mode} 암호문 길이는 16바이트의 배수여야 합니다.`);
-  try {
-    const params = CryptoJS.lib.CipherParams.create({ ciphertext: CryptoJS.lib.WordArray.create(ciphertext) });
-    const dec = CryptoJS.AES.decrypt(params, CryptoJS.lib.WordArray.create(key), cryptoJsAesConfig(mode, iv));
-    const bytes = hexToBytes(dec.toString(CryptoJS.enc.Hex));
-    return new TextDecoder('utf-8', { fatal: true }).decode(bytes);
-  } catch {
-    throw new Error('복호화 실패: 키, IV, 모드와 암호문을 확인하세요. 레거시 모드는 변조 여부를 검증하지 못합니다.');
-  }
-}
-
-async function aesGcmEncrypt(text, keyBytes, iv) {
-  if (keyBytes.length === 24)
-    throw new Error('AES-GCM 192비트 키는 지원 브라우저 간 호환성이 없습니다. GCM은 128 또는 256비트를 사용하세요.');
-  const key = await crypto.subtle.importKey('raw', keyBytes, 'AES-GCM', false, ['encrypt']);
-  const result = await crypto.subtle.encrypt({ name: 'AES-GCM', iv, tagLength: 128 }, key, strToBytes(text));
-  return new Uint8Array(result); // Web Crypto는 ciphertext 뒤에 인증 태그를 붙여 반환한다.
-}
-
-async function aesGcmDecrypt(ciphertext, keyBytes, iv) {
-  if (keyBytes.length === 24)
-    throw new Error('AES-GCM 192비트 키는 지원 브라우저 간 호환성이 없습니다. GCM은 128 또는 256비트를 사용하세요.');
-  if (ciphertext.length < 16) throw new Error('AES-GCM 암호문에는 16바이트 인증 태그가 필요합니다.');
-  try {
-    const key = await crypto.subtle.importKey('raw', keyBytes, 'AES-GCM', false, ['decrypt']);
-    const result = await crypto.subtle.decrypt({ name: 'AES-GCM', iv, tagLength: 128 }, key, ciphertext);
-    return new TextDecoder('utf-8', { fatal: true }).decode(result);
-  } catch {
-    throw new Error('AES-GCM 인증 실패: 키가 다르거나 암호문 또는 인증 태그가 변경되었습니다.');
-  }
-}
-
-function encodeAesEnvelope(data, format) {
-  return encodeOutput(strToBytes(JSON.stringify(data)), format);
-}
-
-function decodeAesEnvelope(text, format) {
-  let data;
-  try {
-    data = JSON.parse(bytesToStr(decodeInput(text.trim(), format)));
-  } catch {
-    throw new Error('W-Tools AES 자체 포함 형식이 아닙니다. 암호문 형식과 결과 구성을 확인하세요.');
-  }
-  const mode = typeof data.alg === 'string' ? data.alg.replace(/^AES-/, '') : '';
-  if (data.v !== 1 || !AES_MODES.has(mode) || !AES_KEY_SIZES.has(data.keyBits))
-    throw new Error('지원하지 않는 W-Tools AES 자체 포함 형식입니다.');
-  if (!['raw', 'PBKDF2-SHA256'].includes(data.kdf)) throw new Error('지원하지 않는 AES 키 유도 방식입니다.');
-  const iv = data.iv ? b64ToBytes(data.iv) : new Uint8Array();
-  if (iv.length !== aesIvLength(mode)) throw new Error('암호문에 저장된 IV/nonce 길이가 올바르지 않습니다.');
-  const ciphertext = b64ToBytes(data.ciphertext || '');
-  let salt = new Uint8Array(), iterations = 0;
-  if (data.kdf === 'PBKDF2-SHA256') {
-    salt = b64ToBytes(data.salt || '');
-    iterations = data.iterations;
-    if (salt.length !== 16) throw new Error('암호문에 저장된 PBKDF2 salt 길이가 올바르지 않습니다.');
-    if (!Number.isInteger(iterations) || iterations < 10_000 || iterations > 10_000_000)
-      throw new Error('암호문에 저장된 PBKDF2 반복 횟수가 허용 범위를 벗어났습니다.');
-  }
-  return { mode, keyBits: data.keyBits, kdf: data.kdf, iv, ciphertext, salt, iterations };
-}
-
-function encodeOpenSslAes(text, password, keyBits, mode, format) {
-  if (!password) throw new Error('비밀번호를 입력하세요.');
-  const salt = randomBytes(8);
-  const saltWords = CryptoJS.lib.WordArray.create(salt);
-  const derived = CryptoJS.kdf.OpenSSL.execute(password, keyBits / 32, 4, saltWords);
-  const enc = CryptoJS.AES.encrypt(text, derived.key, {
-    ...cryptoJsAesConfig(mode, mode === 'ECB' ? new Uint8Array() : hexToBytes(derived.iv.toString())),
-  });
-  const params = CryptoJS.lib.CipherParams.create({ ciphertext: enc.ciphertext, salt: saltWords });
-  const base64 = CryptoJS.format.OpenSSL.stringify(params);
-  return format === 'hex' ? bytesToHex(b64ToBytes(base64)) : base64;
-}
-
-function decodeOpenSslAes(text, password, keyBits, mode, format) {
-  if (!password) throw new Error('비밀번호를 입력하세요.');
-  const bytes = decodeInput(text.trim(), format);
-  if (bytesToStr(bytes.subarray(0, 8)) !== 'Salted__')
-    throw new Error('OpenSSL Salted__ 형식의 AES 암호문이 아닙니다.');
-  try {
-    const params = CryptoJS.format.OpenSSL.parse(bytesToB64(bytes));
-    const derived = CryptoJS.kdf.OpenSSL.execute(password, keyBits / 32, 4, params.salt);
-    const dec = CryptoJS.AES.decrypt(params, derived.key, {
-      ...cryptoJsAesConfig(mode, mode === 'ECB' ? new Uint8Array() : hexToBytes(derived.iv.toString())),
-    });
-    return new TextDecoder('utf-8', { fatal: true }).decode(hexToBytes(dec.toString(CryptoJS.enc.Hex)));
-  } catch {
-    throw new Error('OpenSSL AES 복호화 실패: 비밀번호, 키 크기, 모드와 암호문을 확인하세요.');
-  }
-}
-
 tool({
   id: 'aes', cat: CAT, name: 'AES 암호화/복호화',
   desc: 'AES-GCM 인증 암호화를 기본으로 제공하며 CBC/CTR 등 레거시 호환 모드도 지원합니다.',
@@ -314,71 +162,16 @@ tool({
         { id: 'legacyConfirm', label: '취약한 ECB 새 암호화 허용', type: 'checkbox' },
       ],
       actions: [{ id: 'enc', label: '암호화' }, { id: 'dec', label: '복호화' }],
-      autorun: false,
-      async process(v, o, action) {
-        const decrypt = action === 'dec';
-        const selectedMode = o.mode;
-        const selectedBits = +o.keySize;
-        if (!AES_MODES.has(selectedMode)) throw new Error('지원하지 않는 AES 모드입니다.');
-        if (!AES_KEY_SIZES.has(selectedBits)) throw new Error('AES 키 크기는 128, 192, 256비트 중 하나여야 합니다.');
-        if (!decrypt && selectedMode === 'ECB' && !o.legacyConfirm)
-          throw new Error('ECB 새 암호화는 패턴을 노출합니다. 호환 목적이라면 “취약한 ECB 새 암호화 허용”을 먼저 선택하세요.');
-
-        if (o.keyMode === 'openssl') {
-          if (selectedMode === 'GCM') throw new Error('OpenSSL 레거시 키 유도는 GCM에서 지원하지 않습니다. PBKDF2 또는 직접 키를 사용하세요.');
-          if (o.bundle !== 'package') throw new Error('OpenSSL 레거시 방식은 salt를 보존하도록 자체 포함 결과를 사용하세요.');
-          if (v.iv.trim()) throw new Error('OpenSSL 레거시 방식은 salt에서 IV를 유도합니다. IV 입력을 비워 주세요.');
-          return decrypt
-            ? decodeOpenSslAes(v.text, v.key, selectedBits, selectedMode, o.ofmt)
-            : encodeOpenSslAes(v.text, v.key, selectedBits, selectedMode, o.ofmt);
-        }
-
-        if (decrypt && o.bundle === 'package') {
-          const env = decodeAesEnvelope(v.text, o.ofmt);
-          const key = env.kdf === 'PBKDF2-SHA256'
-            ? await pbkdf2AesKey(v.key, env.salt, env.keyBits, env.iterations)
-            : parseAesKey(v.key, o.keyFormat, env.keyBits);
-          return env.mode === 'GCM'
-            ? aesGcmDecrypt(env.ciphertext, key, env.iv)
-            : cryptoJsAesDecrypt(env.ciphertext, key, env.iv, env.mode);
-        }
-
-        if (o.bundle === 'raw' && o.keyMode !== 'raw')
-          throw new Error('암호문만 출력·복호화하려면 salt가 필요 없는 직접 키 방식을 선택하세요.');
-
-        const salt = o.keyMode === 'passphrase' ? randomBytes(16) : new Uint8Array();
-        const key = o.keyMode === 'passphrase'
-          ? await pbkdf2AesKey(v.key, salt, selectedBits, AES_PBKDF2_ITERATIONS)
-          : parseAesKey(v.key, o.keyFormat, selectedBits);
-        const iv = parseAesIv(v.iv, selectedMode, o.bundle === 'raw');
-
-        if (decrypt) {
-          const ciphertext = decodeInput(v.text.trim(), o.ofmt);
-          return selectedMode === 'GCM'
-            ? aesGcmDecrypt(ciphertext, key, iv)
-            : cryptoJsAesDecrypt(ciphertext, key, iv, selectedMode);
-        }
-
-        const ciphertext = selectedMode === 'GCM'
-          ? await aesGcmEncrypt(v.text, key, iv)
-          : cryptoJsAesEncrypt(v.text, key, iv, selectedMode);
-        if (o.bundle === 'raw') return encodeOutput(ciphertext, o.ofmt);
-        return encodeAesEnvelope({
-          v: 1,
-          alg: `AES-${selectedMode}`,
-          keyBits: selectedBits,
-          kdf: o.keyMode === 'passphrase' ? 'PBKDF2-SHA256' : 'raw',
-          ...(o.keyMode === 'passphrase' ? { iterations: AES_PBKDF2_ITERATIONS, salt: bytesToB64(salt) } : {}),
-          iv: bytesToB64(iv),
-          ciphertext: bytesToB64(ciphertext),
-        }, o.ofmt);
+      autorun: false, cancelable: true,
+      process(v, o, action, signal) {
+        return runCrypto('aes', { values: v, options: o, operation: action }, signal);
       },
-      note: '새 데이터에는 AES-GCM을 사용하세요. ‘자체 포함’ 결과는 복호화에 필요한 설정을 함께 저장합니다. ‘암호문만’은 직접 키와 IV가 필요합니다. CBC/CTR/CFB/OFB는 변조를 검증하지 못하고 ECB는 패턴을 숨기지 못합니다.',
+      note: '새 데이터에는 AES-GCM을 사용하세요. ‘자체 포함’ 결과는 복호화에 필요한 설정을 함께 저장합니다. ‘암호문만’은 직접 키와 IV가 필요합니다. CBC/CTR/CFB/OFB는 변조를 검증하지 못하고 ECB는 패턴을 숨기지 못합니다. 평문은 최대 16 MiB, 키·비밀번호는 최대 64 KiB이며 Worker 작업을 취소할 수 있습니다.',
     });
   },
 });
 
-/* ---------- 레거시 대칭키 (CryptoJS) ---------- */
+/* ---------- 레거시 대칭키 ---------- */
 function symTool({ id, name, algo, keySizes, desc, keywords }) {
   tool({
     id, cat: CAT, name, desc, keywords,
@@ -396,36 +189,13 @@ function symTool({ id, name, algo, keySizes, desc, keywords }) {
           { id: 'legacyConfirm', label: '레거시 새 암호화 허용', type: 'checkbox' },
         ].filter(Boolean),
         actions: [{ id: 'enc', label: '암호화' }, { id: 'dec', label: '복호화' }],
-        autorun: false,
-        process(v, o, action) {
+        autorun: false, cancelable: true,
+        process(v, o, action, signal) {
           if (action === 'enc' && (id === 'des' || id === 'tripledes' || o.mode === 'ECB') && !o.legacyConfirm)
             throw new Error('DES/3DES/ECB 새 암호화는 안전하지 않습니다. 호환 목적이라면 “레거시 새 암호화 허용”을 먼저 선택하세요.');
-          const cfg = { mode: CryptoJS.mode[o.mode], padding: o.mode === 'CTR' || o.mode === 'CFB' || o.mode === 'OFB' ? CryptoJS.pad.NoPadding : CryptoJS.pad.Pkcs7 };
-          let keyParam;
-          if (o.kdf === 'raw') {
-            keyParam = /^[0-9a-f]+$/i.test(v.key.trim()) && v.key.trim().length % 2 === 0
-              ? CryptoJS.enc.Hex.parse(v.key.trim())
-              : CryptoJS.enc.Utf8.parse(v.key);
-            if (o.mode !== 'ECB') {
-              const ivLen = algo === 'DES' || algo === 'TripleDES' || algo === 'Blowfish' ? 8 : 16;
-              cfg.iv = CryptoJS.lib.WordArray.create(new Uint8Array(ivLen)); // 0 IV (raw 모드)
-            }
-          } else {
-            keyParam = v.key; // 비밀번호 → OpenSSL EVP_BytesToKey
-          }
-          if (action === 'dec') {
-            const cipherText = o.ofmt === 'hex'
-              ? CryptoJS.enc.Hex.parse(v.text.trim()).toString(CryptoJS.enc.Base64)
-              : v.text.trim();
-            const dec = CryptoJS[algo].decrypt(cipherText, keyParam, cfg);
-            const str = dec.toString(CryptoJS.enc.Utf8);
-            if (!str) throw new Error('복호화 실패 (키/모드/형식을 확인하세요).');
-            return str;
-          }
-          const enc = CryptoJS[algo].encrypt(v.text, keyParam, cfg);
-          return o.ofmt === 'hex' ? enc.ciphertext.toString() : enc.toString();
+          return runCrypto('legacy', { algorithm: algo, values: v, options: o, operation: action }, signal);
         },
-        note: '레거시 호환 전용입니다. 새 데이터 보호에는 인증 암호화인 AES-GCM을 사용하세요. CBC/비밀번호 모드는 OpenSSL 호환(Salted__) 형식이며 키 직접 입력 시 IV는 0으로 고정됩니다.',
+        note: '레거시 호환 전용입니다. 새 데이터 보호에는 인증 암호화인 AES-GCM을 사용하세요. 비밀번호 모드는 Base64·Hex 모두 salt를 보존하는 OpenSSL Salted__ 형식입니다. 이전 salt 없는 Hex 출력은 복원할 수 없습니다. 직접 키는 기존 4바이트 워드 해석을 유지하며 IV는 0입니다. 입력 최대 16 MiB, 키·비밀번호 최대 64 KiB. Worker 작업을 취소할 수 있습니다.',
       });
     },
   });
@@ -738,15 +508,13 @@ function base32Decode(text) {
   for (const c of clean) bits += B32.indexOf(c).toString(2).padStart(5, '0');
   return Uint8Array.from(bits.match(/.{8}/g) || [], (x) => parseInt(x, 2));
 }
-function hotp(secret, counter, digits, algorithm) {
+async function hotp(secret, counter, digits, algorithm, signal) {
   const msg = new Uint8Array(8);
   let n = BigInt(counter);
   for (let i = 7; i >= 0; i--) { msg[i] = Number(n & 255n); n >>= 8n; }
-  const words = CryptoJS.lib.WordArray.create(secret);
-  const data = CryptoJS.lib.WordArray.create(msg);
-  const mac = CryptoJS['Hmac' + algorithm](data, words).toString();
-  const bytes = hexToBytes(mac), offset = bytes[bytes.length - 1] & 15;
+  const bytes = await hmacBytes(algorithm, msg, secret, signal), offset = bytes[bytes.length - 1] & 15;
   const bin = ((bytes[offset] & 127) << 24) | (bytes[offset + 1] << 16) | (bytes[offset + 2] << 8) | bytes[offset + 3];
+  bytes.fill(0); msg.fill(0);
   return String(bin % (10 ** digits)).padStart(digits, '0');
 }
 
@@ -769,33 +537,39 @@ tool({
         { id: 'issuer', label: '발급자', type: 'text', value: 'W-Tools', size: 120 },
       ],
       actions: [{ id: 'generate', label: '코드 생성' }, { id: 'verify', label: '코드 검증' }, { id: 'uri', label: 'URI / QR 생성' }],
-      autorun: false, outputHTML: true,
-      async process(v, o, action) {
+      autorun: false, outputHTML: true, cancelable: true,
+      async process(v, o, action, signal) {
+        if (v.secret.length > 64 * 1024) throw new Error('시크릿은 최대 64 KiB입니다.');
         const secret = base32Decode(v.secret);
-        const digits = +o.digits;
-        const amount = Math.trunc(+o.period);
-        if (amount < 0 || (o.type === 'totp' && amount === 0)) throw new Error('TOTP 주기는 1 이상, HOTP 카운터는 0 이상이어야 합니다.');
-        const counter = o.type === 'totp' ? Math.floor(Date.now() / 1000 / (amount || 30)) : amount;
-        if (action === 'verify') {
-          if (!/^\d+$/.test(v.code.trim())) throw new Error('검증할 숫자 코드를 입력하세요.');
-          const window = o.type === 'totp' ? [-1, 0, 1] : [0];
-          const ok = window.some((d) => hotp(secret, counter + d, digits, o.algorithm) === v.code.trim());
-          return h('p', { style: { color: ok ? 'var(--ok)' : 'var(--danger)', fontWeight: '700' } }, ok ? '✔ 코드가 유효합니다.' : '✘ 코드가 올바르지 않습니다.');
-        }
-        const params = new URLSearchParams({ secret: v.secret.replace(/[\s=-]/g, '').toUpperCase(), issuer: o.issuer, algorithm: o.algorithm, digits: String(digits) });
-        params.set(o.type === 'totp' ? 'period' : 'counter', String(amount || (o.type === 'totp' ? 30 : 0)));
-        const label = encodeURIComponent(`${o.issuer}:${o.account}`);
-        const uri = `otpauth://${o.type}/${label}?${params}`;
-        if (action === 'uri') {
-          const { encodeQr } = await loadQrModule();
-          const qr = encodeQr(uri, { level: 'M' });
-          return h('div', null,
-            h('pre', { style: { whiteSpace: 'pre-wrap', wordBreak: 'break-all' } }, uri),
-            qrCanvas(qr));
-        }
-        const code = hotp(secret, counter, digits, o.algorithm);
-        return h('div', null, h('div', { style: { fontSize: '2rem', fontWeight: '700', letterSpacing: '.15em' } }, code),
-          h('div', { class: 'note' }, o.type === 'totp' ? `${amount || 30}초 주기 · 현재 남은 시간 ${amount - (Math.floor(Date.now() / 1000) % amount)}초` : `카운터 ${amount}`));
+        try {
+          const digits = +o.digits;
+          const amount = Math.trunc(+o.period);
+          if (!Number.isSafeInteger(amount) || amount < 0 || (o.type === 'totp' && amount === 0)) throw new Error('TOTP 주기는 1 이상, HOTP 카운터는 0 이상이어야 합니다.');
+          const counter = o.type === 'totp' ? Math.floor(Date.now() / 1000 / (amount || 30)) : amount;
+          if (action === 'verify') {
+            if (!/^\d+$/.test(v.code.trim())) throw new Error('검증할 숫자 코드를 입력하세요.');
+            const window = o.type === 'totp' ? [-1, 0, 1] : [0];
+            const candidates = await Promise.all(window.map((d) => hotp(secret, Math.max(0, counter + d), digits, o.algorithm, signal)));
+            let matched = 0;
+            for (const candidate of candidates) matched |= +equal(strToBytes(candidate), strToBytes(v.code.trim()));
+            const ok = !!matched;
+            return h('p', { style: { color: ok ? 'var(--ok)' : 'var(--danger)', fontWeight: '700' } }, ok ? '✔ 코드가 유효합니다.' : '✘ 코드가 올바르지 않습니다.');
+          }
+          const params = new URLSearchParams({ secret: v.secret.replace(/[\s=-]/g, '').toUpperCase(), issuer: o.issuer, algorithm: o.algorithm, digits: String(digits) });
+          params.set(o.type === 'totp' ? 'period' : 'counter', String(amount || (o.type === 'totp' ? 30 : 0)));
+          const label = encodeURIComponent(`${o.issuer}:${o.account}`);
+          const uri = `otpauth://${o.type}/${label}?${params}`;
+          if (action === 'uri') {
+            const { encodeQr } = await loadQrModule();
+            const qr = encodeQr(uri, { level: 'M' });
+            return h('div', null,
+              h('pre', { style: { whiteSpace: 'pre-wrap', wordBreak: 'break-all' } }, uri),
+              qrCanvas(qr));
+          }
+          const code = await hotp(secret, counter, digits, o.algorithm, signal);
+          return h('div', null, h('div', { style: { fontSize: '2rem', fontWeight: '700', letterSpacing: '.15em' } }, code),
+            h('div', { class: 'note' }, o.type === 'totp' ? `${amount || 30}초 주기 · 현재 남은 시간 ${amount - (Math.floor(Date.now() / 1000) % amount)}초` : `카운터 ${amount}`));
+        } finally { secret.fill(0); }
       },
       note: '시크릿은 외부로 전송되지 않습니다. TOTP 검증은 시계 오차를 고려해 앞뒤 한 주기를 허용합니다.',
     });

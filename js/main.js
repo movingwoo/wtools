@@ -1,3 +1,4 @@
+import './runtime-cache.js';
 // main.js — 라우터 / 사이드바 / 홈 화면
 import {
   tools, categories, h, enhanceFileInputs, stageToolInput, registerToolManifests, cleanupToolRoot,
@@ -526,7 +527,3 @@ if ('serviceWorker' in navigator) {
       });
   });
 }
-
-window.addEventListener('load', () => {
-  if (!globalThis.CryptoJS) externalWarning.classList.remove('hidden');
-});

@@ -3,6 +3,7 @@ import { defineConfig } from '@playwright/test';
 const crossBrowserTests = [
   '**/smoke.spec.js',
   '**/formatter-smoke.spec.js',
+  '**/crypto-engine.spec.js',
   '**/tools-render.spec.js',
   '**/tools/media.spec.js',
 ];

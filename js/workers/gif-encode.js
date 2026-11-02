@@ -1,3 +1,5 @@
+import { trackWorkerResources } from '../lib/common/runtime-resources.js';
+trackWorkerResources();
 import { encodeGif } from '../lib/media/gif.js';
 
 self.onmessage = ({ data }) => {

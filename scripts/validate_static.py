@@ -50,12 +50,10 @@ EXTERNAL_EXECUTABLE_CALL = re.compile(
 SCRIPT_TAG_PATTERN = re.compile(r'<script\b([^>]*)>', re.IGNORECASE)
 HTML_ATTR_PATTERN = re.compile(r'([\w-]+)=["\']([^"\']*)["\']')
 DEPENDENCY_GLOBALS = {
-  'cryptoJs': ('CryptoJS',),
   'jsrsasign': ('ASN1HEX', 'KEYUTIL', 'KJUR', 'X509', 'X509CRL', 'hextopem', 'pemtohex'),
   'bcrypt': ('bcrypt',),
   'hashWasm': ('hashwasm',),
   'tweetnacl': ('nacl',),
-  'cryptoJsWorker': ('CryptoJS',),
 }
 
 
@@ -700,12 +698,24 @@ def validate_workflow_plain_values(validation: Validation) -> None:
 
 def validate_app_shell(validation: Validation, vendored_paths: set[Path]) -> list[str]:
   source = (ROOT / 'sw.js').read_text(encoding='utf-8')
-  match = re.search(r'const APP_SHELL = \[(.*?)\];', source, re.DOTALL)
-  if not match:
-    validation.error('sw.js: APP_SHELL not found')
+  inventories = re.findall(r'const (APP_SHELL|RUNTIME_ASSETS) = \[(.*?)\];', source, re.DOTALL)
+  if [name for name, _ in inventories] != ['APP_SHELL', 'RUNTIME_ASSETS']:
+    validation.error('sw.js: APP_SHELL and RUNTIME_ASSETS must each appear once, in order')
     return []
-
-  refs = re.findall(r"'([^']+)'", match.group(1))
+  matches = [body for _, body in inventories]
+  shell_refs, runtime_refs = [re.findall(r"'([^']+)'", body) for body in matches]
+  if set(shell_refs) & set(runtime_refs):
+    validation.error('sw.js: shell and runtime inventories must not overlap')
+  if any(ref.startswith(('./js/tools/', './js/workers/', './assets/data/', './assets/vendor/'))
+         or (ref.startswith('./js/lib/') and ref not in {'./js/lib/common/base64.js', './js/lib/common/runtime-resources.js'}) for ref in shell_refs):
+    validation.error('sw.js: tool engines and large data must stay out of the shell precache')
+  essential_shell = {'./', './index.html', './sw.js', './js/main.js', './js/core.js',
+                     './js/theme.js', './js/dependencies.js', './js/tool-manifest.js',
+                     './js/sw-integrity.js', './js/runtime-cache.js', './js/lib/common/base64.js',
+                     './js/lib/common/runtime-resources.js', './css/style.css', './manifest.json'}
+  for ref in sorted(essential_shell - set(shell_refs)):
+    validation.error(f'sw.js: essential shell asset is missing: {ref}')
+  refs = re.findall(r"'([^']+)'", "\n".join(matches))
   normalized: set[Path] = set()
   for ref in refs:
     if ref == './':
@@ -759,8 +769,10 @@ def validate_initial_load_budget(validation: Validation) -> None:
   initial_scripts = [
     ROOT / 'js/theme.js',
     ROOT / 'js/main.js',
+    ROOT / 'js/runtime-cache.js',
     ROOT / 'js/core.js',
     ROOT / 'js/lib/common/base64.js',
+    ROOT / 'js/lib/common/runtime-resources.js',
     ROOT / 'js/tool-manifest.js',
     ROOT / 'js/dependencies.js',
   ]

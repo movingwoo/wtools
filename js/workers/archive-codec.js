@@ -1,3 +1,5 @@
+import { trackWorkerResources } from '../lib/common/runtime-resources.js';
+trackWorkerResources();
 self.onmessage = async ({ data: { codec, action, bytes, level, maxOutputLength, presentation } }) => {
   try {
     let result;

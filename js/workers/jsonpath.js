@@ -1,3 +1,5 @@
+import { trackWorkerResources } from '../lib/common/runtime-resources.js';
+trackWorkerResources();
 import { parseJsonPathJson, queryJsonPath, stringifyJsonPathResult } from '../lib/data/jsonpath.js';
 
 self.addEventListener('message', ({ data }) => {

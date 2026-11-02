@@ -1,6 +1,8 @@
 // 인코딩 / 디코딩
 import { tool, makeIO, h, kvTable, strToBytes, bytesToStr, bytesToHex, hexToBytes, bytesToB64, b64ToBytes, decodeInput, encodeOutput, FMT_IN, loadScript, LIB } from '../core.js';
 
+import { digestBytes, hmacBytes } from '../lib/crypto/worker-client.js';
+
 const CAT = '인코딩 / 디코딩';
 const STD_B64 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
 
@@ -179,9 +181,8 @@ function b58Decode(str, alphabet) {
   return new Uint8Array([...new Array(zeros).fill(0), ...digits]);
 }
 // Base58Check 체크섬: SHA-256을 두 번 건 값의 앞 4바이트
-function sha256d(bytes) {
-  const once = CryptoJS.SHA256(CryptoJS.lib.WordArray.create(bytes));
-  return hexToBytes(CryptoJS.SHA256(once).toString());
+async function sha256d(bytes, signal) {
+  return digestBytes('SHA256', await digestBytes('SHA256', bytes, signal), signal);
 }
 
 tool({
@@ -198,13 +199,14 @@ tool({
         { id: 'check', label: 'Base58Check', type: 'checkbox' },
       ],
       actions: [{ id: 'enc', label: '인코딩' }, { id: 'dec', label: '디코딩' }],
-      process(text, o, action) {
+      cancelable: true,
+      async process(text, o, action, signal) {
         const alphabet = B58_ALPHA[o.alpha];
         if (action === 'dec') {
           let bytes = b58Decode(text, alphabet);
           if (o.check) {
             if (bytes.length < 5) throw new Error('Base58Check 데이터가 체크섬(4바이트)보다 짧습니다.');
-            const payload = bytes.slice(0, -4), expected = sha256d(payload).slice(0, 4);
+            const payload = bytes.slice(0, -4), expected = (await sha256d(payload, signal)).slice(0, 4);
             const actual = bytes.slice(-4);
             if (expected.some((b, i) => b !== actual[i]))
               throw new Error(`체크섬이 일치하지 않습니다 (기대 ${bytesToHex(expected)}, 실제 ${bytesToHex(actual)}).`);
@@ -216,7 +218,7 @@ tool({
         if (!o.check) return b58Encode(bytes, alphabet);
         const withSum = new Uint8Array(bytes.length + 4);
         withSum.set(bytes);
-        withSum.set(sha256d(bytes).slice(0, 4), bytes.length);
+        withSum.set((await sha256d(bytes, signal)).slice(0, 4), bytes.length);
         return b58Encode(withSum, alphabet);
       },
       note: 'Base58Check를 켜면 인코딩 시 체크섬을 추가하고, 디코딩 시 검증합니다.',
@@ -830,10 +832,19 @@ tool({
 /* ---------- JWT ---------- */
 function b64url(str) { return bytesToB64(strToBytes(str)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''); }
 function b64urlDecode(s) { return bytesToStr(b64ToBytes(s)); }
-function wordArrayToB64url(wa) {
-  return CryptoJS.enc.Base64.stringify(wa).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+function signatureToB64url(bytes) {
+  return bytesToB64(bytes).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 }
-const HS = { HS256: 'HmacSHA256', HS384: 'HmacSHA384', HS512: 'HmacSHA512' };
+const HS = { HS256: 'SHA256', HS384: 'SHA384', HS512: 'SHA512' };
+async function jwtMac(algorithm, message, secret, signal) {
+  const input = strToBytes(message), key = strToBytes(secret);
+  let signature;
+  try {
+    signature = await hmacBytes(HS[algorithm], input, key, signal);
+    return signatureToB64url(signature);
+  } finally { input.fill(0); key.fill(0); signature?.fill(0); }
+}
+
 const JWT_ALGS = ['HS256', 'HS384', 'HS512', 'RS256', 'RS384', 'RS512', 'PS256', 'PS384', 'PS512', 'ES256', 'ES384', 'ES512'];
 const HS_MIN_BYTES = { HS256: 32, HS384: 48, HS512: 64 };
 
@@ -935,7 +946,8 @@ tool({
         when: ({ result }) => !!result?.querySelector?.('[data-transfer-payload]'),
         value: ({ result }) => result.querySelector('[data-transfer-payload]')?.textContent || '',
       },
-      async process(v, o) {
+      cancelable: true,
+      async process(v, o, action, signal) {
         const text = v.input.trim();
         if (!text) return '';
         const parts = text.split('.');
@@ -973,7 +985,7 @@ tool({
           try {
             let ok;
             if (HS[alg]) {
-              const sig = wordArrayToB64url(CryptoJS[HS[alg]](parts[0] + '.' + parts[1], v.key));
+              const sig = await jwtMac(alg, parts[0] + '.' + parts[1], v.key, signal);
               ok = safeEqual(sig, parts[2]);
             } else {
               await loadScript(LIB.jsrsasign);
@@ -981,6 +993,7 @@ tool({
             }
             box.append(jwtStatus(ok, '서명이 유효합니다.', '서명이 올바르지 않습니다.'));
           } catch (e) {
+            if (signal?.aborted || e.name === 'AbortError') throw e;
             box.append(h('p', { class: 'error' }, '서명 검증 오류: ' + e.message));
           }
         }
@@ -1008,13 +1021,14 @@ tool({
       options: [{ id: 'alg', label: '알고리즘', type: 'select', values: JWT_ALGS }],
       actions: [{ id: 'sign', label: 'JWT 생성' }],
       autorun: false,
-      async process(v, o) {
+      cancelable: true,
+      async process(v, o, action, signal) {
         const payload = JSON.stringify(JSON.parse(v.payload));
         const header = JSON.stringify({ alg: o.alg, typ: 'JWT' });
         if (HS[o.alg]) {
           if (!v.key) throw new Error('HMAC 시크릿을 입력하세요.');
           const si = b64url(header) + '.' + b64url(payload);
-          return si + '.' + wordArrayToB64url(CryptoJS[HS[o.alg]](si, v.key));
+          return si + '.' + await jwtMac(o.alg, si, v.key, signal);
         }
         if (!v.key.trim()) throw new Error('RSA 또는 EC 개인키 PEM을 입력하세요.');
         await loadScript(LIB.jsrsasign);

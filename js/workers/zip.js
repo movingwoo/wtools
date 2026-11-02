@@ -1,3 +1,5 @@
+import { trackWorkerResources } from '../lib/common/runtime-resources.js';
+trackWorkerResources();
 import { createZip, extractZip } from '../lib/archive/zip.js';
 
 self.onmessage = ({ data: { action, bytes, entries, level, limits } }) => {

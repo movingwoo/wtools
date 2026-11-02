@@ -12,15 +12,15 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 SW_PATH = ROOT / 'sw.js'
 REVISION_PATTERN = re.compile(r"const CACHE_REVISION = '([0-9a-f]+|pending)';")
-SHELL_PATTERN = re.compile(r'const APP_SHELL = \[(.*?)\];', re.DOTALL)
+SHELL_PATTERN = re.compile(r'const (?:APP_SHELL|RUNTIME_ASSETS) = \[(.*?)\];', re.DOTALL)
 
 
 def expected_revision(source: str) -> str:
-  match = SHELL_PATTERN.search(source)
-  if not match:
+  matches = SHELL_PATTERN.findall(source)
+  if len(matches) != 2:
     raise ValueError('sw.js에서 APP_SHELL을 찾지 못했습니다.')
   digest = hashlib.sha256()
-  for ref in re.findall(r"'([^']+)'", match.group(1)):
+  for ref in re.findall(r"'([^']+)'", "\n".join(matches)):
     if ref == './':
       continue
     relative = ref.removeprefix('./')

@@ -12,7 +12,7 @@ from pathlib import Path, PurePosixPath
 
 
 ROOT = Path(__file__).resolve().parents[1]
-APP_SHELL_PATTERN = re.compile(r"const APP_SHELL = \[(.*?)\];", re.DOTALL)
+APP_SHELL_PATTERN = re.compile(r"const (?:APP_SHELL|RUNTIME_ASSETS) = \[(.*?)\];", re.DOTALL)
 APP_SHELL_REF_PATTERN = re.compile(r"'([^']+)'")
 VERSION_PATTERN = re.compile(
   r'v\d+\.\d+\.\d+'
@@ -30,12 +30,12 @@ ZIP_TIMESTAMP = (1980, 1, 1, 0, 0, 0)
 
 def app_shell_files() -> list[Path]:
   source = (ROOT / 'sw.js').read_text(encoding='utf-8')
-  match = APP_SHELL_PATTERN.search(source)
-  if not match:
+  matches = APP_SHELL_PATTERN.findall(source)
+  if len(matches) != 2:
     raise ValueError('sw.js에서 APP_SHELL 목록을 찾지 못했습니다.')
 
   files: set[Path] = set()
-  for ref in APP_SHELL_REF_PATTERN.findall(match.group(1)):
+  for ref in APP_SHELL_REF_PATTERN.findall("\n".join(matches)):
     if ref == './':
       continue
     if not ref.startswith('./'):

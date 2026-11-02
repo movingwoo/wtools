@@ -1,13 +1,14 @@
-// sw.js — 자체 앱 셸을 사전 캐시하고, 온라인에서는 최신 파일로 갱신한다.
+// sw.js — 최소 앱 셸만 사전 캐시하고, 도구·엔진은 첫 사용 후 runtime 캐시에 저장한다.
 importScripts('./js/dependencies.js');
 importScripts('./js/sw-integrity.js');
 
 const CACHE_PREFIX = 'wtools-';
 // scripts/update_cache_version.py가 앱 셸 내용의 SHA-256 앞 12자리와 일치시킨다.
-const CACHE_REVISION = 'd885a0291fc2';
+const CACHE_REVISION = '320283140965';
 const CACHE_NAME = CACHE_PREFIX + 'shell-' + CACHE_REVISION;
+const RUNTIME_CACHE_NAME = CACHE_PREFIX + 'runtime-' + CACHE_REVISION;
 const EXTERNAL_CACHE_PREFIX = CACHE_PREFIX + 'external-';
-const EXTERNAL_CACHE_NAME = EXTERNAL_CACHE_PREFIX + 'v17';
+const EXTERNAL_CACHE_NAME = EXTERNAL_CACHE_PREFIX + 'v18';
 const dependencies = self.WTOOLS_DEPENDENCIES;
 const externalIntegrity = new Map(Object.values(dependencies.cdn)
   .map(({ url, integrity }) => [url, integrity]));
@@ -30,6 +31,17 @@ const APP_SHELL = [
   './assets/favicon-192.png',
   './assets/favicon-512.png',
   './assets/favicon-512-maskable.png',
+  './js/core.js',
+  './js/dependencies.js',
+  './js/lib/common/base64.js',
+  './js/lib/common/runtime-resources.js',
+  './js/main.js',
+  './js/runtime-cache.js',
+  './js/tool-manifest.js',
+  './js/sw-integrity.js',
+  './js/theme.js',
+];
+const RUNTIME_ASSETS = [
   './assets/data/emoji.json',
   './assets/data/network-reference.json',
   './assets/data/brotli-dictionary.bin',
@@ -43,12 +55,8 @@ const APP_SHELL = [
   './assets/data/figlet/Small.flf',
   './assets/data/figlet/Speed.flf',
   './assets/data/figlet/Standard.flf',
-  './assets/vendor/crypto-js-4.2.0.min.js',
   './assets/eff-short-wordlist-1.txt',
   './assets/vendor/openpgp-5.11.3.min.mjs',
-  './js/core.js',
-  './js/dependencies.js',
-  './js/lib/common/base64.js',
   './js/lib/archive/brotli-encode.js',
   './js/lib/archive/brotli-decode.js',
   './js/lib/archive/brotli-tables.js',
@@ -83,10 +91,6 @@ const APP_SHELL = [
   './js/lib/qr/encoder.js',
   './js/lib/qr/decoder.js',
   './js/lib/text/figlet.js',
-  './js/main.js',
-  './js/tool-manifest.js',
-  './js/sw-integrity.js',
-  './js/theme.js',
   './js/tools/archive.js',
   './js/tools/cryptotools.js',
   './js/tools/dataformat.js',
@@ -115,7 +119,65 @@ const APP_SHELL = [
   './js/workers/text-diff.js',
   './js/workers/toml.js',
   './js/workers/yaml.js',
+  './js/lib/crypto/aes.js',
+  './js/lib/crypto/hash64.js',
+  './js/lib/crypto/hash-base.js',
+  './js/lib/crypto/blowfish-constants.js',
+  './js/lib/crypto/keccak.js',
+  './js/lib/crypto/openssl.js',
+  './js/lib/crypto/md2.js',
+  './js/lib/crypto/legacy.js',
+  './js/lib/crypto/bytes.js',
+  './js/lib/crypto/worker-client.js',
+  './js/lib/crypto/des.js',
+  './js/lib/crypto/cipher.js',
+  './js/lib/crypto/hash.js',
+  './js/lib/crypto/hash32.js',
+  './js/lib/crypto/blowfish.js',
+  './js/lib/crypto/aes-envelope.js',
+  './js/workers/crypto.js',
 ];
+
+const shellUrls = new Set(APP_SHELL.map((ref) => new URL(ref, self.registration.scope).href));
+const assetUrls = new Set([...APP_SHELL, ...RUNTIME_ASSETS].map((ref) => new URL(ref, self.registration.scope).href));
+const cacheFor = (request) => caches.open(shellUrls.has(request.url) ? CACHE_NAME : RUNTIME_CACHE_NAME);
+
+function canonicalRequest(request) {
+  const url = new URL(request.url);
+  // The router retries failed imports with this sole cache-busting parameter.
+  if (/^\?retry=\d+$/.test(url.search)) {
+    url.search = '';
+    if (assetUrls.has(url.href)) return new Request(url, request);
+  }
+  return request;
+}
+
+async function cacheUsedAssets(urls) {
+  const allowed = new Set();
+  for (const value of urls.slice(0, assetUrls.size)) {
+    try {
+      const request = canonicalRequest(new Request(value));
+      if (assetUrls.has(request.url)) allowed.add(request.url);
+    } catch { /* Ignore invalid resource metadata. */ }
+  }
+  const queue = [...allowed];
+  let next = 0;
+  await Promise.all(Array.from({ length: 4 }, async () => {
+    while (next < queue.length) {
+      const request = new Request(queue[next++]);
+      const cache = await cacheFor(request);
+      if (await cache.match(request)) continue;
+      try {
+        const integrity = vendoredIntegrity.get(request.url);
+        if (integrity) await fetchVerified(cache, request, integrity);
+        else {
+          const response = await fetch(request);
+          if (response.ok) await cache.put(request, response);
+        }
+      } catch { /* Offline setup may be retried by using the asset online. */ }
+    }
+  }));
+}
 
 self.addEventListener('install', (event) => {
   event.waitUntil((async () => {
@@ -150,7 +212,7 @@ self.addEventListener('activate', (event) => {
       }
     }
     await Promise.all(keys.filter((key) =>
-      (key.startsWith(CACHE_PREFIX) && !key.startsWith(EXTERNAL_CACHE_PREFIX) && key !== CACHE_NAME)
+      (key.startsWith(CACHE_PREFIX) && !key.startsWith(EXTERNAL_CACHE_PREFIX) && key !== CACHE_NAME && key !== RUNTIME_CACHE_NAME)
       || oldExternalNames.includes(key))
       .map((key) => caches.delete(key)));
     await self.clients.claim();
@@ -159,6 +221,8 @@ self.addEventListener('activate', (event) => {
 
 self.addEventListener('message', (event) => {
   if (event.data?.type === 'SKIP_WAITING') self.skipWaiting();
+  if (event.data?.type === 'CACHE_USED_ASSETS' && Array.isArray(event.data.urls))
+    event.waitUntil(cacheUsedAssets(event.data.urls));
 });
 
 self.addEventListener('fetch', (event) => {
@@ -187,14 +251,15 @@ self.addEventListener('fetch', (event) => {
   }
 
   event.respondWith((async () => {
-    const integrity = vendoredIntegrity.get(url.href);
+    const cacheKey = canonicalRequest(request);
+    const integrity = vendoredIntegrity.get(cacheKey.url);
     if (integrity) {
-      const cache = await caches.open(CACHE_NAME);
+      const cache = await cacheFor(cacheKey);
       try {
-        return await fetchVerified(cache, request, integrity);
+        return await fetchVerified(cache, cacheKey, integrity);
       } catch (error) {
         if (error instanceof IntegrityError) return integrityErrorResponse();
-        const cached = await verifiedCached(cache, request, integrity);
+        const cached = await verifiedCached(cache, cacheKey, integrity);
         return cached || integrityErrorResponse();
       }
     }
@@ -205,12 +270,12 @@ self.addEventListener('fetch', (event) => {
         if (fallback) return fallback;
       }
       if (response.ok) {
-        const cache = await caches.open(CACHE_NAME);
-        await cache.put(request, response.clone());
+        const cache = await cacheFor(cacheKey);
+        await cache.put(cacheKey, response.clone());
       }
       return response;
     } catch (error) {
-      const cached = await caches.match(request);
+      const cached = await caches.match(cacheKey);
       if (cached) return cached;
       if (request.mode === 'navigate') {
         const fallback = await caches.match(new URL('./index.html', self.registration.scope));

@@ -26,7 +26,7 @@ js/lib/**           First-party, DOM-independent algorithms and format implement
 js/workers/**       Module Worker entry points for expensive first-party implementations
 assets/             Static images and icons
 manifest.json       PWA manifest (installability, icons, theme color)
-sw.js               Service worker; precaches the app shell, then network-first for offline support
+sw.js               Service worker; minimal shell precache and runtime cache after first use
 tests/              Playwright browser tests (CI-only; own package.json, not part of the site)
 tests/tools/        Per-tool input/output cases, one spec per `js/tools/` module
 tests/helpers.js    Shared UI driver and the table-driven `toolCases` runner
@@ -144,7 +144,7 @@ Prefer shared APIs from `js/core.js` instead of duplicating them:
 - Make focused changes. Do not add a framework, build tooling, or package dependency for a small feature.
 - Follow `DEVELOPMENT_GUIDE.md` for module boundaries, size budgets, Worker use, external-dependency replacements, and release gates.
 - Prefer Web APIs and existing helpers. Do not replace an existing runtime dependency with another package and call it an internal implementation. If a new external runtime library is unavoidable for an unrelated feature, document the reason, load it lazily, pin it, and register it in `LIB`.
-- Do not add eagerly loaded globals. `CryptoJS` is a temporary legacy exception only until its replacement work is complete.
+- Do not add eagerly loaded globals or external scripts. Crypto operations use WebCrypto and lazy first-party modules under `js/lib/crypto/`.
 - Stay within the browser baseline documented in `README.md` (Chrome/Edge 110, Firefox 115, Safari 16.4). Regex lookbehind, `structuredClone`, `findLast`, `toSorted`/`toReversed`/`with`, and import maps are available; `Intl.Segmenter` is not (Firefox 125) and stays behind a `typeof` guard. Tool implementations are dynamically imported, so a parse failure is isolated to that module, but the minimum syntax policy still applies to every module and is checked by `scripts/check_browser_compat.mjs` plus the scheduled baseline-engine job.
 - Validate input and throw `Error` objects with clear Korean messages. Avoid silent failures and unexplained coercion.
 - Preserve responsiveness, keyboard access, semantic labels, and the existing automatic light/dark theme.

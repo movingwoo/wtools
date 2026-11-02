@@ -28,7 +28,7 @@ class BrotliReleaseValidationTests(unittest.TestCase):
     validate_static.validate_brotli_assets(validation)
     return validation
 
-  def test_release_assets_are_valid_and_required_in_precache(self):
+  def test_release_assets_are_valid_and_required_in_inventory(self):
     validation = self.validate()
     self.assertEqual(validation.errors, [])
     path = self.root / 'sw.js'
@@ -88,6 +88,37 @@ class PlaywrightCIImageValidationTests(unittest.TestCase):
 
   def test_browser_workflows_are_reviewed(self):
     self.assertEqual(validate_static.unreviewed_browser_workflows(), [])
+
+class CacheInventoryTests(unittest.TestCase):
+  def test_runtime_engine_changes_revision_and_is_in_release(self):
+    import update_cache_version
+    import build_static_release
+    with tempfile.TemporaryDirectory() as directory:
+      root = Path(directory).resolve()
+      (root / 'engine.js').write_text('export const value = 1;')
+      (root / 'index.html').write_text('<html lang="ko"></html>')
+      source = ("const CACHE_REVISION = '000000000000';\n"
+                "const APP_SHELL = ['./', './index.html', './sw.js'];\n"
+                "const RUNTIME_ASSETS = ['./engine.js'];\n")
+      sw = root / 'sw.js'
+      sw.write_text(source)
+      with patch.object(update_cache_version, 'ROOT', root), patch.object(update_cache_version, 'SW_PATH', sw):
+        first = update_cache_version.expected_revision(source)
+        (root / 'engine.js').write_text('export const value = 2;')
+        self.assertNotEqual(first, update_cache_version.expected_revision(source))
+      with patch.object(build_static_release, 'ROOT', root):
+        self.assertEqual(build_static_release.app_shell_files(),
+                         [Path('engine.js'), Path('index.html'), Path('sw.js')])
+
+  def test_engine_cannot_move_into_shell(self):
+    with tempfile.TemporaryDirectory() as directory:
+      root = Path(directory)
+      (root / 'sw.js').write_text(
+        "const APP_SHELL = ['./js/lib/crypto/aes.js'];\nconst RUNTIME_ASSETS = [];\n")
+      with patch.object(validate_static, 'ROOT', root):
+        validation = validate_static.Validation()
+        validate_static.validate_app_shell(validation, set())
+        self.assertIn('sw.js: tool engines and large data must stay out of the shell precache', validation.errors)
 
 
 if __name__ == '__main__':

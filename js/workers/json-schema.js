@@ -1,3 +1,5 @@
+import { trackWorkerResources } from '../lib/common/runtime-resources.js';
+trackWorkerResources();
 import { stringifySchemaSample, validateJsonSchema, validateSchema } from '../lib/data/json-schema.js';
 
 self.addEventListener('message', ({ data }) => {

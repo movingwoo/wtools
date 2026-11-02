@@ -309,6 +309,40 @@ test('certificate-chain: 명시적 온라인 검사로 AIA 체인을 보완하�
   await expect(io.locator('.out-html')).toContainText('제공한 신뢰 앵커까지 암호학적으로 연결되었습니다.');
 });
 
+for (const contentLength of [null, '1']) {
+  test(`certificate-chain: 크기 헤더가 ${contentLength === null ? '없는' : '작게 표시된'} 과대 응답은 수신 중 취소한다`, async ({ page }) => {
+    await page.addInitScript((declared) => {
+      const original = globalThis.fetch;
+      globalThis.pkiResponseStreams = [];
+      globalThis.fetch = async (...args) => {
+        if (!String(args[0]).startsWith('https://status.wtools.test/')) return original(...args);
+        const state = { chunks: 0, canceled: false };
+        globalThis.pkiResponseStreams.push(state);
+        return new Response(new ReadableStream({
+          pull(controller) {
+            controller.enqueue(new Uint8Array(1024 * 1024));
+            if (++state.chunks === 8) controller.close();
+          },
+          cancel() { state.canceled = true; },
+        }), { headers: declared === null ? {} : { 'Content-Length': declared } });
+      };
+    }, contentLength);
+    await openTool(page, 'certificate-chain');
+    const io = ioSection(page);
+    await fillInputs(io, [pki.leafCert, pki.rootCert, '', '']);
+    await clickAction(io, '온라인 AIA·OCSP·CRL 확인');
+    await expect(io).toHaveAttribute('aria-busy', 'false');
+    await expect(io.locator('.out-html')).toContainText('응답이 4 MiB 제한을 넘습니다');
+    const streams = await page.evaluate(() => globalThis.pkiResponseStreams);
+    expect(streams.length).toBeGreaterThan(0);
+    for (const stream of streams) {
+      expect(stream.canceled).toBe(true);
+      // ReadableStream may prefetch one chunk beyond the one that crosses the cap.
+      expect(stream.chunks).toBeLessThanOrEqual(6);
+    }
+  });
+}
+
 test('certificate-chain: 서명된 OCSP 폐기 응답을 실패로 판정한다', async ({ page }) => {
   await page.route('https://status.wtools.test/**', async (route) => {
     const headers = { 'Access-Control-Allow-Origin': '*' };

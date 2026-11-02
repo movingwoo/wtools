@@ -293,10 +293,33 @@ async function fetchCertificateResource(url, options, signal) {
     throw new Error(`요청에 실패했습니다(CORS 또는 연결 상태 확인): ${href}`);
   }
   if (!response.ok) throw new Error(`HTTP ${response.status} 응답을 받았습니다: ${href}`);
+  const limit = 4 * 1024 * 1024;
+  const tooLarge = () => new Error(`응답이 4 MiB 제한을 넘습니다: ${href}`);
   const declared = Number(response.headers.get('content-length'));
-  if (declared > 4 * 1024 * 1024) throw new Error(`응답이 4 MiB 제한을 넘습니다: ${href}`);
-  const bytes = new Uint8Array(await response.arrayBuffer());
-  if (bytes.length > 4 * 1024 * 1024) throw new Error(`응답이 4 MiB 제한을 넘습니다: ${href}`);
+  if (declared > limit) {
+    await response.body?.cancel().catch(() => {});
+    throw tooLarge();
+  }
+  if (!response.body) return { bytes: new Uint8Array(), href };
+  const reader = response.body.getReader(), chunks = [];
+  let length = 0;
+  try {
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      if (value.length > limit - length) throw tooLarge();
+      chunks.push(value);
+      length += value.length;
+    }
+  } catch (error) {
+    await reader.cancel().catch(() => {});
+    throw error;
+  } finally {
+    reader.releaseLock();
+  }
+  const bytes = new Uint8Array(length);
+  let offset = 0;
+  for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.length; }
   return { bytes, href };
 }
 

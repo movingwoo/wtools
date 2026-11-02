@@ -138,7 +138,6 @@ bzip2/libbzip2 version 1.0.8 of 13 July 2019
 
 | 패키지 | 버전 | 라이선스 | 사용 범위 |
 |---|---:|---|---|
-| CryptoJS | 4.2.0 | MIT | 파일 해시 Worker |
 | OpenPGP.js | 5.11.3 | LGPL-3.0-or-later | PGP 키·암복호화 |
 
 각 파일은 위 패키지의 배포본을 사용하며, 원본과 로컬 파일의 해시를 등록부에서 검증합니다.

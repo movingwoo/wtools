@@ -1,6 +1,8 @@
 // 공개키 / 인증서
 import { tool, makeIO, h, kvTable, strToBytes, bytesToHex, hexToBytes, bytesToStr, bytesToB64, b64ToBytes, concatBytes, loadScript, LIB, requireFeature, download } from '../core.js';
 
+import { digestBytes } from '../lib/crypto/worker-client.js';
+
 const CAT = '공개키 / 인증서';
 
 /* KEYUTIL.getPEM은 isPublic인 키 객체만 공개키 PEM으로 내보내므로, 개인키 객체에는 쓸 수 없다.
@@ -1140,7 +1142,8 @@ tool({
     makeIO(root, {
       inputs: [{ id: 'input', label: 'SSH 공개키', rows: 4, placeholder: 'ssh-ed25519 AAAAC3Nza... user@host' }],
       outputHTML: true,
-      process(text) {
+      cancelable: true,
+      async process(text, options, action, signal) {
         text = text.trim();
         if (!text) return '';
         const parts = text.split(/\s+/);
@@ -1150,8 +1153,10 @@ tool({
         // SSH wire format: uint32 len + data 반복
         let off = 0;
         const readField = () => {
-          const len = (raw[off] << 24) | (raw[off + 1] << 16) | (raw[off + 2] << 8) | raw[off + 3];
+          if (off + 4 > raw.length) throw new Error('SSH 키 필드 길이가 잘렸습니다.');
+          const len = new DataView(raw.buffer, raw.byteOffset + off, 4).getUint32(0);
           off += 4;
+          if (len > raw.length - off) throw new Error('SSH 키 필드가 데이터 범위를 벗어났습니다.');
           const d = raw.slice(off, off + len);
           off += len;
           return d;
@@ -1166,8 +1171,8 @@ tool({
           bits = (e.length * 8) + ' (모듈러스)';
         } else if (keyType === 'ssh-ed25519') bits = '256';
         else if (keyType.includes('ecdsa')) bits = keyType.match(/(\d+)/)?.[1] || '?';
-        const md5 = CryptoJS.MD5(CryptoJS.lib.WordArray.create(raw)).toString().match(/.{2}/g).join(':');
-        const sha256 = CryptoJS.SHA256(CryptoJS.lib.WordArray.create(raw)).toString(CryptoJS.enc.Base64).replace(/=+$/, '');
+        const md5 = bytesToHex(await digestBytes('MD5', raw, signal)).match(/.{2}/g).join(':');
+        const sha256 = bytesToB64(await digestBytes('SHA256', raw, signal)).replace(/=+$/, '');
         return kvTable([
           ['키 타입', keyType],
           ['비트', bits],

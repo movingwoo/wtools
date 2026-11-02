@@ -1,189 +1,13 @@
 // 해싱
 import {
-  tool, makeIO, h, formLabel, kvTable, copyBtn, download, strToBytes, hexToBytes, bytesToB64,
-  decodeInput, FMT_IN, loadScript, vendorUrl, LIB, createAsyncRunner, readFileChunks,
+  tool, makeIO, h, formLabel, kvTable, copyBtn, download, strToBytes, hexToBytes, bytesToB64, bytesToHex,
+  decodeInput, FMT_IN, loadScript, LIB, createAsyncRunner, readFileChunks,
   throwIfAborted, requireFeature,
 } from '../core.js';
 
+import { runCrypto, hmacBytes } from '../lib/crypto/worker-client.js';
+
 const CAT = '해싱';
-
-/* ---------- SHA-0 (SHA-1에서 메시지 확장 회전이 빠진 원조 알고리즘) ---------- */
-function sha0(bytes) {
-  const ml = bytes.length;
-  const withPad = new Uint8Array((((ml + 8) >> 6) + 1) << 6);
-  withPad.set(bytes);
-  withPad[ml] = 0x80;
-  const dv = new DataView(withPad.buffer);
-  dv.setUint32(withPad.length - 4, ml << 3, false);
-  dv.setUint32(withPad.length - 8, Math.floor(ml / 0x20000000), false);
-  let h0 = 0x67452301, h1 = 0xefcdab89, h2 = 0x98badcfe, h3 = 0x10325476, h4 = 0xc3d2e1f0;
-  const w = new Uint32Array(80);
-  const rotl = (x, n) => (x << n) | (x >>> (32 - n));
-  for (let off = 0; off < withPad.length; off += 64) {
-    for (let i = 0; i < 16; i++) w[i] = dv.getUint32(off + i * 4, false);
-    for (let i = 16; i < 80; i++) w[i] = w[i - 3] ^ w[i - 8] ^ w[i - 14] ^ w[i - 16]; // SHA-1과 달리 rotl 없음
-    let a = h0, b = h1, c = h2, d = h3, e = h4;
-    for (let i = 0; i < 80; i++) {
-      let f, k;
-      if (i < 20) { f = (b & c) | (~b & d); k = 0x5a827999; }
-      else if (i < 40) { f = b ^ c ^ d; k = 0x6ed9eba1; }
-      else if (i < 60) { f = (b & c) | (b & d) | (c & d); k = 0x8f1bbcdc; }
-      else { f = b ^ c ^ d; k = 0xca62c1d6; }
-      const t = (rotl(a, 5) + f + e + k + w[i]) >>> 0;
-      e = d; d = c; c = rotl(b, 30) >>> 0; b = a; a = t;
-    }
-    h0 = (h0 + a) >>> 0; h1 = (h1 + b) >>> 0; h2 = (h2 + c) >>> 0; h3 = (h3 + d) >>> 0; h4 = (h4 + e) >>> 0;
-  }
-  return [h0, h1, h2, h3, h4].map((x) => x.toString(16).padStart(8, '0')).join('');
-}
-
-/* ---------- MD2 (RFC 1319) — js-md2 라이브러리는 문자열만 받아 바이트 입력 시 오류가 나므로 직접 구현 ---------- */
-const MD2_S = [
-  41, 46, 67, 201, 162, 216, 124, 1, 61, 54, 84, 161, 236, 240, 6, 19, 98, 167, 5, 243, 192, 199, 115, 140,
-  152, 147, 43, 217, 188, 76, 130, 202, 30, 155, 87, 60, 253, 212, 224, 22, 103, 66, 111, 24, 138, 23, 229, 18,
-  190, 78, 196, 214, 218, 158, 222, 73, 160, 251, 245, 142, 187, 47, 238, 122, 169, 104, 121, 145, 21, 178, 7, 63,
-  148, 194, 16, 137, 11, 34, 95, 33, 128, 127, 93, 154, 90, 144, 50, 39, 53, 62, 204, 231, 191, 247, 151, 3,
-  255, 25, 48, 179, 72, 165, 181, 209, 215, 94, 146, 42, 172, 86, 170, 198, 79, 184, 56, 210, 150, 164, 125, 182,
-  118, 252, 107, 226, 156, 116, 4, 241, 69, 157, 112, 89, 100, 113, 135, 32, 134, 91, 207, 101, 230, 45, 168, 2,
-  27, 96, 37, 173, 174, 176, 185, 246, 28, 70, 97, 105, 52, 64, 126, 15, 85, 71, 163, 35, 221, 81, 175, 58,
-  195, 92, 249, 206, 186, 197, 234, 38, 44, 83, 13, 110, 133, 40, 132, 9, 211, 223, 205, 244, 65, 129, 77, 82,
-  106, 220, 55, 200, 108, 193, 171, 250, 36, 225, 123, 8, 12, 189, 177, 74, 120, 136, 149, 139, 227, 99, 232, 109,
-  233, 203, 213, 254, 59, 0, 29, 57, 242, 239, 183, 14, 102, 88, 208, 228, 166, 119, 114, 248, 235, 117, 75, 10,
-  49, 68, 80, 180, 143, 237, 31, 26, 219, 153, 141, 51, 159, 17, 131, 20,
-];
-function md2(bytes) {
-  const pad = 16 - (bytes.length % 16);
-  const msg = new Uint8Array(bytes.length + pad + 16);
-  msg.set(bytes);
-  msg.fill(pad, bytes.length, bytes.length + pad);
-  // 체크섬 블록
-  const ck = new Uint8Array(16);
-  let l = 0;
-  for (let i = 0; i < msg.length - 16; i += 16)
-    for (let j = 0; j < 16; j++) l = ck[j] ^= MD2_S[msg[i + j] ^ l];
-  msg.set(ck, msg.length - 16);
-  // 다이제스트
-  const x = new Uint8Array(48);
-  for (let i = 0; i < msg.length; i += 16) {
-    for (let j = 0; j < 16; j++) {
-      x[16 + j] = msg[i + j];
-      x[32 + j] = x[16 + j] ^ x[j];
-    }
-    let t = 0;
-    for (let round = 0; round < 18; round++) {
-      for (let k = 0; k < 48; k++) t = x[k] ^= MD2_S[t];
-      t = (t + round) & 255;
-    }
-  }
-  return [...x.slice(0, 16)].map((b) => b.toString(16).padStart(2, '0')).join('');
-}
-
-/* ---------- SHA-3 (FIPS 202) ----------
-CryptoJS.SHA3는 표준화 이전 Keccak 패딩(0x01)이라 FIPS 202 SHA-3(0x06)와 결과가 다르다.
-표준 SHA-3는 여기서 직접 구현하고, CryptoJS 쪽은 Keccak-256 항목으로만 사용한다. */
-const KECCAK_RC = (() => {
-  // LFSR(x^8+x^6+x^5+x^4+1)로 라운드 상수를 스펙대로 생성
-  const rc = [];
-  let r = 1;
-  for (let i = 0; i < 24; i++) {
-    let c = 0n;
-    for (let j = 0; j < 7; j++) {
-      if (r & 1) c |= 1n << ((1n << BigInt(j)) - 1n);
-      r = r & 0x80 ? ((r << 1) ^ 0x71) & 0xff : (r << 1) & 0xff;
-    }
-    rc.push(c);
-  }
-  return rc;
-})();
-
-const M64 = (1n << 64n) - 1n;
-const rotl64 = (v, n) => n === 0n ? v : ((v << n) | (v >> (64n - n))) & M64;
-
-function keccakF(A) {
-  for (let round = 0; round < 24; round++) {
-    const C = [], D = [];
-    for (let x = 0; x < 5; x++) C[x] = A[x] ^ A[x + 5] ^ A[x + 10] ^ A[x + 15] ^ A[x + 20];
-    for (let x = 0; x < 5; x++) {
-      D[x] = C[(x + 4) % 5] ^ rotl64(C[(x + 1) % 5], 1n);
-      for (let y = 0; y < 25; y += 5) A[x + y] ^= D[x];
-    }
-    let x = 1, y = 0, cur = A[1];
-    for (let t = 0; t < 24; t++) {
-      const r = BigInt(((t + 1) * (t + 2) / 2) % 64);
-      [x, y] = [y, (2 * x + 3 * y) % 5];
-      const idx = x + 5 * y;
-      [A[idx], cur] = [rotl64(cur, r), A[idx]];
-    }
-    for (let y0 = 0; y0 < 25; y0 += 5) {
-      const row = A.slice(y0, y0 + 5);
-      for (let x0 = 0; x0 < 5; x0++) A[y0 + x0] = row[x0] ^ (~row[(x0 + 1) % 5] & M64 & row[(x0 + 2) % 5]);
-    }
-    A[0] ^= KECCAK_RC[round];
-  }
-}
-
-function sha3(bytes, outBits) {
-  const rate = (1600 - 2 * outBits) / 8;
-  const A = new Array(25).fill(0n);
-  const padded = new Uint8Array((Math.floor(bytes.length / rate) + 1) * rate);
-  padded.set(bytes);
-  padded[bytes.length] = 0x06; // SHA-3 도메인 구분 + pad10*1 시작
-  padded[padded.length - 1] |= 0x80;
-  for (let off = 0; off < padded.length; off += rate) {
-    for (let i = 0; i < rate; i++) A[i >> 3] ^= BigInt(padded[off + i]) << BigInt(8 * (i & 7));
-    keccakF(A);
-  }
-  let out = '';
-  for (let i = 0; i < outBits / 8; i++) out += Number((A[i >> 3] >> BigInt(8 * (i & 7))) & 0xffn).toString(16).padStart(2, '0');
-  return out;
-}
-
-// HMAC-SHA3 — 블록 크기는 해당 SHA-3의 rate
-function hmacSha3(msgBytes, keyBytes, outBits) {
-  const rate = (1600 - 2 * outBits) / 8;
-  let k = keyBytes;
-  if (k.length > rate) k = hexToBytes(sha3(k, outBits));
-  const inner = new Uint8Array(rate + msgBytes.length).fill(0x36, 0, rate);
-  const outer = new Uint8Array(rate + outBits / 8).fill(0x5c, 0, rate);
-  for (let i = 0; i < k.length; i++) { inner[i] ^= k[i]; outer[i] ^= k[i]; }
-  inner.set(msgBytes, rate);
-  outer.set(hexToBytes(sha3(inner, outBits)), rate);
-  return sha3(outer, outBits);
-}
-
-function toWordArray(bytes) {
-  return CryptoJS.lib.WordArray.create(bytes);
-}
-
-let md4Module = null;
-
-function loadMd4Module() {
-  return md4Module ??= import('../lib/crypto/md4.js').catch((cause) => {
-    md4Module = null;
-    throw new Error('MD4 구현을 불러오지 못했습니다.', { cause });
-  });
-}
-
-async function computeHash(alg, bytes) {
-  switch (alg) {
-    case 'MD2': return md2(bytes);
-    case 'MD4': return (await loadMd4Module()).md4Hex(bytes);
-    case 'MD5': return CryptoJS.MD5(toWordArray(bytes)).toString();
-    case 'SHA0': return sha0(bytes);
-    case 'SHA1': return CryptoJS.SHA1(toWordArray(bytes)).toString();
-    case 'SHA224': return CryptoJS.SHA224(toWordArray(bytes)).toString();
-    case 'SHA256': return CryptoJS.SHA256(toWordArray(bytes)).toString();
-    case 'SHA384': return CryptoJS.SHA384(toWordArray(bytes)).toString();
-    case 'SHA512': return CryptoJS.SHA512(toWordArray(bytes)).toString();
-    case 'SHA3-224': return sha3(bytes, 224);
-    case 'SHA3-256': return sha3(bytes, 256);
-    case 'SHA3-384': return sha3(bytes, 384);
-    case 'SHA3-512': return sha3(bytes, 512);
-    case 'Keccak-256': return CryptoJS.SHA3(toWordArray(bytes), { outputLength: 256 }).toString();
-    case 'RIPEMD160': return CryptoJS.RIPEMD160(toWordArray(bytes)).toString();
-  }
-}
-const ALL_ALGS = ['MD2', 'MD4', 'MD5', 'SHA0', 'SHA1', 'SHA224', 'SHA256', 'SHA384', 'SHA512', 'SHA3-224', 'SHA3-256', 'SHA3-384', 'SHA3-512', 'Keccak-256', 'RIPEMD160'];
 
 tool({
   id: 'hash', cat: CAT, name: '해시 생성 (MD/SHA 전체)',
@@ -196,28 +20,20 @@ tool({
         { id: 'ifmt', label: '입력 형식', type: 'select', values: FMT_IN },
         { id: 'upper', label: '대문자', type: 'checkbox' },
       ],
-      note: 'MD2, MD4, MD5, SHA-0, SHA-1은 현대 보안 용도로 안전하지 않습니다. 기존 형식의 호환성 확인에만 사용하고, 보안 목적에는 SHA-256 이상을 사용하세요.',
-      outputHTML: true, runOnLoad: true,
-      async process(text, o) {
+      note: 'MD2, MD4, MD5, SHA-0, SHA-1은 현대 보안 용도로 안전하지 않습니다. 기존 형식의 호환성 확인에만 사용하고, 보안 목적에는 SHA-256 이상을 사용하세요. 입력은 최대 16 MiB이며 Worker에서 계산하고 취소할 수 있습니다.',
+      outputHTML: true, runOnLoad: true, cancelable: true,
+      async process(text, o, action, signal) {
         const bytes = decodeInput(text, o.ifmt);
-        const rows = [];
-        for (const alg of ALL_ALGS) {
-          try {
-            let v = await computeHash(alg, bytes);
-            rows.push([alg, o.upper ? v.toUpperCase() : v]);
-          } catch (e) {
-            rows.push([alg, '(오류: ' + e.message + ')']);
-          }
-        }
-        return kvTable(rows);
+        try {
+          const rows = await runCrypto('hash-all', { data: bytes }, signal);
+          return kvTable(rows.map(([name, value]) => [name, o.upper ? value.toUpperCase() : value]));
+        } finally { bytes.fill(0); }
       },
     });
   },
 });
 
-/* ---------- BLAKE / xxHash ----------
-   위 '해시 생성'은 CryptoJS만 써서 즉시 계산되는 도구라, WASM(약 280KB)을 받아야 하는
-   최신 알고리즘은 별도 도구로 떼어 둔다. 여기서만 hash-wasm을 지연 로드한다. */
+/* ---------- BLAKE / xxHash — 이 도구에서만 hash-wasm을 지연 로드한다. ---------- */
 // [표시 이름, 키 지원 여부, 계산 함수]. hashwasm 전역은 loadScript 이후에만 존재한다.
 const MODERN_ALGS = [
   ['BLAKE2b-512', true, (bytes, key) => hashwasm.blake2b(bytes, 512, key)],
@@ -284,20 +100,15 @@ tool({
         { id: 'alg', label: '알고리즘', type: 'select', values: ['SHA256', 'SHA1', 'SHA224', 'SHA384', 'SHA512', 'SHA3-256', 'SHA3-512', 'MD5'], value: 'SHA256' },
         { id: 'ofmt', label: '출력', type: 'select', values: [['hex', 'Hex'], ['base64', 'Base64']] },
       ],
-      runOnLoad: true,
+      runOnLoad: true, cancelable: true,
       transferOutput: { id: 'hash', when: ({ result }) => !!String(result).trim() },
-      process(v, o) {
-        // CryptoJS.HmacSHA3는 Keccak 기반이라 표준 HMAC-SHA3와 다르다 — 직접 구현 사용
-        if (o.alg === 'SHA3-256' || o.alg === 'SHA3-512') {
-          const hex = hmacSha3(strToBytes(v.msg), strToBytes(v.key), +o.alg.slice(5));
-          return o.ofmt === 'base64' ? bytesToB64(hexToBytes(hex)) : hex;
-        }
-        const algMap = {
-          SHA1: CryptoJS.HmacSHA1, SHA224: CryptoJS.HmacSHA224, SHA256: CryptoJS.HmacSHA256,
-          SHA384: CryptoJS.HmacSHA384, SHA512: CryptoJS.HmacSHA512, MD5: CryptoJS.HmacMD5,
-        };
-        const wa = algMap[o.alg](v.msg, v.key);
-        return o.ofmt === 'base64' ? CryptoJS.enc.Base64.stringify(wa) : wa.toString();
+      async process(v, o, action, signal) {
+        const message = strToBytes(v.msg), key = strToBytes(v.key);
+        let result;
+        try {
+          result = await hmacBytes(o.alg, message, key, signal);
+          return o.ofmt === 'base64' ? bytesToB64(result) : bytesToHex(result);
+        } finally { message.fill(0); key.fill(0); result?.fill(0); }
       },
     });
   },
@@ -356,12 +167,11 @@ const FILE_CHECKSUM_ALGORITHMS = {
   'SHA-512': { length: 128, worker: 'SHA512' },
 };
 const FILE_HASH_WORKER_URL = new URL('../workers/file-hash.js', import.meta.url);
-const FILE_HASH_CRYPTO_JS_URL = vendorUrl('cryptoJsWorker');
 
 function fileHashWorker(signal) {
   requireFeature('worker', typeof Worker !== 'undefined');
   throwIfAborted(signal);
-  const worker = new Worker(FILE_HASH_WORKER_URL);
+  const worker = new Worker(FILE_HASH_WORKER_URL, { type: 'module' });
   const pending = new Map();
   let requestId = 0;
   let closed = false;
@@ -389,6 +199,7 @@ function fileHashWorker(signal) {
   return {
     request(message, transfer = []) {
       throwIfAborted(signal);
+      if (closed) return Promise.reject(new Error('파일 해시 Worker가 종료되었습니다.'));
       const request = ++requestId;
       return new Promise((resolve, reject) => {
         pending.set(request, { resolve, reject });
@@ -411,7 +222,7 @@ async function hashFilesInWorker(files, task) {
         throwIfAborted(task.signal);
         const job = `${fileIndex}:${algorithmIndex++}`;
         await client.request({
-          type: 'start', job, algorithm: config.worker, cryptoJsUrl: FILE_HASH_CRYPTO_JS_URL,
+          type: 'start', job, algorithm: config.worker,
         });
         await readFileChunks(file, {
           signal: task.signal,

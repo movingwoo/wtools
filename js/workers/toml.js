@@ -1,3 +1,5 @@
+import { trackWorkerResources } from '../lib/common/runtime-resources.js';
+trackWorkerResources();
 import { parse, stringify, TomlDate, TOML_DEFAULT_LIMITS } from '../lib/data/toml.js';
 
 function collectDates(value) {

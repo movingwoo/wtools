@@ -587,3 +587,10 @@ for encoded in json.load(sys.stdin):
 json.dump(results,sys.stdout)
 `, String(maxOutputLength)], Buffer.from(JSON.stringify(vectors)), 16 * 1024 * 1024).toString());
 }
+
+// RFC 6238 Appendix B uses 20/32/64 ASCII digits as SHA-1/256/512 secrets.
+export function rfc6238Secret(length) {
+  const bytes = Buffer.from('1234567890'.repeat(7).slice(0, length));
+  const bits = [...bytes].map((byte) => byte.toString(2).padStart(8, '0')).join('');
+  return (bits.match(/.{1,5}/g) || []).map((part) => 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567'[parseInt(part.padEnd(5, '0'), 2)]).join('');
+}

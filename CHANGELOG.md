@@ -5,6 +5,21 @@
 
 ## [Unreleased]
 
+### 변경됨
+
+- 4단계 첫 항목인 CryptoJS 4.2.0을 제거. MD/SHA/Keccak/RIPEMD-160·HMAC·AES·DES/3DES·Blowfish와
+  OpenSSL KDF·봉투 형식을 WebCrypto 우선 및 자체 구현으로 교체하고, 텍스트·파일 해시 엔진을 공용화
+- JWT HS 서명·Base58Check·OTP·SSH 지문도 공용 암호 계층을 사용. 초기 CryptoJS CDN 요청,
+  로컬 Worker용 사본과 등록부를 제거하고 사용하지 않는 cdnjs·unpkg CSP 허용 출처를 정리
+- 암호와 해시 작업에 16 MiB 입력·64 KiB 키 한도, Worker 취소·라우트 이탈 종료와 엄격한 PKCS7 검증 적용.
+  AES-192 및 레거시 키 워드·CTR 32비트 순환 호환성을 보존
+- DES/3DES/Blowfish 비밀번호 Hex 출력이 salt를 버리던 오류 수정. 새 출력은 Base64와 같은
+  `Salted__` 봉투를 Hex로 표현하며, 이전 salt 없는 출력은 복원할 수 없음을 안내. 빈 평문 복호화도 허용
+- 서비스 워커를 최소 `shell` 사전 캐시와 첫 사용 후 `runtime` 캐시로 분리.
+  전체 자산으로 캐시 버전을 계산하고 정적 ZIP에 두 목록을 포함하며, 미캐시 오류·재시도·오프라인 실행 검증
+- 공개 표준 벡터, CryptoJS 1,560개 고정 암호 계약, Node 해시·HMAC·OpenSSL 교차 검증,
+  잘못된 패딩·길이·봉투 입력, 최대 크기·취소·캐시 정리 회귀 검사 추가
+
 ### 보안
 
 - 온라인 AIA·OCSP·CRL 응답을 청크 단위로 읽고 4 MiB를 넘으면 즉시 취소해,

@@ -9,6 +9,10 @@ W-Tools는 브라우저에서 바로 실행되는 개발자 유틸리티 모음�
 
 W-Tools는 별도의 빌드 과정이 없는 순수 정적 사이트로 HTML과 Vanilla JavaScript ES 모듈로 구성되어 있습니다.  
 서비스 워커를 통해 오프라인 사용을 지원하며 PWA로 설치할 수 있습니다.
+설치 시 홈·검색에 필요한 최소 파일만 저장합니다. 도구·암호 알고리즘·큰 데이터는 온라인에서
+해당 기능을 한 번 실행한 뒤 오프라인으로 사용할 수 있습니다. 처음 쓰는 기능은 연결이 필요하며,
+미캐시 오류가 나타나면 온라인으로 돌아온 뒤 다시 시도하세요.
+새 버전을 적용하면 이전 도구 캐시는 비우므로 필요한 기능을 온라인에서 다시 실행하세요.
 
 링크: [https://wtools.movingwoo.com](https://wtools.movingwoo.com)
 
@@ -140,7 +144,7 @@ js/lib/**           DOM과 분리한 자체 알고리즘·포맷 구현
 js/workers/**       계산량이 큰 자체 구현의 모듈 Worker 진입점
 assets/             아이콘·이미지 및 검토·고정한 제3자 ESM/WASM
 manifest.json       PWA 매니페스트 (설치, 아이콘, 테마 색상)
-sw.js               서비스워커; 앱 셸 사전 캐시 + network-first 갱신으로 오프라인 지원
+sw.js               서비스워커; 최소 shell 사전 캐시 + 사용한 도구의 runtime 캐시
 tests/              Playwright 브라우저 테스트 (CI 전용, 자체 package.json — 사이트 배포와 무관)
 scripts/            의존성 없는 저장소·정적 사이트 검증 스크립트
 .github/workflows/  PR 검사, Pages 배포, nightly 운영 점검, 최소 브라우저·월간 의존성 점검
@@ -148,7 +152,10 @@ DEVELOPMENT_GUIDE.md 구현 구조, 크기 예산, 의존성 교체 및 릴리�
 ```
 
 jsrsasign 같은 classic script는 SRI로 검증하면서 해당 도구를 열 때 CDN에서 **지연 로드**합니다.  
-OpenPGP의 동적 ESM은 하위 import까지 검토한 로컬 사본을 사용합니다. crypto-js만 페이지를 열 때 불러오며, Brotli·Zstandard·Bzip2·LZ4·LZMA·gzip·zlib·raw DEFLATE와 YAML·TOML·JSONPath·JMESPath·JSON Schema는 자체 엔진을 필요한 순간에 불러옵니다.
+OpenPGP의 동적 ESM은 하위 import까지 검토한 로컬 사본을 사용합니다. 초기 화면에서는 외부 JavaScript를 불러오지 않습니다. CryptoJS를 제거해 MD/SHA·HMAC·AES·DES/3DES·Blowfish를 WebCrypto와 자체 구현으로 처리하며, Brotli·Zstandard·Bzip2·LZ4·LZMA·gzip·zlib·raw DEFLATE와 YAML·TOML·JSONPath·JMESPath·JSON Schema는 자체 엔진을 필요한 순간에 불러옵니다.
+해시 텍스트·암호 평문은 최대 16 MiB, 키·비밀번호는 최대 64 KiB이며 큰 계산은 취소 가능한
+Worker에서 실행합니다. 파일 해시는 같은 자체 구현으로 2 MiB씩 읽습니다. DES/3DES/Blowfish의
+비밀번호 Hex 출력도 salt를 포함하며, 이전 버전에서 salt 없이 만든 Hex는 복원할 수 없습니다.
 Brotli는 해제 출력 메모리를 확보하기 전에 128 MiB·압축률 200:1 상한을 검사합니다. 표준 사전을 포함한
 일반 `.br` 스트림을 지원하며, 공유 사전·확장 윈도 형식은 지원하지 않습니다.
 Zstandard·Bzip2·LZ4도 자체 코덱과 취소 가능한 Worker를 사용하며, 해제 중 128 MiB·압축률 200:1

@@ -1,3 +1,5 @@
+import { trackWorkerResources } from '../lib/common/runtime-resources.js';
+trackWorkerResources();
 self.addEventListener('message', async ({ data }) => {
   try {
     const yaml = await import('../lib/data/yaml.js');

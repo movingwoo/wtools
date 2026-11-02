@@ -202,6 +202,11 @@ const cases = [
     inputs: ['{"a":1}', ' $.a'], output: /^⚠ JSONPath 오류: 질의는 루트 식별자 \$로 시작해야 합니다\./,
   },
   {
+    // Official CTS afefcaa: an existing null array element is a selected node.
+    name: 'json-query: RFC 9535 null 배열 원소 선택', tool: 'json-query',
+    inputs: ['["first",null,"third"]', '$[1]'], output: '[\n  null\n]',
+  },
+  {
     name: 'json-query: 비유한 JSON 숫자는 null로 바꾸지 않고 거부', tool: 'json-query',
     inputs: ['1e400', '$'], output: /^⚠ JSON 데이터 오류: 값이 유한한 숫자 범위를 벗어났습니다\./,
   },

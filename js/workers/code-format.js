@@ -1,3 +1,5 @@
+import { trackWorkerResources } from '../lib/common/runtime-resources.js';
+trackWorkerResources();
 self.addEventListener('message', async ({ data }) => {
   try {
     if (typeof data?.text !== 'string' || data.text.length > 4 * 1024 * 1024)

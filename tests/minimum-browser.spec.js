@@ -111,3 +111,28 @@ test('구형 기준 엔진에서 자체 DEFLATE·ZIP과 압축 Worker가 동작�
     zip: { name: '한글.txt', text: expected },
   });
 });
+
+test('구형 기준 엔진에서 자체 암호·해시와 모듈 Worker가 동작한다', async ({ page }) => {
+  await page.goto('/');
+  const result = await page.evaluate(async () => {
+    const { digest, hmac } = await import('/js/lib/crypto/hash.js');
+    const { cipher } = await import('/js/lib/crypto/cipher.js');
+    const { hex, unhex } = await import('/js/lib/crypto/bytes.js');
+    const { runCrypto } = await import('/js/lib/crypto/worker-client.js');
+    const input = new TextEncoder().encode('abc');
+    return {
+      sha512: hex(await digest('SHA512', input, { native: false })),
+      keccak: hex(await digest('Keccak-256', new Uint8Array())),
+      hmac: hex(await hmac('SHA256', input, new TextEncoder().encode('key'), { native: false })),
+      aes192: hex(await cipher({ mode: 'ECB', padding: false, data: unhex('00112233445566778899aabbccddeeff'), key: unhex('000102030405060708090a0b0c0d0e0f1011121314151617'), iv: new Uint8Array() })),
+      worker: hex(await runCrypto('digest', { name: 'MD5', data: input })),
+    };
+  });
+  expect(result).toEqual({
+    sha512: 'ddaf35a193617abacc417349ae20413112e6fa4e89a97ea20a9eeee64b55d39a2192992a274fc1a836ba3c23a3feebbd454d4423643ce80e2a9ac94fa54ca49f',
+    keccak: 'c5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470',
+    hmac: '9c196e32dc0175f86f4b1cb89289d6619de6bee699e4c378e68309ed97a1a6ab',
+    aes192: 'dda97ca4864cdfe06eaf70a0ec0d7191',
+    worker: '900150983cd24fb0d6963f7d28e17f72',
+  });
+});

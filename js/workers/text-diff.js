@@ -1,3 +1,5 @@
+import { trackWorkerResources } from '../lib/common/runtime-resources.js';
+trackWorkerResources();
 import {
   createUnifiedPatchFromChanges, diffChars, diffLines, diffWords,
 } from '../lib/diff/myers.js';

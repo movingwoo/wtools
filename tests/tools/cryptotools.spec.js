@@ -2,6 +2,7 @@
 // 결정적 벡터(NIST AES-GCM, AES-CBC, RFC 4226 HOTP, PBKDF2 고정 솔트)와
 // 왕복(암호화→복호화) 검증을 함께 사용한다. bcrypt·jsrsasign·openpgp는
 // CDN 지연 로드 경로까지 함께 검증된다.
+import { rfc6238Secret } from '../fixtures.js';
 import { test, expect, toolCases, openTool, ioSection, setOption, fillInputs, clickAction, kvValue } from '../helpers.js';
 
 // NIST SP 800-38D AES-128-GCM: 빈 평문, 0 키, 96비트 0 IV → 128비트 인증 태그
@@ -33,6 +34,13 @@ const cases = [
     name: 'aes: raw 키 복호화', tool: 'aes',
     options: { '키 크기': '128', '모드': 'CBC', '키 방식': 'raw', '결과 구성': 'raw', '암호문 형식': 'hex' },
     inputs: [AES_CIPHER_HEX, AES_KEY, AES_CBC_ZERO_IV], action: '복호화', output: 'Secret message',
+  },
+  {
+    name: 'aes: 기존 Hex 접두사와 바이트 구분자 유지', tool: 'aes',
+    options: { '키 크기': '128', '모드': 'CBC', '키 방식': 'raw', '결과 구성': 'raw', '암호문 형식': 'hex' },
+    inputs: [AES_CIPHER_HEX.match(/../g).map((byte) => '0x' + byte).join(', '),
+      AES_KEY.match(/../g).join(':'), AES_CBC_ZERO_IV.match(/../g).join('-')],
+    action: '복호화', output: 'Secret message',
   },
   {
     name: 'aes: 키 길이 검증', tool: 'aes',
@@ -326,6 +334,7 @@ test('aes: OpenSSL 비밀번호 Hex 왕복은 salt를 보존한다', async ({ pa
   await setOption(io, '암호문 형식', 'hex');
   await fillInputs(io, ['OpenSSL Hex 왕복', 'legacy-password', '']);
   await clickAction(io, '암호화');
+  await expect(out).toHaveValue(/^53616c7465645f5f[0-9a-f]+$/);
   const cipher = await out.inputValue();
   expect(cipher).toMatch(/^53616c7465645f5f[0-9a-f]+$/); // "Salted__" + salt + ciphertext
   await fillInputs(io, [cipher]);
@@ -574,3 +583,12 @@ test('password-hash: Argon2 메모리 범위 검사', async ({ page }) => {
   await clickAction(io, '해시 생성');
   await expect(io.locator('textarea.out')).toHaveValue('⚠ Argon2 메모리는 1~1024 MiB로 입력하세요.');
 });
+
+// RFC 6238 t=59 maps to counter 1. HOTP avoids depending on the wall clock.
+toolCases('cryptotools', [
+  ['SHA1', 20, '94287082'], ['SHA256', 32, '46119246'], ['SHA512', 64, '90693936'],
+].map(([algorithm, length, code]) => ({
+  name: `otp: ${algorithm} RFC 6238 8자리 벡터`, tool: 'otp',
+  options: { '방식': 'hotp', '알고리즘': algorithm, '자릿수': '8', '주기/카운터': 1 },
+  inputs: rfc6238Secret(length), action: '코드 생성', htmlContains: [code],
+})));

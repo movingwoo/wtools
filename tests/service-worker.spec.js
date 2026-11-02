@@ -43,6 +43,24 @@ async function waitForControl(page) {
   });
 }
 
+// Existing multi-tool offline regressions explicitly warm the release inventory.
+// Separate shell/crypto tests below exercise real first-use caching without this helper.
+async function warmRuntimeAssets(page) {
+  await page.evaluate(async () => {
+    const source = await (await fetch('/sw.js')).text();
+    const inventory = source.match(/const RUNTIME_ASSETS = \[(.*?)\];/s)[1];
+    const paths = [...inventory.matchAll(/'([^']+)'/g)].map((match) => match[1]);
+    let next = 0;
+    await Promise.all(Array.from({ length: 4 }, async () => {
+      while (next < paths.length) {
+        const path = paths[next++], response = await fetch(path);
+        if (!response.ok) throw new Error(`Runtime warm failed (${response.status}): ${path}`);
+        await response.arrayBuffer();
+      }
+    }));
+  });
+}
+
 test('Brotli 제3자 코덱 캐시를 제거하고 자체 코덱·사전이 오프라인에서 동작한다', async ({ page, context }) => {
   const removed = ['/assets/vendor/brotli-compress-1.3.3.mjs', '/assets/vendor/brotli-decompress-1.3.3.mjs'];
   await page.goto('/404.html');
@@ -52,6 +70,7 @@ test('Brotli 제3자 코덱 캐시를 제거하고 자체 코덱·사전이 오�
   }, removed);
   await page.goto('/');
   await waitForControl(page);
+  await warmRuntimeAssets(page);
   expect(await page.evaluate(async (paths) => ({
     removed: await Promise.all(paths.map(async (path) => !!await caches.match(path))),
     engine: !!await caches.match('/js/lib/archive/brotli-encode.js'),
@@ -82,8 +101,9 @@ test.describe('Brotli 오프라인 사전 무결성', () => {
   test('변조된 사전 캐시를 거부하고 온라인 재시도로 복구한다', async ({ page, context }) => {
     await page.goto('/#/tool/brotli');
     await waitForControl(page);
+  await warmRuntimeAssets(page);
     await page.evaluate(async () => {
-      const name = (await caches.keys()).find((key) => key.startsWith('wtools-shell-'));
+      const name = (await caches.keys()).find((key) => key.startsWith('wtools-runtime-'));
       const cache = await caches.open(name);
       await cache.put('/assets/data/brotli-dictionary.bin', new Response(new Uint8Array(122784)));
     });
@@ -113,6 +133,7 @@ test('LZMA CDN 캐시를 제거하고 자체 Worker 코덱이 오프라인에서
   }, removed);
   await page.goto('/');
   await waitForControl(page);
+  await warmRuntimeAssets(page);
   const state = await page.evaluate(async (url) => ({
     keys: await caches.keys(), removed: !!await caches.match(url),
     engine: !!await caches.match('/js/lib/archive/lzma.js'),
@@ -206,6 +227,7 @@ test('설치 시 검증된 자산만 캐시하고 이전 버전 캐시를 삭제
 
   await page.goto('/');
   await waitForControl(page);
+  await warmRuntimeAssets(page);
   const state = await page.evaluate(async ({
     externalUrl, removedMarkedUrl, removedHighlightUrl, removedHighlightCssUrl,
     removedBeautifyJsUrl, removedBeautifyCssUrl, removedBeautifyHtmlUrl, removedSqlFormatterUrl,
@@ -216,15 +238,16 @@ test('설치 시 검증된 자산만 캐시하고 이전 버전 캐시를 삭제
   }) => {
     const keys = await caches.keys();
     const shellName = keys.find((key) => key.startsWith('wtools-shell-'));
-    const shell = await caches.open(shellName);
-    const deflateEngine = await shell.match(deflateEnginePath);
-    const zipEngine = await shell.match(zipEnginePath);
-    const zipWorker = await shell.match(zipWorkerPath);
-    const tomlEngine = await shell.match(tomlEnginePath);
-    const jsonPathEngine = await shell.match(jsonPathEnginePath);
-    const jmesPathEngine = await shell.match(jmesPathEnginePath);
-    const jsonSchemaEngine = await shell.match(jsonSchemaEnginePath);
-    const external = await caches.open('wtools-external-v17');
+    const runtimeName = keys.find((key) => key.startsWith('wtools-runtime-'));
+    const runtime = await caches.open(runtimeName);
+    const deflateEngine = await runtime.match(deflateEnginePath);
+    const zipEngine = await runtime.match(zipEnginePath);
+    const zipWorker = await runtime.match(zipWorkerPath);
+    const tomlEngine = await runtime.match(tomlEnginePath);
+    const jsonPathEngine = await runtime.match(jsonPathEnginePath);
+    const jmesPathEngine = await runtime.match(jmesPathEnginePath);
+    const jsonSchemaEngine = await runtime.match(jsonSchemaEnginePath);
+    const external = await caches.open('wtools-external-v18');
     return {
       keys,
       deflateEngineCached: !!deflateEngine,
@@ -412,6 +435,7 @@ test('설치 시 검증된 자산만 캐시하고 이전 버전 캐시를 삭제
 test('오프라인에서 직접 도구 URL 새로고침과 navigation fallback을 복구한다', async ({ page, context }) => {
   await page.goto('/#/tool/base64');
   await waitForControl(page);
+  await warmRuntimeAssets(page);
   await expect(page.locator('#content .tool-header h1')).toHaveText('Base64 인코딩/디코딩');
 
   await context.setOffline(true);
@@ -523,6 +547,22 @@ test('변조된 제3자 응답과 캐시를 폐기하고 한국어 오류를 반
   expect(result.integrityError).toBe(true);
 });
 
+test('제3자 모듈 재시도 URL도 원본 경로의 무결성을 검증한다', async ({ page, context }) => {
+  await page.goto('/');
+  await waitForControl(page);
+  await context.setOffline(true);
+  const result = await page.evaluate(async () => {
+    const entry = Object.values(globalThis.WTOOLS_DEPENDENCIES.vendored)[0];
+    const path = '/' + entry.path;
+    const shell = (await caches.keys()).find((key) => key.startsWith('wtools-shell-'));
+    const cache = await caches.open(shell.replace('wtools-shell-', 'wtools-runtime-'));
+    await cache.put(path, new Response('altered vendor'));
+    const response = await fetch(path + '?retry=123');
+    return { status: response.status, error: response.headers.get('X-WTools-Error'), cached: !!await cache.match(path) };
+  });
+  expect(result).toEqual({ status: 502, error: 'WTI001', cached: false });
+});
+
 test('3단계 제3자 코덱 캐시를 제거하고 자체 Zstandard·Bzip2·LZ4가 오프라인에서 동작한다', async ({ page, context }) => {
   const removed = ['fzstd-0.1.1.mjs', 'lz4js-0.2.0.mjs', 'seek-bzip-2.0.0.mjs',
     'zstd-compress-0.0.27.mjs', 'zstd-wasm-0.0.27.wasm'].map((name) => '/assets/vendor/' + name);
@@ -532,6 +572,7 @@ test('3단계 제3자 코덱 캐시를 제거하고 자체 Zstandard·Bzip2·LZ4
     for (const path of paths) await cache.put(path, new Response('obsolete codec'));
   }, removed);
   await page.goto('/'); await waitForControl(page);
+  await warmRuntimeAssets(page);
   expect(await page.evaluate(async (paths) => Promise.all(paths.map(async (path) => !!await caches.match(path))), removed))
     .toEqual(removed.map(() => false));
   await context.setOffline(true);
@@ -552,3 +593,96 @@ test('3단계 제3자 코덱 캐시를 제거하고 자체 Zstandard·Bzip2·LZ4
     await expect(io.locator('textarea.out')).toHaveValue(codec === 'bzip2' ? 'hello wtools compression test\n'.repeat(3) : '오프라인 🎁');
   }
 });
+
+test('CryptoJS 제거: 최소 shell, 첫 사용 후 해시·파일 Worker 오프라인 실행', async ({ page, context }) => {
+  const removedUrl = 'https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.2.0/crypto-js.min.js';
+  const removedPath = '/assets/vendor/crypto-js-4.2.0.min.js';
+  await page.goto('/404.html');
+  await page.evaluate(async ({ removedUrl, removedPath }) => {
+    await (await caches.open('wtools-external-v17')).put(removedUrl, new Response('obsolete crypto'));
+    await (await caches.open('wtools-shell-before-crypto')).put(removedPath, new Response('obsolete worker crypto'));
+  }, { removedUrl, removedPath });
+  await page.goto('/'); await waitForControl(page);
+  const state = await page.evaluate(async ({ removedUrl, removedPath }) => ({
+    global: typeof globalThis.CryptoJS,
+    removed: !!await caches.match(removedUrl) || !!await caches.match(removedPath),
+    engine: !!await caches.match('/js/lib/crypto/hash32.js'),
+    tool: !!await caches.match('/js/tools/hashing.js'),
+    shell: (await (await caches.open((await caches.keys()).find((key) => key.startsWith('wtools-shell-')))).keys()).map((request) => new URL(request.url).pathname),
+  }), { removedUrl, removedPath });
+  expect(state.global).toBe('undefined'); expect(state.removed).toBe(false);
+  expect(state.engine).toBe(false); expect(state.tool).toBe(false);
+  expect(state.shell).toContain('/index.html');
+  expect(state.shell.some((path) => /\/tools\/|\/workers\/|\/crypto\/|\/vendor\//.test(path))).toBe(false);
+  await page.evaluate(() => { location.hash = '#/tool/hash'; });
+  await expect(page.locator('#content .kv')).toContainText('MD5');
+  await page.locator('#content textarea.mono:not(.out)').fill('abc');
+  await expect(page.locator('#content .kv')).toContainText('900150983cd24fb0d6963f7d28e17f72');
+  await page.evaluate(() => { location.hash = '#/tool/checksum-file'; });
+  await page.getByLabel('파일 선택 (여러 개 가능, 브라우저 밖으로 전송되지 않습니다)').setInputFiles({ name: 'abc.txt', mimeType: 'text/plain', buffer: Buffer.from('abc') });
+  await expect(page.locator('#content')).toContainText('900150983cd24fb0d6963f7d28e17f72');
+  await context.setOffline(true);
+  await page.reload();
+  await page.getByLabel('파일 선택 (여러 개 가능, 브라우저 밖으로 전송되지 않습니다)').setInputFiles({ name: 'abc.txt', mimeType: 'text/plain', buffer: Buffer.from('abc') });
+  await expect(page.locator('#content')).toContainText('900150983cd24fb0d6963f7d28e17f72');
+  await page.goto('/#/tool/hash');
+  await page.locator('#content textarea.mono:not(.out)').fill('abc');
+  await expect(page.locator('#content .kv')).toContainText('900150983cd24fb0d6963f7d28e17f72');
+});
+
+test.describe('캐시하지 않은 도구', () => {
+  test.use({ allowConsoleErrors: ['Failed to load resource', 'Failed to fetch dynamically imported module', 'Importing a module script failed'] });
+  test('오프라인 오류 안내 후 온라인 재시도로 복구한다', async ({ page, context }) => {
+    await page.goto('/'); await waitForControl(page);
+    await context.setOffline(true);
+    await page.evaluate(() => { location.hash = '#/tool/aes'; });
+    await expect(page.locator('#content')).toContainText('불러오지 못했습니다');
+    await expect(page.locator('#content').getByRole('button', { name: /다시/ })).toBeVisible();
+    await context.setOffline(false);
+    await page.locator('#content').getByRole('button', { name: /다시/ }).click();
+    await expect(page.locator('#content .tool-header h1')).toHaveText('AES 암호화/복호화');
+    await expect(page.locator('#content .io')).toBeVisible();
+    await expect.poll(() => page.evaluate(async () => !!await caches.match('/js/tools/cryptotools.js'))).toBe(true);
+    await context.setOffline(true);
+    await page.reload();
+    await expect(page.locator('#content .io')).toBeVisible();
+  });
+});
+
+for (const id of ['base64', 'hash', 'aes', 'blowfish']) {
+  test(`첫 방문 ${id}: 제어권 이전 모듈과 Worker 의존성을 저장하고 오프라인 새로고침한다`, async ({ page, context }) => {
+    // Complete the first tool operation before SW registration, exposing the control race.
+    await page.addInitScript(() => {
+      const register = navigator.serviceWorker.register.bind(navigator.serviceWorker);
+      navigator.serviceWorker.register = (...args) => new Promise((resolve, reject) => {
+        globalThis.startTestRegistration = () => register(...args).then(resolve, reject);
+      });
+    });
+    await page.goto(`/#/tool/${id}`);
+    const exercise = async () => {
+      const io = page.locator('#content .io');
+      await expect(io).toBeVisible();
+      if (id === 'hash') await expect(page.locator('#content .kv')).toContainText('RIPEMD160');
+      if (id === 'aes' || id === 'blowfish') {
+        if (id === 'blowfish') await io.getByLabel('레거시 새 암호화 허용').check();
+        await io.getByRole('button', { name: '암호화', exact: true }).click();
+        await expect(io.locator('textarea.out')).toHaveValue(/^[A-Za-z0-9+/=]+$/);
+      }
+    };
+    await exercise();
+    await page.evaluate(() => globalThis.startTestRegistration());
+    await waitForControl(page);
+    await expect.poll(() => page.evaluate(async (id) => {
+      const paths = {
+        base64: ['/js/tools/encoding.js', '/js/lib/crypto/worker-client.js'],
+        hash: ['/js/tools/hashing.js', '/js/workers/crypto.js', '/js/lib/crypto/hash32.js', '/js/lib/crypto/md2.js', '/js/lib/crypto/keccak.js'],
+        aes: ['/js/tools/cryptotools.js', '/js/workers/crypto.js', '/js/lib/crypto/aes-envelope.js'],
+        blowfish: ['/js/tools/cryptotools.js', '/js/workers/crypto.js', '/js/lib/crypto/blowfish.js', '/js/lib/crypto/blowfish-constants.js'],
+      }[id];
+      return (await Promise.all(paths.map(async (path) => !!await caches.match(path)))).every(Boolean);
+    }, id)).toBe(true);
+    await context.setOffline(true);
+    await page.reload();
+    await exercise();
+  });
+}

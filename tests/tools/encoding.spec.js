@@ -238,3 +238,15 @@ for (const [alg, privateKey, publicKey] of [
     await expect(verify.locator('.out-html').first()).toContainText('서명이 유효합니다');
   });
 }
+
+toolCases('encoding', ['HS384', 'HS512'].flatMap((algorithm) => {
+  const input = `${jwtPart({ alg: algorithm, typ: 'JWT' })}.${jwtPart({ sub: 'crypto-compat' })}`;
+  const key = 'K'.repeat(80);
+  const token = `${input}.${createHmac('sha' + algorithm.slice(2), key).update(input).digest('base64url')}`;
+  return [
+    { name: `jwt: ${algorithm} Node 서명과 일치`, tool: 'jwt', io: 1,
+      options: { '알고리즘': algorithm }, inputs: ['{"sub":"crypto-compat"}', key], action: 'JWT 생성', output: token },
+    { name: `jwt: ${algorithm} Node 서명 검증`, tool: 'jwt',
+      inputs: [token, key], htmlContains: ['서명이 유효합니다'] },
+  ];
+}));

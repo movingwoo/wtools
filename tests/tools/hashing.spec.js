@@ -1,4 +1,5 @@
 // 해싱 도구 정밀 테스트 — NIST/RFC 표준 테스트 벡터 사용.
+import { createHmac } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { test, expect, toolCases, openTool, uploadFile } from '../helpers.js';
 
@@ -386,3 +387,9 @@ test('checksum-crc: 파일 체크섬도 표준 check value', async ({ page }) =>
   await expect(content).toContainText('check.bin (9 bytes)');
   await expect(content.locator('.io').last()).toContainText('0xCBF43926');
 });
+
+toolCases('hashing', ['SHA224', 'SHA384'].map((algorithm) => ({
+  name: `hmac: ${algorithm} 긴 키를 Node와 교차 검증`, tool: 'hmac',
+  options: { '알고리즘': algorithm }, inputs: ['경계 입력', 'k'.repeat(257)],
+  output: createHmac(algorithm, 'k'.repeat(257)).update('경계 입력').digest('hex'),
+})));

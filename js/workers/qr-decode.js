@@ -1,3 +1,5 @@
+import { trackWorkerResources } from '../lib/common/runtime-resources.js';
+trackWorkerResources();
 import { decodeQr } from '../lib/qr/decoder.js';
 
 self.onmessage = ({ data }) => {

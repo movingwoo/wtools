@@ -17,7 +17,7 @@
 - 공통 파일 개수·단일 크기·총합 예산과 큰 입력의 `그래도 처리` 확인, 도구별 픽셀·압축 해제 예산
 - 대용량 텍스트 처리 전 경고 및 지원되는 네트워크 작업의 실제 취소
 - 복사 실패 원인 안내와 안전한 대체 복사, 지원되는 비동기 작업 재시도 및 동적 오류 접근성
-- 앱 셸 내용 지문 기반 캐시 버전, 홈·직접 도구 URL·navigation fallback 오프라인 실행, 새 버전 적용 안내 및 SHA-384 검증 후 외부 CDN 캐시 갱신
+- 전체 배포 자산 지문 기반 캐시 버전, 최소 shell 사전 캐시와 첫 사용 후 runtime 캐시 분리, 미캐시 도구의 한국어 오류·재시도, 홈·사용한 도구 URL·navigation fallback 오프라인 실행, 새 버전 적용 안내 및 SHA-384 검증 후 외부 CDN 캐시 갱신
 - 도구 메타데이터와 구현 모듈 분리, 도구 진입 시 지연 로드, 모듈 장애 격리·재시도 및 초기 JavaScript 140 KiB 예산
 - axe-core WCAG, 320px·200% 확대·키보드·감소 모션·고대비와 라이트/다크 시각 계약 자동 검사
 - 동적 ESM/WASM과 하위 자산을 버전·SHA-384·라이선스·사용처 등록부에 고정하고 검토한 로컬 사본으로 실행
@@ -27,7 +27,7 @@
 
 - Base64 인코딩/디코딩 (커스텀 알파벳 지원)
 - Base32 인코딩/디코딩 (RFC 4648 표준·Extended Hex·커스텀 알파벳 지원)
-- Base58 인코딩/디코딩 (비트코인·리플·플리커 알파벳, Base58Check 체크섬)
+- Base58 인코딩/디코딩 (비트코인·리플·플리커 알파벳, Base58Check 체크섬, WebCrypto 우선 자체 SHA-256)
 - Base85 인코딩/디코딩 (Ascii85·Adobe·Z85)
 - URL 인코딩/디코딩
 - URL 파서 (프로토콜/호스트/쿼리 분해)
@@ -39,7 +39,7 @@
 - 텍스트 ↔ ASCII 이진수(바이너리) 변환
 - 정수(숫자) 진법 변환 (2/8/10/16진 등)
 - 로마 숫자 변환
-- JWT 인코딩 / 디코딩 / 서명 / 검증 (HS/RS/PS/ES, 서명·클레임 분리 검증, clock skew와 iss/aud/sub 기대값, 보안 경고)
+- JWT 인코딩 / 디코딩 / 서명 / 검증 (HS/RS/PS/ES, HS는 WebCrypto 우선 자체 HMAC, 서명·클레임 분리 검증, clock skew와 iss/aud/sub 기대값, 보안 경고)
 
 ## 2. 데이터 포맷 변환
 
@@ -105,20 +105,20 @@
 
 ## 5. 해싱
 
-- MD2 / MD4 / MD5 (레거시 호환성 확인용, 보안 용도 비권장)
-- SHA0 / SHA1 / SHA2 (224/256/384/512) / SHA3 (FIPS 202) / Keccak-256
+- MD2 / MD4 / MD5 (공용 자체 스트리밍 구현, 레거시 호환성 확인용, 보안 용도 비권장)
+- SHA0 / SHA1 / SHA2 (224/256/384/512) / SHA3 (FIPS 202) / Keccak-256 / RIPEMD-160 (WebCrypto 우선 + 자체 구현, 입력 최대 16 MiB, Worker·취소)
 - BLAKE2b / BLAKE2s / BLAKE3 / xxHash (키 지정 가능)
-- HMAC 생성
+- HMAC 생성 (WebCrypto 우선 + 자체 구현, 메시지 최대 16 MiB·키 64 KiB, 큰 입력 Worker·취소)
 - 해시 분석기 (알고리즘 추정)
-- 파일 해시 (2 MiB 청크 Worker, 알고리즘별 진행률·취소, MD5/SHA 일괄 계산·전체 복사/다운로드, GNU/BSD 체크섬 목록 검증)
+- 파일 해시 (텍스트 해시와 같은 자체 엔진, 2 MiB 청크 모듈 Worker, 알고리즘별 진행률·취소, MD5/SHA 일괄 계산·전체 복사/다운로드, GNU/BSD 체크섬 목록 검증)
 - 체크섬 계산기 (CRC-8/16/32, CRC-32C, Adler-32 — 텍스트/파일)
 
 ## 6. 암호화 / 복호화
 
 - 고전 암호 (ROT13, ROT47, 카이사르, 아트바시, 비제네르, 레일 펜스)
-- AES 암호화/복호화 (AES-GCM 기본, PBKDF2-HMAC-SHA256, 랜덤 salt·IV·128비트 인증 태그, 128/192/256비트 키, 자체 포함 Base64/Hex, OpenSSL·CBC/CTR/CFB/OFB 호환; ECB 새 암호화는 추가 확인)
-- DES / Triple DES 암호화/복호화 (기존 자료 복호화 호환, 새 암호화는 추가 확인)
-- Blowfish 암호화/복호화
+- AES 암호화/복호화 (AES-GCM 기본, PBKDF2-HMAC-SHA256, 랜덤 salt·IV·128비트 인증 태그, 128/192/256비트 키, 자체 포함 Base64/Hex, OpenSSL·CBC/CTR/CFB/OFB 호환; ECB 새 암호화는 추가 확인; WebCrypto 우선·AES-192/CFB/OFB/ECB 자체 구현, 평문 16 MiB·키/비밀번호 64 KiB, Worker·취소)
+- DES / Triple DES / Blowfish 암호화/복호화 (자체 구현, CBC/CFB/CTR/OFB/ECB, OpenSSL EVP_BytesToKey·Salted__ Base64/Hex, 평문 16 MiB·키/비밀번호 64 KiB, Worker·취소; DES/3DES/ECB 새 암호화는 추가 확인)
+- 레거시 직접 키의 기존 워드 보정·절단과 0 IV, CTR의 마지막 32비트 순환 동작 보존; PKCS7 패딩 오류는 거부. 비밀번호 Hex에도 salt를 보존하며 이전 salt 없는 Hex는 복원 불가
 - XOR / XOR 브루트포스
 - RSA 키 페어 생성 (2048/3072/4096비트, 1024비트 생성 차단)
 - RSA 암호화/복호화 (RSA-OAEP), 서명/검증 (PKCS#1 v1.5; SHA-1은 기존 서명 검증만)
@@ -127,7 +127,7 @@
 - PDF 전자서명 검증
 - 토큰(랜덤 시크릿)·EFF 단어 패스프레이즈 생성기 (혼동 문자 제외, 문자군별 최소 개수, 엔트로피 안내)
 - 비밀번호 해시 생성/검증 (Argon2id/i/d, PBKDF2, bcrypt)
-- TOTP / HOTP 생성·검증 및 otpauth QR 코드
+- TOTP / HOTP 생성·검증 및 otpauth QR 코드 (WebCrypto 우선 공용 HMAC, SHA1/SHA256/SHA512, RFC 4226/6238 벡터)
 
 ## 7. 공개키 / 인증서
 
@@ -141,7 +141,7 @@
 - ASN.1 Hex 문자열 파싱
 - PEM ↔ Hex 변환
 - JWK ↔ PEM 변환 (RSA/EC/Ed25519, RFC 7638 지문 계산)
-- SSH 호스트 키 파싱
+- SSH 호스트 키 파싱 (필드 경계 검사, 공용 MD5·SHA-256 지문)
 - RSA/EC 개인키 정보 추출
 
 ## 8. 네트워크

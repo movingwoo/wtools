@@ -1,3 +1,5 @@
+import { trackWorkerResources } from '../lib/common/runtime-resources.js';
+trackWorkerResources();
 import { formatError, parseJson, search, stringifyResult } from '../lib/data/jmespath.js';
 
 self.addEventListener('message', ({ data }) => {

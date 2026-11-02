@@ -2,21 +2,6 @@
 // 브라우저 코드, 서비스 워커, scripts/validate_static.py가 이 파일을 함께 사용한다.
 globalThis.WTOOLS_DEPENDENCIES = {
   "cdn": {
-    "cryptoJs": {
-      "package": "crypto-js",
-      "version": "4.2.0",
-      "url": "https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.2.0/crypto-js.min.js",
-      "integrity": "sha384-mgWScxWVKP8F7PBbpNp7i/aSb17kN0LcifBpahAplF3Mn0GR4/u1oMpWIm2rD8yY",
-      "license": "MIT",
-      "kind": "script",
-      "tools": [
-        "js/main.js",
-        "js/tools/cryptotools.js",
-        "js/tools/encoding.js",
-        "js/tools/hashing.js",
-        "js/tools/pki.js"
-      ]
-    },
     "jsrsasign": {
       "package": "jsrsasign",
       "version": "11.1.5",
@@ -67,19 +52,6 @@ globalThis.WTOOLS_DEPENDENCIES = {
     }
   },
   "vendored": {
-    "cryptoJsWorker": {
-      "package": "crypto-js",
-      "version": "4.2.0",
-      "path": "assets/vendor/crypto-js-4.2.0.min.js",
-      "integrity": "sha384-mgWScxWVKP8F7PBbpNp7i/aSb17kN0LcifBpahAplF3Mn0GR4/u1oMpWIm2rD8yY",
-      "source": "https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.2.0/crypto-js.min.js",
-      "sourceIntegrity": "sha384-mgWScxWVKP8F7PBbpNp7i/aSb17kN0LcifBpahAplF3Mn0GR4/u1oMpWIm2rD8yY",
-      "license": "MIT",
-      "tools": [
-        "js/tools/hashing.js",
-        "js/workers/file-hash.js"
-      ]
-    },
     "openpgp": {
       "package": "openpgp",
       "version": "5.11.3",

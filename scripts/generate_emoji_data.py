@@ -42,6 +42,8 @@ SOURCE_PATHS = {
 SOURCE_NAMES = ('emoji', 'ko', 'koDerived', 'en', 'enDerived')
 SRI_PATTERN = re.compile(r'sha384-[A-Za-z0-9+/]{64}')
 VERSION_PATTERN = re.compile(r'\d+(?:\.\d+)+')
+# CLDR tags major-only releases as release-49, so its version may have no dot.
+CLDR_VERSION_PATTERN = re.compile(r'\d+(?:\.\d+)*')
 USER_AGENT = 'W-Tools emoji data maintenance (https://github.com/movingwoo/wtools)'
 
 
@@ -72,8 +74,12 @@ def sha384(data: bytes) -> str:
 def validate_lock(payload: object) -> dict[str, object]:
   if not isinstance(payload, dict) or payload.get('schema') != 1:
     raise ValueError('emoji data lock schema is not supported')
-  for field in ('emojiVersion', 'unicodeVersion', 'cldrVersion'):
-    if not VERSION_PATTERN.fullmatch(str(payload.get(field, ''))):
+  for field, pattern in (
+    ('emojiVersion', VERSION_PATTERN),
+    ('unicodeVersion', VERSION_PATTERN),
+    ('cldrVersion', CLDR_VERSION_PATTERN),
+  ):
+    if not pattern.fullmatch(str(payload.get(field, ''))):
       raise ValueError(f'emoji data lock has an invalid {field}')
   if not re.fullmatch(r'release-\d+(?:-\d+)*', str(payload.get('cldrTag', ''))):
     raise ValueError('emoji data lock has an invalid cldrTag')

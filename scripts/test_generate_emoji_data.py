@@ -53,6 +53,21 @@ class EmojiDataTest(unittest.TestCase):
     lock = emoji_data.load_lock()
     self.assertEqual(emoji_data.lock_bytes(lock), emoji_data.LOCK_PATH.read_bytes())
 
+  def test_lock_accepts_major_only_cldr_release(self):
+    lock = copy.deepcopy(emoji_data.load_lock())
+    lock['cldrTag'] = 'release-49'
+    lock['cldrVersion'] = '49'
+    urls = emoji_data.source_urls(str(lock['unicodeVersion']), 'release-49')
+    for name, source in lock['sources'].items():
+      source['url'] = urls[name]
+    self.assertEqual(emoji_data.validate_lock(lock)['cldrVersion'], '49')
+
+  def test_lock_rejects_malformed_cldr_version(self):
+    lock = copy.deepcopy(emoji_data.load_lock())
+    lock['cldrVersion'] = '49.'
+    with self.assertRaisesRegex(ValueError, 'invalid cldrVersion'):
+      emoji_data.validate_lock(lock)
+
   def test_lock_rejects_non_official_source_url(self):
     lock = copy.deepcopy(emoji_data.load_lock())
     lock['sources']['emoji']['url'] = 'https://example.com/emoji-test.txt'

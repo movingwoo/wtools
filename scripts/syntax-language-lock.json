@@ -5,7 +5,7 @@
   "profiles": {
     "javascript": { "version": "ECMAScript 2027 Draft", "source": "https://tc39.es/ecma262/" },
     "typescript": { "version": "7.0", "source": "https://devblogs.microsoft.com/typescript/announcing-typescript-7-0/" },
-    "python": { "version": "3.14", "source": "https://docs.python.org/3.14/reference/lexical_analysis.html" },
+    "python": { "version": "3.15", "source": "https://docs.python.org/3.15/reference/lexical_analysis.html" },
     "java": { "version": "Java SE 27", "source": "https://docs.oracle.com/en/java/javase/27/docs/specs/jls/jls-3.html" },
     "c": { "version": "C23 (ISO/IEC 9899:2024)", "source": "https://www.open-std.org/jtc1/sc22/wg14/www/docs/n3096.pdf" },
     "cpp": { "version": "C++23", "source": "https://isocpp.org/std/the-standard" },
@@ -66,7 +66,7 @@
     "sql:sqlite": {
       "url": "https://www.sqlite.org/changes.html",
       "pattern": "<h3>20\\d{2}-\\d{2}-\\d{2}\\s+\\((\\d+\\.\\d+)\\.\\d+\\)</h3>",
-      "expected": "3.53",
+      "expected": "3.54",
       "selection": "first"
     },
     "css": {
@@ -84,7 +84,7 @@
     "python": {
       "url": "https://docs.python.org/3/",
       "pattern": "<title>(?:Python )?(\\d+\\.\\d+)(?:\\.\\d+)? Documentation</title>",
-      "expected": "3.14",
+      "expected": "3.15",
       "selection": "first"
     },
     "java": {

@@ -2,9 +2,9 @@
   "standard": {
     "repository": "whatwg/compression",
     "branch": "main",
-    "commit": "770f314342e2ee560353a04a7f30ee9449a23ee4",
+    "commit": "94b42518d2c2f97e64bd5a483d6deb8c8f14c365",
     "feedUrl": "https://github.com/whatwg/compression/commits/main.atom",
-    "sourceUrl": "https://raw.githubusercontent.com/whatwg/compression/770f314342e2ee560353a04a7f30ee9449a23ee4/index.bs",
+    "sourceUrl": "https://raw.githubusercontent.com/whatwg/compression/94b42518d2c2f97e64bd5a483d6deb8c8f14c365/index.bs",
     "sourceSha384": "sha384-hho9wzDZku1MgLf+JplSDvFUd7lOBzVwg8I5JnCFJOKfUI3P5S6DsuqPv7JYj8Le",
     "formats": [
       "brotli",
@@ -145,9 +145,21 @@
         {
           "id": 8668,
           "status": "Reported"
+        },
+        {
+          "id": 9223,
+          "status": "Reported"
+        },
+        {
+          "id": 9227,
+          "status": "Reported"
+        },
+        {
+          "id": 9228,
+          "status": "Reported"
         }
       ],
-      "errataSha384": "sha384-9zZitBmiNdJFK6o1NRK1eVUN4QmdcLMijvpHzx1t44WVaM3ZRuP9y7cgz8TslpRd"
+      "errataSha384": "sha384-A3hJI0Kdzbg0bpjp9U0ORK1wTDUN7jV+DuKDJoFmDg3Jp8JP6w+s+XqNV/xsaymE"
     },
     "9659": {
       "format": "zstd-http",
@@ -187,11 +199,11 @@
     "upstream": {
       "sdkPage": {
         "url": "https://www.7-zip.org/sdk.html",
-        "sha384": "sha384-yIFreTVZeyHvlAG36LAjEv2fP3+cLaEVmOFcgi98w/Es8EmXQYX2f+oyX6CU/iRh"
+        "sha384": "sha384-Yp3YVZc65/veHJXuY/wffH7wE/u/l6ErLIryqRuQCLDVA7Rmr5DABCtIY4T+Bq1G"
       },
       "releaseHistory": {
         "url": "https://www.7-zip.org/history.txt",
-        "sha384": "sha384-ti+ZhRXYBo/7J15fu1vCSpVQoyeNhwB+2FaM1yDMjt8tDtNwaM7VycI5G9FQAD5F"
+        "sha384": "sha384-b2MtXFDMa1iVeSNNSYXQxbr6ujTS+I+qxdAj6OGFUz4JMx3Gqjm/uXBWYE84daFv"
       },
       "containerDescription": {
         "url": "https://raw.githubusercontent.com/tukaani-project/xz/master/doc/lzma-file-format.txt",
@@ -203,7 +215,7 @@
       }
     }
   },
-  "reviewed": "2026-09-10",
+  "reviewed": "2026-11-02",
   "brotli": {
     "supported": [
       "rfc7932"
@@ -215,7 +227,7 @@
       },
       "releases": {
         "url": "https://api.github.com/repos/google/brotli/releases?per_page=100",
-        "sha384": "sha384-plZUtMkl+v6i3DeAu9sePnAb8ALbEBbjiAX1COvZvTfNuaNWooAMNTCuTXwFPTu0"
+        "sha384": "sha384-CyxbV4jwvo+YnRcxE2GE/Xn3hmVCDJ4hBGjRsMGLDq78TrPw5QIlm4KA5Lok2GFL"
       },
       "advisories": {
         "url": "https://api.github.com/repos/google/brotli/security-advisories?per_page=100",
@@ -230,11 +242,11 @@
     },
     "lz4Frame": {
       "url": "https://raw.githubusercontent.com/lz4/lz4/dev/doc/lz4_Frame_format.md",
-      "sha384": "sha384-aUZ0odDIIZhQJGYd1QVeCASugBs/IU3nSkEDOptkozBmQl4LcQvKriWNQkjVAk3E"
+      "sha384": "sha384-LJl29Kxlh9rUAAiRUEqcxiYOsQzQyYSREEBcRuWMbOaoetEPSzK1BM1qsps5kEXx"
     },
     "lz4Block": {
       "url": "https://raw.githubusercontent.com/lz4/lz4/dev/doc/lz4_Block_format.md",
-      "sha384": "sha384-LByIiorYSduoZgf7V9VOSCYpNDlRc7/pgau1xq5G5BRVgPns6Z5hhxeWVt0XoVnY"
+      "sha384": "sha384-1oy0h+uuMf0d/cRS/lFJ0gKpmJKaSmiqFSSkoProdRAKQj8l4a8EdB9QwTTDAIq9"
     },
     "bzip2": {
       "url": "https://sourceware.org/bzip2/manual/manual.html",
@@ -276,7 +288,7 @@
     },
     "lz4Changes": {
       "url": "https://raw.githubusercontent.com/lz4/lz4/dev/NEWS",
-      "sha384": "sha384-6+InwvnlDK5qGhI/oCh4wYGnq4uRHW/ALse7lp5yW8qJO2CqYUdLxirKB87UQDzp"
+      "sha384": "sha384-zKF0oU62blhtU9GGS4CIDX4PC6ar7ZYXmARJuXGsT+GZ/2L/Bza4YRRxURfyQbPz"
     },
     "bzip2Downloads": {
       "url": "https://sourceware.org/bzip2/downloads.html",
@@ -288,7 +300,7 @@
     },
     "bzip2Announcements": {
       "url": "https://sourceware.org/pipermail/bzip2-devel/",
-      "sha384": "sha384-o0JUpvTKGMD2qkyG/kXFsTxMZ1dVdUH7C+jCFYNVoOfiN4rUH/FWN4oAsT73D8n2"
+      "sha384": "sha384-d4egq3D2YRWrKOsz/2hTJLElWWppRBck8gw6Tz2DyVkksHjCuXJQJE9sCP6VrbCK"
     }
   }
 }
